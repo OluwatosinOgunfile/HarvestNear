@@ -12,6 +12,7 @@ import {
   Clock3,
   Heart,
   Headphones,
+  House,
   AtSign,
   Leaf,
   LocateFixed,
@@ -234,6 +235,13 @@ export default function Home() {
           </div>
         </div>
       </header>
+
+      <nav className="mobile-nav" aria-label="Mobile navigation">
+        <button className={view === "landing" ? "active" : ""} onClick={() => setView("landing")}><House size={17} /><span>Home</span></button>
+        <button className={view === "market" ? "active" : ""} onClick={() => setView("market")}><ShoppingBag size={17} /><span>Shop</span></button>
+        <button className={view === "orders" ? "active" : ""} onClick={() => setView("orders")}><PackageCheck size={17} /><span>Orders</span></button>
+        <button className={view === "farmer" ? "active" : ""} onClick={() => setView("farmer")}><Store size={17} /><span>Sell</span></button>
+      </nav>
 
       {view === "landing" ? <LandingPage onShop={() => setView("market")} onFarmer={() => setView("farmer")} /> : view === "market" ? (
         <main>

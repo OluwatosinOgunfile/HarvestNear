@@ -40,6 +40,7 @@
 .app-shell[data-theme="dark"] .empty-state { background:#19211c; }
 .app-shell[data-theme="dark"] .main-nav button { color:#a8b5ac; }
 .app-shell[data-theme="dark"] .main-nav button.active { color:var(--ink); }
+.app-shell[data-theme="dark"] .mobile-nav{background:#19211c}.app-shell[data-theme="dark"] .mobile-nav button{color:#a8b5ac}.app-shell[data-theme="dark"] .mobile-nav button.active{color:#9fd19f}
 .app-shell[data-theme="dark"] .brand-image { background:#fbfaf5; box-shadow:0 0 0 1px rgba(255,255,255,.08); }
 
 /* Motion is deliberately short and functional: it reinforces hierarchy without slowing repeat use. */
