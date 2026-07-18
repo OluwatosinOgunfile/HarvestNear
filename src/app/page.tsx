@@ -214,10 +214,10 @@ export default function Home() {
           <button className={view === "farmer" ? "active" : ""} onClick={() => setView("farmer")}>Sell on HarvestNear</button>
         </nav>
         <div className="header-actions">
-          <button className="cart-button" onClick={() => setCartOpen(true)}><ShoppingBag size={18} /><span>Basket</span>{itemCount > 0 && <b>{itemCount}</b>}</button>
+          <button className="cart-button" onClick={() => setCartOpen(true)} aria-label={`Open basket${itemCount ? `, ${itemCount} ${itemCount === 1 ? "item" : "items"}` : ", empty"}`} title="Basket"><ShoppingBag size={18} />{itemCount > 0 && <b>{itemCount}</b>}</button>
           <div className="account-menu-wrap">
             <button className={`account-menu-trigger ${accountMenuOpen ? "active" : ""}`} onClick={() => setAccountMenuOpen((open) => !open)} aria-expanded={accountMenuOpen} aria-haspopup="menu">
-              <span className="account-avatar"><UserRound size={17} /></span><span>Account</span><ChevronDown size={15} />
+              <span className="account-avatar"><UserRound size={17} /></span><ChevronDown size={15} /><span className="sr-only">Account menu</span>
             </button>
             {accountMenuOpen && <>
               <button className="account-menu-backdrop" aria-label="Close account menu" onClick={() => setAccountMenuOpen(false)} />
@@ -321,8 +321,6 @@ export default function Home() {
       ) : view === "orders" ? <OrdersPage onShop={() => setView("market")} /> : view === "profile" ? <ProfilePage /> : <FarmerDashboard onShop={() => setView("market")} />}
 
       <SiteFooter view={view} onNavigate={setView} />
-
-      {view === "market" && <button className="mobile-basket" onClick={() => setCartOpen(true)}><ShoppingBag size={19} /><span>Basket</span><b>{itemCount}</b><strong>{money(subtotal)}</strong></button>}
 
       {cartOpen && <div className="overlay" onMouseDown={() => setCartOpen(false)}>
         <aside className="cart-drawer" onMouseDown={(e) => e.stopPropagation()}>
