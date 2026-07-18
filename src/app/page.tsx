@@ -366,7 +366,7 @@ export default function Home() {
       {signupOpen && <div className="modal-overlay" onMouseDown={() => setSignupOpen(false)}><div className="signup-modal" onMouseDown={(event) => event.stopPropagation()}>
         <button className="close-modal" onClick={() => setSignupOpen(false)}><X size={20} /></button>
         {!signupComplete ? <>
-          <div className="signup-heading"><span><Leaf size={22} /></span><div><p>JOIN FARMERS MARKET</p><h2>Create your account</h2></div></div>
+          <div className="signup-heading"><span className="auth-logo-lockup"><img src="/brand/harvestnear-mark.png" alt="" /><img src="/brand/harvestnear-wordmark-header.png" alt="HarvestNear" /></span><div><p>JOIN HARVESTNEAR</p><h2>Create your account</h2></div></div>
           <p className="signup-intro">Choose how you want to use the marketplace. You can update your profile later.</p>
           <div className="role-tabs" role="tablist" aria-label="Account type">
             <button className={signupRole === "consumer" ? "selected" : ""} onClick={() => setSignupRole("consumer")}><ShoppingBag size={19} /><span><strong>Consumer</strong><small>Shop fresh produce</small></span></button>
@@ -388,7 +388,7 @@ export default function Home() {
       {signinOpen && <div className="modal-overlay" onMouseDown={() => setSigninOpen(false)}><div className="signin-modal" onMouseDown={(event) => event.stopPropagation()}>
         <button className="close-modal" onClick={() => setSigninOpen(false)}><X size={20} /></button>
         {!signinComplete ? <>
-          <div className="auth-mark"><Leaf size={24} /></div>
+          <div className="auth-logo-lockup signin-brand"><img src="/brand/harvestnear-mark.png" alt="" /><img src="/brand/harvestnear-wordmark-header.png" alt="HarvestNear" /></div>
           <p className="auth-kicker">WELCOME BACK</p>
           <h2>Sign in to HarvestNear</h2>
           <p className="auth-intro">Continue shopping fresh harvests or manage your farm.</p>
