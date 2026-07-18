@@ -206,7 +206,7 @@ export default function Home() {
   return (
     <div className="app-shell" data-theme={theme}>
       <header className="topbar">
-        <button className="brand brand-image" onClick={() => setView("landing")} aria-label="HarvestNear home"><img src="/brand/harvestnear-wordmark-header.png" alt="HarvestNear" /></button>
+        <button className="brand brand-image" onClick={() => setView("landing")} aria-label="HarvestNear home"><img className="brand-app-mark" src="/brand/harvestnear-mark.png" alt="" /><img className="brand-wordmark" src="/brand/harvestnear-wordmark-header.png" alt="HarvestNear" /></button>
         <nav className="main-nav" aria-label="Main navigation">
           <button className={view === "landing" ? "active" : ""} onClick={() => setView("landing")}>Home</button>
           <button className={view === "market" ? "active" : ""} onClick={() => setView("market")}>Shop produce</button>

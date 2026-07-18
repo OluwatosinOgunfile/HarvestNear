@@ -7,6 +7,7 @@ import "./footer.css";
 import "./landing.css";
 import "./profile.css";
 import "./notifications.css";
+import "./brand-header.css";
 
 export const metadata: Metadata = {
   title: "HarvestNear | Fresh Local Produce, Found Here",

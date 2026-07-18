@@ -1,0 +1,5 @@
+@media(max-width:700px){
+  .topbar .brand-image{width:132px;height:40px;gap:0;justify-content:center}
+  .brand-image .brand-app-mark{width:29px}
+  .brand-image .brand-wordmark{width:94px}
+}
