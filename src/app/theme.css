@@ -1,0 +1,83 @@
+.app-shell[data-theme="dark"] { --ink:#edf3ee; --muted:#9ba8a0; --green:#64a47d; --green-2:#76bb90; --paper:#111713; --line:#303b34; background:var(--paper); color:var(--ink); }
+.app-shell[data-theme="dark"] .topbar,
+.app-shell[data-theme="dark"] .product-card,
+.app-shell[data-theme="dark"] .discovery-bar,
+.app-shell[data-theme="dark"] .search-box,
+.app-shell[data-theme="dark"] .location-button,
+.app-shell[data-theme="dark"] .filter-button,
+.app-shell[data-theme="dark"] .sort button,
+.app-shell[data-theme="dark"] .category-row button,
+.app-shell[data-theme="dark"] .icon-btn,
+.app-shell[data-theme="dark"] .account-menu-trigger,
+.app-shell[data-theme="dark"] .account-menu,
+.app-shell[data-theme="dark"] .signup-trigger,
+.app-shell[data-theme="dark"] .signin-trigger,
+.app-shell[data-theme="dark"] .cart-drawer,
+.app-shell[data-theme="dark"] .payment-modal,
+.app-shell[data-theme="dark"] .signup-modal,
+.app-shell[data-theme="dark"] .signin-modal,
+.app-shell[data-theme="dark"] .metric-grid,
+.app-shell[data-theme="dark"] .orders-panel,
+.app-shell[data-theme="dark"] .inventory-panel { background:#19211c; color:var(--ink); }
+.app-shell[data-theme="dark"] .market-intro { background:#173524; }
+.app-shell[data-theme="dark"] .search-box,
+.app-shell[data-theme="dark"] .role-tabs button,
+.app-shell[data-theme="dark"] .pay-summary,
+.app-shell[data-theme="dark"] .farmer-fields,
+.app-shell[data-theme="dark"] .cart-total { background:#202a23; }
+.app-shell[data-theme="dark"] .category-row button.selected,
+.app-shell[data-theme="dark"] .create-account,
+.app-shell[data-theme="dark"] .checkout-button,
+.app-shell[data-theme="dark"] .pay-button { background:#397a55; color:white; }
+.app-shell[data-theme="dark"] .signup-form input:not([type="checkbox"]) { background:#121914; color:var(--ink); }
+.app-shell[data-theme="dark"] .signin-form input:not([type="checkbox"]) { background:#121914; color:var(--ink); }
+.app-shell[data-theme="dark"] .phone-field span { background:#202a23; }
+.app-shell[data-theme="dark"] .role-tabs button.selected { background:#243d2d; border-color:var(--green); }
+.app-shell[data-theme="dark"] .trust-band { background:#1b281f; border-color:var(--line); }
+.app-shell[data-theme="dark"] .order-icon,
+.app-shell[data-theme="dark"] .avatar { background:#27372d; }
+.app-shell[data-theme="dark"] .stepper { background:#28332b; }
+.app-shell[data-theme="dark"] .empty-state { background:#19211c; }
+.app-shell[data-theme="dark"] .main-nav button { color:#a8b5ac; }
+.app-shell[data-theme="dark"] .main-nav button.active { color:var(--ink); }
+.app-shell[data-theme="dark"] .brand-image { background:#fbfaf5; box-shadow:0 0 0 1px rgba(255,255,255,.08); }
+
+/* Motion is deliberately short and functional: it reinforces hierarchy without slowing repeat use. */
+.topbar { backdrop-filter:saturate(150%) blur(12px); }
+.app-shell[data-theme="dark"] .account-menu>button:hover{background:#222d26}.app-shell[data-theme="dark"] .account-menu-auth button:first-child{background:#19211c}
+.brand-mark { transition:transform .25s ease, box-shadow .25s ease; }
+.brand:hover .brand-mark { transform:rotate(5deg) scale(1.06); box-shadow:0 6px 16px rgba(31,91,58,.22); }
+.icon-btn,.signin-trigger,.signup-trigger,.cart-button,.add-button,.filter-button,.category-row button,.checkout-button,.create-account,.signin-submit { transition:transform .18s ease, box-shadow .18s ease, background-color .18s ease, border-color .18s ease; }
+.icon-btn:hover,.signin-trigger:hover,.filter-button:hover { transform:translateY(-1px); background:#f1f5ed; }
+.signup-trigger:hover,.cart-button:hover,.add-button:hover,.checkout-button:hover,.create-account:hover,.signin-submit:hover { transform:translateY(-2px); box-shadow:0 8px 18px rgba(31,91,58,.2); }
+.icon-btn:active,.signin-trigger:active,.signup-trigger:active,.cart-button:active,.add-button:active { transform:translateY(0) scale(.97); }
+.main-nav button { transition:color .2s ease, border-color .2s ease; }
+.category-row button:hover { border-color:var(--green); color:var(--green); }
+.product-card { animation:card-in .42s both; }
+.product-card:nth-child(2) { animation-delay:.04s; }.product-card:nth-child(3) { animation-delay:.08s; }.product-card:nth-child(4) { animation-delay:.12s; }.product-card:nth-child(5) { animation-delay:.16s; }.product-card:nth-child(6) { animation-delay:.2s; }
+.product-image:after { content:""; position:absolute; inset:0; pointer-events:none; background:linear-gradient(to top,rgba(18,31,22,.17),transparent 42%); opacity:.45; transition:opacity .3s ease; }
+.product-card:hover .product-image:after { opacity:.12; }
+.heart,.stepper button { transition:transform .18s ease, background-color .18s ease; }
+.heart:hover { transform:scale(1.08); }.stepper button:hover { background:rgba(31,91,58,.1); }
+.modal-overlay { animation:fade-in .2s ease both; backdrop-filter:blur(3px); }
+.signup-modal,.signin-modal,.payment-modal { animation:modal-in .25s ease both; }
+input:focus { box-shadow:0 0 0 3px rgba(45,118,80,.12); }
+button:focus-visible,input:focus-visible { outline:2px solid var(--green-2); outline-offset:2px; }
+.theme-toggle svg { transition:transform .3s ease; }.theme-toggle:hover svg { transform:rotate(18deg); }
+@keyframes fade-in { from { opacity:0; } }
+@keyframes modal-in { from { opacity:0; transform:translateY(10px) scale(.985); } }
+@keyframes card-in { from { opacity:0; transform:translateY(10px); } }
+
+@media (prefers-reduced-motion:reduce) {
+  *,*:before,*:after { scroll-behavior:auto!important; animation-duration:.01ms!important; animation-iteration-count:1!important; transition-duration:.01ms!important; }
+}
+
+@media(max-width:620px) {
+  .brand-image { width:150px; height:38px; padding:4px; }
+  .signup-trigger { width:40px; padding:0; justify-content:center; }
+  .signup-trigger span { display:none; }
+  .signin-trigger { width:36px; padding:0; justify-content:center; }
+  .signin-trigger span { display:none; }
+  .header-actions .theme-toggle { display:grid; }
+  .signin-modal { padding:30px 22px; }
+}
