@@ -43,6 +43,8 @@
 .app-shell[data-theme="dark"] .mobile-nav{background:#19211c}.app-shell[data-theme="dark"] .mobile-nav button{color:#a8b5ac}.app-shell[data-theme="dark"] .mobile-nav button.active{color:#9fd19f}
 .app-shell[data-theme="dark"] .cart-button b{border-color:#19211c}
 .app-shell[data-theme="dark"] .brand-image { background:#fbfaf5; box-shadow:0 0 0 1px rgba(255,255,255,.08); }
+.app-shell[data-theme="dark"] .close-modal{color:#edf3ee;background:#263129;border-color:#46544a}.app-shell[data-theme="dark"] .close-modal:hover{color:white;background:#344239;border-color:#66776b}.app-shell[data-theme="dark"] .close-modal svg{stroke:currentColor;stroke-width:2.4}
+.app-shell[data-theme="dark"] .delivery-choice>button{color:var(--ink);background:#202a23;border-color:#3b493f}.app-shell[data-theme="dark"] .delivery-choice>button.selected{color:#f4f8f4;background:#274232;border-color:#76bb90;box-shadow:inset 3px 0 0 #76bb90}.app-shell[data-theme="dark"] .delivery-choice>button>svg{color:#87c99e}.app-shell[data-theme="dark"] .delivery-choice span strong{color:#f1f6f2}.app-shell[data-theme="dark"] .delivery-choice span small{color:#b0bcb3}.app-shell[data-theme="dark"] .delivery-choice button>b{color:#f0c354}
 
 /* Motion is deliberately short and functional: it reinforces hierarchy without slowing repeat use. */
 .topbar { backdrop-filter:saturate(150%) blur(12px); }
