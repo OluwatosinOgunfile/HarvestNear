@@ -1,16 +1,16 @@
-# HarvestNear Brand System
+# HarvestNearU Brand System
 
 ## Brand Idea
 
-**Name:** HarvestNear  
+**Name:** HarvestNearU  
 **Promise:** Fresh Local Produce, Found Here.  
 **Supporting line:** Fresh starts here.
 
-HarvestNear connects consumers with trusted nearby farmers. The brand should feel local, capable, fresh, and practical rather than rustic or overly decorative.
+HarvestNearU connects consumers with trusted nearby farmers. The brand should feel local, capable, fresh, and practical rather than rustic or overly decorative.
 
 ## Wordmark
 
-Write the name as **HarvestNear**, with no space. The approved wordmark uses harvest gold for `Harvest` and field green for `Near`. The wheat-and-sun location pin is the primary symbol and may be used alone for compact application icons.
+Write the name as **HarvestNearU**, with no space. The approved wordmark uses harvest gold for `Harvest` and field green for `Near`. The wheat-and-sun location pin is the primary symbol and may be used alone for compact application icons.
 
 Maintain clear space around the lockup equal to at least half the symbol width. Do not stretch, rotate, outline, or place the wordmark over visually busy photography.
 
@@ -46,7 +46,7 @@ Avoid oversized type inside dashboards and operational panels. Letter spacing re
 
 ## Example Copy
 
-- **Hero:** HarvestNear. Fresh starts here.
+- **Hero:** HarvestNearU. Fresh starts here.
 - **Brand promise:** Fresh Local Produce, Found Here.
 - **Marketplace:** Harvests near you.
 - **Checkout:** Your produce is reserved for 10 minutes.

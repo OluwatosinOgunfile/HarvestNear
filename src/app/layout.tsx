@@ -11,7 +11,7 @@ import "./brand-header.css";
 import "./steps.css";
 
 export const metadata: Metadata = {
-  title: "HarvestNear | Fresh Local Produce, Found Here",
+  title: "HarvestNearU | Fresh Local Produce, Found Here",
   description: "Shop fresh produce from trusted farmers near you, with local pickup and doorstep delivery.",
 };
 

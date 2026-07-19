@@ -206,12 +206,12 @@ export default function Home() {
   return (
     <div className="app-shell" data-theme={theme}>
       <header className="topbar">
-        <button className="brand brand-image" onClick={() => setView("landing")} aria-label="HarvestNear home"><img className="brand-app-mark" src="/brand/harvestnear-mark.png" alt="" /><img className="brand-wordmark" src="/brand/harvestnear-wordmark-header.png" alt="HarvestNear" /></button>
+        <button className="brand brand-image" onClick={() => setView("landing")} aria-label="HarvestNearU home"><img className="brand-lockup" src="/brand/harvestnearu-header-lockup.png" alt="HarvestNearU" /></button>
         <nav className="main-nav" aria-label="Main navigation">
           <button className={view === "landing" ? "active" : ""} onClick={() => setView("landing")}>Home</button>
           <button className={view === "market" ? "active" : ""} onClick={() => setView("market")}>Shop produce</button>
           <button className={view === "orders" ? "active" : ""} onClick={() => setView("orders")}>My orders</button>
-          <button className={view === "farmer" ? "active" : ""} onClick={() => setView("farmer")}>Sell on HarvestNear</button>
+          <button className={view === "farmer" ? "active" : ""} onClick={() => setView("farmer")}>Sell on HarvestNearU</button>
         </nav>
         <div className="header-actions">
           <button className="cart-button" onClick={() => setCartOpen(true)} aria-label={`Open basket${itemCount ? `, ${itemCount} ${itemCount === 1 ? "item" : "items"}` : ", empty"}`} title="Basket"><ShoppingBag size={18} />{itemCount > 0 && <b>{itemCount}</b>}</button>
@@ -222,7 +222,7 @@ export default function Home() {
             {accountMenuOpen && <>
               <button className="account-menu-backdrop" aria-label="Close account menu" onClick={() => setAccountMenuOpen(false)} />
               <div className="account-menu" role="menu">
-                <div className="account-menu-heading"><span className="account-avatar"><UserRound size={17} /></span><div><strong>Welcome to HarvestNear</strong><small>Manage your account and preferences</small></div></div>
+                <div className="account-menu-heading"><span className="account-avatar"><UserRound size={17} /></span><div><strong>Welcome to HarvestNearU</strong><small>Manage your account and preferences</small></div></div>
                 <button role="menuitem" onClick={() => { setView("profile"); setAccountMenuOpen(false); }}><UserRound size={17} /><span><strong>My profile</strong><small>Customer and farm information</small></span><ChevronRight size={15} /></button>
                 <button role="menuitem" onClick={() => { setAccountMenuOpen(false); setNotificationOpen(true); }}><Bell size={17} /><span><strong>Notifications</strong><small>Orders, harvests and delivery updates</small></span>{unreadNotificationCount > 0 && <i>{unreadNotificationCount}</i>}</button>
                 <button role="menuitem" onClick={toggleTheme}>{theme === "light" ? <Moon size={17} /> : <Sun size={17} />}<span><strong>{theme === "light" ? "Dark theme" : "Light theme"}</strong><small>Change the appearance</small></span><span className={`theme-switch ${theme === "dark" ? "on" : ""}`}><b /></span></button>
@@ -248,7 +248,7 @@ export default function Home() {
           <section className="market-intro">
             <div className="intro-copy">
               <p className="eyebrow"><span /> FRESH LOCAL PRODUCE, FOUND HERE</p>
-              <h1>HarvestNear.<br /><em>Fresh starts here.</em></h1>
+              <h1>HarvestNearU.<br /><em>Fresh starts here.</em></h1>
               <p>Buy today&apos;s harvest directly from trusted farmers near you. Fresher produce, fairer prices, stronger local communities.</p>
             </div>
             <div className="market-stats">
@@ -366,7 +366,7 @@ export default function Home() {
       {signupOpen && <div className="modal-overlay" onMouseDown={() => setSignupOpen(false)}><div className="signup-modal" onMouseDown={(event) => event.stopPropagation()}>
         <button className="close-modal" onClick={() => setSignupOpen(false)}><X size={20} /></button>
         {!signupComplete ? <>
-          <div className="signup-heading"><span className="auth-logo-lockup"><img src="/brand/harvestnear-mark.png" alt="" /><img src="/brand/harvestnear-wordmark-header.png" alt="HarvestNear" /></span><div><p>JOIN HARVESTNEAR</p><h2>Create your account</h2></div></div>
+          <div className="signup-heading"><span className="auth-logo-lockup"><img className="auth-approved-lockup" src="/brand/harvestnearu-header-lockup.png" alt="HarvestNearU" /></span><div><p>JOIN HARVESTNEARU</p><h2>Create your account</h2></div></div>
           <p className="signup-intro">Choose how you want to use the marketplace. You can update your profile later.</p>
           <div className="role-tabs" role="tablist" aria-label="Account type">
             <button className={signupRole === "consumer" ? "selected" : ""} onClick={() => setSignupRole("consumer")}><ShoppingBag size={19} /><span><strong>Consumer</strong><small>Shop fresh produce</small></span></button>
@@ -382,15 +382,15 @@ export default function Home() {
             <button className="create-account" type="submit">Create {signupRole} account <ArrowRight size={17} /></button>
           </form>
           <p className="signin-copy">Already have an account? <button onClick={() => { setSignupOpen(false); setSigninComplete(false); setSigninOpen(true); }}>Sign in</button></p>
-        </> : <div className="signup-success"><span><Check size={30} /></span><p>ACCOUNT CREATED</p><h2>Welcome to HarvestNear.</h2><p>{signupRole === "farmer" ? "Your farmer profile is ready for verification. Add your first harvest to get started." : "Your consumer account is ready. Fresh harvests near you are waiting."}</p><button onClick={() => { setSignupOpen(false); if (signupRole === "farmer") setView("farmer"); }}>{signupRole === "farmer" ? "Open farmer workspace" : "Start shopping"} <ArrowRight size={17} /></button></div>}
+        </> : <div className="signup-success"><span><Check size={30} /></span><p>ACCOUNT CREATED</p><h2>Welcome to HarvestNearU.</h2><p>{signupRole === "farmer" ? "Your farmer profile is ready for verification. Add your first harvest to get started." : "Your consumer account is ready. Fresh harvests near you are waiting."}</p><button onClick={() => { setSignupOpen(false); if (signupRole === "farmer") setView("farmer"); }}>{signupRole === "farmer" ? "Open farmer workspace" : "Start shopping"} <ArrowRight size={17} /></button></div>}
       </div></div>}
 
       {signinOpen && <div className="modal-overlay" onMouseDown={() => setSigninOpen(false)}><div className="signin-modal" onMouseDown={(event) => event.stopPropagation()}>
         <button className="close-modal" onClick={() => setSigninOpen(false)}><X size={20} /></button>
         {!signinComplete ? <>
-          <div className="auth-logo-lockup signin-brand"><img src="/brand/harvestnear-mark.png" alt="" /><img src="/brand/harvestnear-wordmark-header.png" alt="HarvestNear" /></div>
+          <div className="auth-logo-lockup signin-brand"><img className="auth-approved-lockup" src="/brand/harvestnearu-header-lockup.png" alt="HarvestNearU" /></div>
           <p className="auth-kicker">WELCOME BACK</p>
-          <h2>Sign in to HarvestNear</h2>
+          <h2>Sign in to HarvestNearU</h2>
           <p className="auth-intro">Continue shopping fresh harvests or manage your farm.</p>
           <form className="signin-form" onSubmit={(event) => { event.preventDefault(); setSigninComplete(true); }}>
             <label>Email or phone number<input required autoComplete="username" placeholder="you@example.com or +234..." /></label>
@@ -399,7 +399,7 @@ export default function Home() {
             <button className="signin-submit" type="submit">Sign in securely <ArrowRight size={17} /></button>
           </form>
           <div className="auth-divider"><span>or</span></div>
-          <p className="signin-copy">New to HarvestNear? <button onClick={() => { setSigninOpen(false); setSignupComplete(false); setSignupOpen(true); }}>Create an account</button></p>
+          <p className="signin-copy">New to HarvestNearU? <button onClick={() => { setSigninOpen(false); setSignupComplete(false); setSignupOpen(true); }}>Create an account</button></p>
         </> : <div className="signup-success"><span><Check size={30} /></span><p>SIGNED IN</p><h2>Good to have you back.</h2><p>Your account is ready and your saved basket is right where you left it.</p><button onClick={() => { setSigninOpen(false); setView("profile"); }}>Open my profile <ArrowRight size={17} /></button></div>}
       </div></div>}
     </div>
@@ -413,7 +413,7 @@ function LandingPage({ onShop, onFarmer }: { onShop: () => void; onFarmer: () =>
       <div className="landing-hero-shade" />
       <div className="landing-hero-content">
         <p className="landing-kicker"><span /> FRESH LOCAL PRODUCE, FOUND HERE</p>
-        <h1>HarvestNear.</h1>
+        <h1>HarvestNearU.</h1>
         <h2>Good food should not<br/>travel so far.</h2>
         <p>We connect households with trusted farmers nearby, making today&apos;s harvest visible, orderable, and easier to deliver.</p>
         <div className="landing-actions"><button onClick={onShop}>Explore nearby harvests <ArrowRight size={17}/></button><button onClick={onFarmer}><Store size={16}/> I&apos;m a farmer</button></div>
@@ -425,11 +425,11 @@ function LandingPage({ onShop, onFarmer }: { onShop: () => void; onFarmer: () =>
     <section className="landing-intro">
       <p>THE MARKET, MADE LOCAL</p>
       <h2>Farmers know what is ready.<br/>Consumers should know <em>where to find it.</em></h2>
-      <div><p>HarvestNear closes the information gap between a farmer&apos;s available harvest and a nearby household&apos;s next meal.</p><p>Farmers list produce by date and quantity. Consumers order only what they need until the harvest is sold out.</p></div>
+      <div><p>HarvestNearU closes the information gap between a farmer&apos;s available harvest and a nearby household&apos;s next meal.</p><p>Farmers list produce by date and quantity. Consumers order only what they need until the harvest is sold out.</p></div>
     </section>
 
     <section className="how-it-works">
-      <div className="landing-section-head"><div><p>HOW HARVESTNEAR WORKS</p><h2>From farm gate to your plate.</h2></div><span>A shorter, clearer journey for local food.</span></div>
+      <div className="landing-section-head"><div><p>HOW HARVESTNEARU WORKS</p><h2>From farm gate to your plate.</h2></div><span>A shorter, clearer journey for local food.</span></div>
       <div className="steps-line">
         <article><span>01</span><div><LocateFixed size={21}/></div><h3>Discover nearby</h3><p>Share your area and see available produce ranked by distance.</p></article>
         <article><span>02</span><div><ShoppingBag size={21}/></div><h3>Order what you need</h3><p>Buy practical quantities while live farmer inventory lasts.</p></article>
@@ -444,11 +444,11 @@ function LandingPage({ onShop, onFarmer }: { onShop: () => void; onFarmer: () =>
     </section>
 
     <section className="audience-band farmer-band">
-      <div className="audience-copy"><p>FOR FARMERS</p><h2>Your next customer<br/>may be nearby.</h2><p>Turn available harvest into visible inventory. Reach local buyers, sell down stock in practical portions, and manage orders from one clear workspace.</p><ul><li><Check size={14}/> Date-based produce listings</li><li><Check size={14}/> Live remaining-quantity controls</li><li><Check size={14}/> Order and payout visibility</li></ul><button onClick={onFarmer}>Sell on HarvestNear <ArrowRight size={16}/></button></div>
+      <div className="audience-copy"><p>FOR FARMERS</p><h2>Your next customer<br/>may be nearby.</h2><p>Turn available harvest into visible inventory. Reach local buyers, sell down stock in practical portions, and manage orders from one clear workspace.</p><ul><li><Check size={14}/> Date-based produce listings</li><li><Check size={14}/> Live remaining-quantity controls</li><li><Check size={14}/> Order and payout visibility</li></ul><button onClick={onFarmer}>Sell on HarvestNearU <ArrowRight size={16}/></button></div>
       <div className="audience-image"><img src="/produce/oyo-white-yam.webp" alt="Fresh yam ready for market"/><span><strong>72%</strong> of this harvest sold</span></div>
     </section>
 
-    <section className="landing-cta"><img src="/brand/harvestnear-mark.png" alt="HarvestNear mark"/><div><p>YOUR LOCAL HARVEST IS WAITING</p><h2>Find something fresh nearby.</h2><span>Start with today&apos;s produce and choose the journey that works for you.</span></div><button onClick={onShop}>Browse the market <ArrowRight size={17}/></button></section>
+    <section className="landing-cta"><img className="outlined-brand-mark" src="/brand/harvestnearu-mark-outline.png" alt="HarvestNearU mark"/><div><p>YOUR LOCAL HARVEST IS WAITING</p><h2>Find something fresh nearby.</h2><span>Start with today&apos;s produce and choose the journey that works for you.</span></div><button onClick={onShop}>Browse the market <ArrowRight size={17}/></button></section>
   </main>;
 }
 
@@ -456,15 +456,15 @@ function SiteFooter({ view, onNavigate }: { view: "landing" | "market" | "orders
   return <footer className="site-footer">
     <div className="footer-main">
       <div className="footer-brand">
-        <button className="footer-logo" onClick={() => onNavigate("landing")} aria-label="HarvestNear home"><img src="/brand/harvestnear-lockup.png" alt="HarvestNear — Fresh Local Produce, Found Here" /></button>
+        <button className="footer-logo" onClick={() => onNavigate("landing")} aria-label="HarvestNearU home"><img src="/brand/harvestnearu-footer-lockup.png" alt="HarvestNearU" /></button>
         <p>Fresh Nigerian produce, fair prices, and stronger local farming communities.</p>
-        <div className="footer-contact"><a href="mailto:hello@harvestnear.ng"><Mail size={15}/> hello@harvestnear.ng</a><a href="#" aria-label="HarvestNear social profile"><AtSign size={16}/></a></div>
+        <div className="footer-contact"><a href="mailto:hello@harvestnearu.com"><Mail size={15}/> hello@harvestnearu.com</a><a href="#" aria-label="HarvestNearU social profile"><AtSign size={16}/></a></div>
       </div>
-      <nav className="footer-links" aria-label="Marketplace links"><strong>Marketplace</strong><button className={view === "landing" ? "active" : ""} onClick={() => onNavigate("landing")}>About HarvestNear</button><button className={view === "market" ? "active" : ""} onClick={() => onNavigate("market")}>Shop produce</button><button className={view === "orders" ? "active" : ""} onClick={() => onNavigate("orders")}>My orders</button><button className={view === "farmer" ? "active" : ""} onClick={() => onNavigate("farmer")}>Farmer workspace</button></nav>
+      <nav className="footer-links" aria-label="Marketplace links"><strong>Marketplace</strong><button className={view === "landing" ? "active" : ""} onClick={() => onNavigate("landing")}>About HarvestNearU</button><button className={view === "market" ? "active" : ""} onClick={() => onNavigate("market")}>Shop produce</button><button className={view === "orders" ? "active" : ""} onClick={() => onNavigate("orders")}>My orders</button><button className={view === "farmer" ? "active" : ""} onClick={() => onNavigate("farmer")}>Farmer workspace</button></nav>
       <nav className="footer-links" aria-label="Support links"><strong>Account & support</strong><button className={view === "profile" ? "active" : ""} onClick={() => onNavigate("profile")}>My profile</button><button>Help centre</button><button>Delivery areas</button><button>Returns & refunds</button></nav>
       <div className="footer-newsletter"><strong>Harvest notes</strong><p>Weekly produce updates and seasonal picks from farms near you.</p><form onSubmit={(event) => event.preventDefault()}><label><span className="sr-only">Email address</span><input type="email" required placeholder="Email address"/></label><button aria-label="Subscribe"><ArrowRight size={16}/></button></form></div>
     </div>
-    <div className="footer-bottom"><span>© 2026 HarvestNear Nigeria</span><div><button>Privacy</button><button>Terms</button><button>Cookies</button></div><span className="footer-local"><MapPin size={12}/> Fresh Local Produce, Found Here</span></div>
+    <div className="footer-bottom"><span>© 2026 HarvestNearU Nigeria</span><div><button>Privacy</button><button>Terms</button><button>Cookies</button></div><span className="footer-local"><MapPin size={12}/> Fresh Local Produce, Found Here</span></div>
   </footer>;
 }
 
@@ -472,7 +472,7 @@ function ProfilePage() {
   const [role, setRole] = useState<"consumer" | "farmer">("consumer");
   const [editing, setEditing] = useState(false);
   return <main className="profile-page">
-    <header className="profile-heading"><div><p className="eyebrow"><span /> ACCOUNT</p><h1>My profile</h1><p>Manage your identity, preferences, and HarvestNear activity.</p></div><div className="profile-role-switch"><button className={role === "consumer" ? "selected" : ""} onClick={() => setRole("consumer")}><UserRound size={15}/> Consumer</button><button className={role === "farmer" ? "selected" : ""} onClick={() => setRole("farmer")}><Store size={15}/> Farmer</button></div></header>
+    <header className="profile-heading"><div><p className="eyebrow"><span /> ACCOUNT</p><h1>My profile</h1><p>Manage your identity, preferences, and HarvestNearU activity.</p></div><div className="profile-role-switch"><button className={role === "consumer" ? "selected" : ""} onClick={() => setRole("consumer")}><UserRound size={15}/> Consumer</button><button className={role === "farmer" ? "selected" : ""} onClick={() => setRole("farmer")}><Store size={15}/> Farmer</button></div></header>
 
     {role === "consumer" ? <div className="consumer-profile">
       <section className="profile-identity">
@@ -492,7 +492,7 @@ function ProfilePage() {
     </div> : <div className="farmer-profile">
       <section className="farm-identity">
         <div className="farm-cover"><img src="/produce/fresh-sweet-corn.webp" alt="Adebayo Family Farm produce"/><div/></div>
-        <div className="farm-identity-row"><span className="farm-avatar"><img src="/brand/harvestnear-mark.png" alt="Farm profile"/></span><div><span className="verified-label"><Check size={11}/> Verified farmer</span><h2>Adebayo Family Farm</h2><p><MapPin size={13}/> Kuje, Abuja · 2.4 km from Gudu</p></div><button onClick={() => setEditing((value) => !value)}>{editing ? "Save farm profile" : "Edit farm profile"}</button></div>
+        <div className="farm-identity-row"><span className="farm-avatar"><img src="/brand/harvestnearu-approved-mark.png" alt="Farm profile"/></span><div><span className="verified-label"><Check size={11}/> Verified farmer</span><h2>Adebayo Family Farm</h2><p><MapPin size={13}/> Kuje, Abuja · 2.4 km from Gudu</p></div><button onClick={() => setEditing((value) => !value)}>{editing ? "Save farm profile" : "Edit farm profile"}</button></div>
       </section>
 
       <section className="farm-summary"><div><span>FARM TYPE</span><strong>Family-owned mixed farm</strong></div><div><span>FARM SIZE</span><strong>6.5 hectares</strong></div><div><span>FARMING SINCE</span><strong>2014</strong></div><div><span>DELIVERY RADIUS</span><strong>15 km</strong></div><div><span>FARM RATING</span><strong><Star size={14} fill="currentColor"/> 4.9</strong></div></section>

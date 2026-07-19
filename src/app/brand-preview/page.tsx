@@ -17,7 +17,7 @@ export default function BrandPreview() {
   return <main className="type-preview">
     <header className="preview-header">
       <Link href="/"><ArrowLeft size={16}/> Back to marketplace</Link>
-      <p>HARVESTNEAR BRAND EXPLORATION</p>
+      <p>HARVESTNEARU BRAND EXPLORATION</p>
       <h1>Wordmark directions</h1>
       <span>Eight type personalities applied to the same brand lockup and color system.</span>
     </header>
@@ -26,9 +26,9 @@ export default function BrandPreview() {
         <div className="type-meta"><span>{String(index+1).padStart(2,"0")}</span><div><strong>{option.name}</strong><small>{option.note}</small></div>{option.recommended&&<b><Check size={11}/> Recommended</b>}</div>
         <div className="wordmark-stage">
           <span className="preview-mark"><Leaf size={26} strokeWidth={2.5}/></span>
-          <div><div className={`sample-wordmark ${option.className}`}><span>Harvest</span><em>Near</em></div><p>Today&apos;s harvest, closer.</p></div>
+          <div><div className={`sample-wordmark ${option.className}`}><span>Harvest</span><em>NearU</em></div><p>Today&apos;s harvest, closer.</p></div>
         </div>
-        <div className="small-test"><span>SMALL FORMAT</span><strong className={option.className}>Harvest<em>Near</em></strong><small>Clear at navigation size</small></div>
+        <div className="small-test"><span>SMALL FORMAT</span><strong className={option.className}>Harvest<em>NearU</em></strong><small>Clear at navigation size</small></div>
       </article>)}
     </section>
     <footer className="preview-note"><Leaf size={18}/><p><strong>Selection guidance</strong>Compare the lowercase shapes, the connection between “Harvest” and “Near,” and readability in the small-format row.</p></footer>
