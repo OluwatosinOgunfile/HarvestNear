@@ -36,7 +36,7 @@ import {
   EyeOff,
   X,
 } from "lucide-react";
-import { FormEvent, useMemo, useState, useSyncExternalStore } from "react";
+import { FormEvent, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
 type Product = {
   id: number;
@@ -143,6 +143,10 @@ export default function Home() {
   const [todayOnly, setTodayOnly] = useState(false);
   const [hideLowStock, setHideLowStock] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [view]);
 
   function toggleTheme() {
     const next = theme === "light" ? "dark" : "light";
