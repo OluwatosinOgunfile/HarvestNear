@@ -126,6 +126,9 @@ export default function Home() {
   const [cartOpen, setCartOpen] = useState(false);
   const [checkout, setCheckout] = useState(false);
   const [paid, setPaid] = useState(false);
+  const [checkoutBusy, setCheckoutBusy] = useState(false);
+  const [checkoutError, setCheckoutError] = useState("");
+  const [confirmedOrderNumber, setConfirmedOrderNumber] = useState("");
   const [delivery, setDelivery] = useState<"door" | "pickup">("door");
   const [liked, setLiked] = useState<string[]>([]);
   const theme = useSyncExternalStore(subscribeToTheme, getThemeSnapshot, () => "light");
@@ -269,6 +272,17 @@ export default function Home() {
       setCartOpen(false);
       openSignIn(true);
     }
+  }
+
+  async function completeOrder() {
+    setCheckoutBusy(true); setCheckoutError("");
+    try {
+      const response = await fetch("/api/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: items.map((item) => ({ listingId: item.id, quantity: cart[item.id] })), fulfilmentMethod: delivery }) });
+      const result = await response.json() as { orderNumber?: string; error?: string };
+      if (!response.ok || !result.orderNumber) throw new Error(result.error || "Could not complete order");
+      setConfirmedOrderNumber(result.orderNumber); setPaid(true);
+      setProducts((current) => current.map((product) => cart[product.id] ? { ...product, stock: Math.max(0, product.stock - cart[product.id]), sold: product.sold + cart[product.id] } : product));
+    } catch (error) { setCheckoutError((error as Error).message); } finally { setCheckoutBusy(false); }
   }
 
   function toggleTheme() {
@@ -475,7 +489,7 @@ export default function Home() {
             <div><Truck size={23} /><span><strong>Flexible fulfilment</strong>Doorstep delivery or farm pickup</span></div>
           </section>
         </main>
-      ) : view === "orders" && canPurchase ? <OrdersPage products={products} onShop={() => navigate("market")} /> : view === "profile" && (isConsumer || isFarmer) ? <ProfilePage products={products} role={isFarmer ? "farmer" : "consumer"} /> : view === "admin" && isAdmin ? <AdminPage readOnly={role === "support"} /> : view === "help" || view === "delivery" || view === "returns" ? <SupportPage page={view} onNavigate={navigate} /> : view === "farmer" && isFarmer ? <FarmerWorkspace onShop={() => navigate("market")} /> : <LandingPage stats={marketplaceStats} onShop={() => navigate("market")} onFarmer={() => navigate("farmer")} />}
+      ) : view === "orders" && canPurchase ? <DatabaseOrdersPage onShop={() => navigate("market")} /> : view === "profile" && (isConsumer || isFarmer) ? <ProfilePage products={products} role={isFarmer ? "farmer" : "consumer"} /> : view === "admin" && isAdmin ? <AdminPage readOnly={role === "support"} /> : view === "help" || view === "delivery" || view === "returns" ? <SupportPage page={view} onNavigate={navigate} /> : view === "farmer" && isFarmer ? <FarmerWorkspace onShop={() => navigate("market")} /> : <LandingPage stats={marketplaceStats} onShop={() => navigate("market")} onFarmer={() => navigate("farmer")} />}
 
       <SiteFooter view={view} user={currentUser} onNavigate={navigate} />
 
@@ -517,7 +531,7 @@ export default function Home() {
       </div>}
 
       {checkout && <div className="modal-overlay"><div className="payment-modal">
-        {!paid ? <><button className="close-modal" onClick={() => setCheckout(false)}><X size={20} /></button><div className="pay-icon"><Leaf size={24} /></div><p className="eyebrow center">PAYMENT</p><h2>Complete your order</h2><p>Your produce is reserved for <strong>09:42</strong></p><div className="pay-summary"><span>Total to pay</span><strong>{money(subtotal + deliveryFee)}</strong></div><label>Email address<input value={currentUser?.email || ""} readOnly /></label><button className="pay-button" onClick={() => setPaid(true)}>Pay securely with Paystack <ArrowRight size={18} /></button><small>Cards · Bank transfer · USSD</small></> : <div className="success-state"><span><Check size={30} /></span><p className="eyebrow center">ORDER CONFIRMED</p><h2>Your harvest is on its way.</h2><p>Order <strong>#FM-2048</strong> has been sent to {items.length} local {items.length === 1 ? "farmer" : "farmers"}.</p><button onClick={() => { setCheckout(false); setPaid(false); setCart({}); setView("orders"); }}>View order details</button></div>}
+        {!paid ? <><button className="close-modal" onClick={() => setCheckout(false)}><X size={20} /></button><div className="pay-icon"><Leaf size={24} /></div><p className="eyebrow center">PAYMENT</p><h2>Complete your order</h2><p>Stock availability will be confirmed when payment completes.</p><div className="pay-summary"><span>Total to pay</span><strong>{money(subtotal + deliveryFee)}</strong></div><label>Email address<input value={currentUser?.email || ""} readOnly /></label>{checkoutError && <p className="auth-error" role="alert">{checkoutError}</p>}<button className="pay-button" disabled={checkoutBusy} onClick={completeOrder}>{checkoutBusy ? "Confirming order..." : "Pay securely with Paystack"} {!checkoutBusy && <ArrowRight size={18} />}</button><small>Cards · Bank transfer · USSD</small></> : <div className="success-state"><span><Check size={30} /></span><p className="eyebrow center">ORDER CONFIRMED</p><h2>Your harvest is on its way.</h2><p>Order <strong>#{confirmedOrderNumber}</strong> has been sent to {items.length} local {items.length === 1 ? "farmer" : "farmers"}.</p><button onClick={() => { setCheckout(false); setPaid(false); setCart({}); setView("orders"); }}>View order details</button></div>}
       </div></div>}
 
       {signupOpen && <div className="modal-overlay" onMouseDown={() => setSignupOpen(false)}><div className="signup-modal" onMouseDown={(event) => event.stopPropagation()}>
@@ -888,6 +902,42 @@ function ProfilePage({ products, role }: { products: Product[]; role: "consumer"
   </main>;
 }
 
+type CustomerOrder = {
+  id: string; order_number: string; status: string; total_kobo: number; subtotal_kobo: number;
+  delivery_fee_kobo: number; fulfilment_method: string; delivery_address_snapshot: { city?: string; state?: string } | null;
+  placed_at: string; delivered_at: string | null;
+  items: Array<{ id: string; name: string; farm: string; unit: string; quantity: number; unit_price_kobo: number; image: string | null }>;
+};
+
+function DatabaseOrdersPage({ onShop }: { onShop: () => void }) {
+  const [orders, setOrders] = useState<CustomerOrder[]>([]);
+  const [tab, setTab] = useState<"active" | "past">("active");
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    fetch("/api/orders", { cache: "no-store" }).then(async (response) => {
+      const result = await response.json() as { orders?: CustomerOrder[]; error?: string };
+      if (!response.ok || !result.orders) throw new Error(result.error || "Could not load orders");
+      setOrders(result.orders);
+    }).catch((reason: Error) => setError(reason.message)).finally(() => setLoading(false));
+  }, []);
+  if (loading) return <DataLoading />;
+  if (error) return <main className="my-orders-page"><div className="empty-state"><X size={28}/><h3>Could not load your orders</h3><p>{error}</p></div></main>;
+  const pastStatuses = ["delivered", "collected", "cancelled", "refunded"];
+  const active = orders.filter((order) => !pastStatuses.includes(order.status));
+  const past = orders.filter((order) => pastStatuses.includes(order.status));
+  const shown = tab === "active" ? active : past;
+  const farmsSupported = new Set(orders.flatMap((order) => order.items.map((item) => item.farm))).size;
+  return <main className="my-orders-page">
+    <header className="orders-heading"><div><p className="eyebrow"><span/> YOUR PURCHASES</p><h1>My orders</h1><p>Follow your fresh produce from farm gate to fulfilment.</p></div><button onClick={onShop}><Plus size={17}/> Shop more produce</button></header>
+    <section className="order-overview"><div><span className="overview-icon moving"><Truck size={20}/></span><p><strong>{active.filter((order) => ["dispatched"].includes(order.status)).length}</strong><small>On the way</small></p></div><div><span className="overview-icon"><Clock3 size={20}/></span><p><strong>{active.filter((order) => ["confirmed","paid","preparing","ready"].includes(order.status)).length}</strong><small>In progress</small></p></div><div><span className="overview-icon"><PackageCheck size={20}/></span><p><strong>{past.filter((order) => ["delivered","collected"].includes(order.status)).length}</strong><small>Completed</small></p></div><div className="impact"><Leaf size={20}/><p><strong>{farmsSupported} farms</strong><small>supported locally</small></p></div></section>
+    <div className="orders-toolbar"><div className="order-tabs"><button className={tab === "active" ? "selected" : ""} onClick={() => setTab("active")}>Active orders <b>{active.length}</b></button><button className={tab === "past" ? "selected" : ""} onClick={() => setTab("past")}>Order history <b>{past.length}</b></button></div><button className="order-help"><Headphones size={16}/> Need help?</button></div>
+    {shown.length ? <div className="database-orders">{shown.map((order) => <article className="database-order" key={order.id}><button className="database-order-summary" onClick={() => setExpanded((current) => current === order.id ? null : order.id)}><span className={`status-pill ${order.status}`}><i/> {order.status.replaceAll("_", " ")}</span><span><strong>Order #{order.order_number}</strong><small>{new Date(order.placed_at).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" })} · {order.items.length} {order.items.length === 1 ? "item" : "items"}</small></span><b>{money(Number(order.total_kobo) / 100)}</b><ChevronDown className={expanded === order.id ? "open" : ""} size={18}/></button>{expanded === order.id && <div className="database-order-detail"><div className="database-order-items">{order.items.map((item) => <div key={item.id}>{item.image ? <img src={item.image} alt=""/> : <span><Leaf size={18}/></span>}<p><strong>{item.name}</strong><small>{item.quantity} {item.unit} · {item.farm}</small></p><b>{money(Number(item.unit_price_kobo) * Number(item.quantity) / 100)}</b></div>)}</div><div className="database-order-meta"><span><small>FULFILMENT</small><strong>{order.fulfilment_method.replaceAll("_", " ")}</strong></span><span><small>DELIVERY</small><strong>{money(Number(order.delivery_fee_kobo) / 100)}</strong></span><span><small>TOTAL</small><strong>{money(Number(order.total_kobo) / 100)}</strong></span></div></div>}</article>)}</div> : <div className="empty-state"><ShoppingBag size={28}/><h3>{tab === "active" ? "No active orders" : "No order history yet"}</h3><p>Your database-backed orders will appear here.</p><button onClick={onShop}>Explore produce</button></div>}
+  </main>;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function OrdersPage({ products, onShop }: { products: Product[]; onShop: () => void }) {
   const [tab, setTab] = useState<"active" | "past">("active");
   if (products.length < 6) return <DataLoading />;
