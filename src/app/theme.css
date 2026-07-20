@@ -48,7 +48,9 @@
 
 /* Motion is deliberately short and functional: it reinforces hierarchy without slowing repeat use. */
 .topbar { backdrop-filter:saturate(150%) blur(12px); }
-.app-shell[data-theme="dark"] .account-menu>button:hover{background:#222d26}.app-shell[data-theme="dark"] .account-menu-auth button:first-child{background:#19211c}
+.app-shell[data-theme="dark"] .account-menu>button:hover,.app-shell[data-theme="dark"] .account-menu-support button:hover{background:#222d26}.app-shell[data-theme="dark"] .account-menu-auth button:first-child{background:#19211c}.app-shell[data-theme="dark"] .account-menu-support button{color:var(--muted)}
+.app-shell[data-theme="dark"] .auth-error{color:#ffb8ad!important;background:#3a211d;border-color:#6d372f}
+.app-shell[data-theme="dark"] .account-menu-auth.signed-in button,.app-shell[data-theme="dark"] .account-menu-auth.signed-in button:first-child,.app-shell[data-theme="dark"] .account-menu-auth.signed-in button:last-child{color:#ffd1c9;background:#522820;border-color:#a45b50}.app-shell[data-theme="dark"] .account-menu-auth.signed-in button:hover{color:white;background:#b55243;border-color:#d5796b}.app-shell[data-theme="dark"] .account-menu-auth.signed-in button:focus-visible{outline-color:rgba(255,175,162,.45)}
 .brand-mark { transition:transform .25s ease, box-shadow .25s ease; }
 .brand:hover .brand-mark { transform:rotate(5deg) scale(1.06); box-shadow:0 6px 16px rgba(31,91,58,.22); }
 .icon-btn,.signin-trigger,.signup-trigger,.cart-button,.add-button,.filter-button,.category-row button,.checkout-button,.create-account,.signin-submit { transition:transform .18s ease, box-shadow .18s ease, background-color .18s ease, border-color .18s ease; }

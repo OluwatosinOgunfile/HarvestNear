@@ -9,6 +9,8 @@ import "./profile.css";
 import "./notifications.css";
 import "./brand-header.css";
 import "./steps.css";
+import "./support.css";
+import "./admin.css";
 
 export const metadata: Metadata = {
   title: "HarvestNearU | Fresh Local Produce, Found Here",

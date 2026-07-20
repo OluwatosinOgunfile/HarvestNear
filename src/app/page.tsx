@@ -30,6 +30,7 @@ import {
   Star,
   Store,
   Sun,
+  Trash2,
   Truck,
   UserRound,
   Eye,
@@ -39,7 +40,7 @@ import {
 import { FormEvent, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
 type Product = {
-  id: number;
+  id: string;
   name: string;
   farmer: string;
   location: string;
@@ -55,31 +56,18 @@ type Product = {
   badge?: string;
 };
 
-const products: Product[] = [
-  { id: 1, name: "Vine-ripe tomatoes", farmer: "Adebayo Family Farm", location: "Kuje, Abuja", distance: 2.4, price: 1250, unit: "basket", stock: 18, sold: 72, category: "Vegetables", available: "Today", rating: 4.9, badge: "Selling fast", image: "/produce/vine-ripe-tomatoes.webp" },
-  { id: 2, name: "Fresh sweet corn", farmer: "Mama Ifeanyi Farms", location: "Gwagwalada, Abuja", distance: 4.7, price: 1800, unit: "dozen", stock: 32, sold: 48, category: "Vegetables", available: "Today", rating: 4.8, image: "/produce/fresh-sweet-corn.webp" },
-  { id: 3, name: "Oyo white yam", farmer: "Tunde Harvest Co.", location: "Kwali, Abuja", distance: 7.1, price: 3200, unit: "tuber", stock: 24, sold: 36, category: "Tubers", available: "Tomorrow", rating: 4.7, badge: "New harvest", image: "/produce/oyo-white-yam.webp" },
-  { id: 4, name: "Red scotch bonnet", farmer: "Haske Greenfields", location: "Lugbe, Abuja", distance: 8.3, price: 950, unit: "paint bowl", stock: 11, sold: 84, category: "Vegetables", available: "Today", rating: 4.9, badge: "Almost gone", image: "/produce/red-scotch-bonnet.webp" },
-  { id: 5, name: "Sweet ripe plantain", farmer: "Olaoluwa Farms", location: "Giri, Abuja", distance: 11.6, price: 2600, unit: "bunch", stock: 27, sold: 51, category: "Fruits", available: "Sat, 20 Jul", rating: 4.6, image: "/produce/sweet-ripe-plantain.webp" },
-  { id: 6, name: "Brown honey beans", farmer: "Nana Grains", location: "Zuba, Abuja", distance: 14.2, price: 2400, unit: "mudu", stock: 46, sold: 29, category: "Grains", available: "Today", rating: 4.8, image: "/produce/brown-honey-beans.webp" },
-  { id: 7, name: "Garden-fresh spinach", farmer: "Green Basket Farms", location: "Jabi, Abuja", distance: 3.1, price: 700, unit: "bundle", stock: 21, sold: 63, category: "Vegetables", available: "Today", rating: 4.7, badge: "Picked today", image: "/produce/garden-fresh-spinach.webp" },
-  { id: 8, name: "Free-range brown eggs", farmer: "Dutse Poultry Hub", location: "Dutse, Abuja", distance: 6.5, price: 5800, unit: "crate", stock: 16, sold: 54, category: "Eggs", available: "Today", rating: 4.9, image: "/produce/free-range-brown-eggs.webp" },
-  { id: 9, name: "Purple red onions", farmer: "Suleiman Produce", location: "Dei-Dei, Abuja", distance: 9.4, price: 1650, unit: "basket", stock: 38, sold: 42, category: "Vegetables", available: "Tomorrow", rating: 4.6, image: "/produce/purple-red-onions.webp" },
-  { id: 10, name: "Golden pineapple", farmer: "Sunrise Orchard", location: "Bwari, Abuja", distance: 12.8, price: 1400, unit: "piece", stock: 29, sold: 61, category: "Fruits", available: "Sat, 20 Jul", rating: 4.8, badge: "Sweet pick", image: "/produce/golden-pineapple.webp" },
-  { id: 11, name: "Fresh cassava roots", farmer: "Unity Root Crops", location: "Karu, Abuja", distance: 15.7, price: 1900, unit: "bundle", stock: 44, sold: 26, category: "Tubers", available: "Tomorrow", rating: 4.5, image: "/produce/fresh-cassava-roots.webp" },
-  { id: 12, name: "Local ofada rice", farmer: "Abuja Grain Collective", location: "Abaji, Abuja", distance: 18.6, price: 4200, unit: "5 kg bag", stock: 52, sold: 33, category: "Grains", available: "Today", rating: 4.7, image: "/produce/local-ofada-rice.webp" },
-  { id: 13, name: "Crunchy carrots", farmer: "Jos Valley Produce", location: "Maitama, Abuja", distance: 5.2, price: 1100, unit: "bundle", stock: 35, sold: 45, category: "Vegetables", available: "Today", rating: 4.8, image: "/produce/crunchy-carrots.webp" },
-  { id: 14, name: "Creamy avocados", farmer: "Highland Orchard", location: "Asokoro, Abuja", distance: 6.9, price: 1500, unit: "set of 4", stock: 23, sold: 57, category: "Fruits", available: "Today", rating: 4.9, badge: "In season", image: "/produce/creamy-avocados.webp" },
-  { id: 15, name: "Fresh cucumbers", farmer: "Riverbend Gardens", location: "Wuse, Abuja", distance: 4.3, price: 850, unit: "set of 5", stock: 41, sold: 39, category: "Vegetables", available: "Tomorrow", rating: 4.6, image: "/produce/fresh-cucumbers.webp" },
-  { id: 16, name: "Tender green okra", farmer: "Zainab Fresh Fields", location: "Nyanya, Abuja", distance: 10.7, price: 900, unit: "basket", stock: 19, sold: 66, category: "Vegetables", available: "Today", rating: 4.7, badge: "Popular", image: "/produce/tender-green-okra.webp" },
-  { id: 17, name: "Sweet watermelon", farmer: "Gurara Melon Farm", location: "Kubusa, Abuja", distance: 13.4, price: 2300, unit: "piece", stock: 28, sold: 52, category: "Fruits", available: "Sat, 20 Jul", rating: 4.8, image: "/produce/sweet-watermelon.webp" },
-  { id: 18, name: "Aromatic ginger", farmer: "Roots & Spice Co.", location: "Kubwa, Abuja", distance: 11.2, price: 1300, unit: "1 kg", stock: 34, sold: 31, category: "Tubers", available: "Today", rating: 4.6, image: "/produce/aromatic-ginger.webp" },
-  { id: 19, name: "Juicy sweet oranges", farmer: "Nasarawa Citrus Farm", location: "Mararaba, Abuja", distance: 16.1, price: 1750, unit: "dozen", stock: 47, sold: 53, category: "Fruits", available: "Tomorrow", rating: 4.8, image: "/produce/juicy-sweet-oranges.webp" },
-  { id: 20, name: "Pearl millet grain", farmer: "Sahel Grain House", location: "Gwagwa, Abuja", distance: 17.3, price: 2800, unit: "5 kg bag", stock: 58, sold: 22, category: "Grains", available: "Today", rating: 4.5, image: "/produce/pearl-millet-grain.webp" },
-];
+type MarketplaceStats = {
+  farms: number;
+  listings: number;
+  averageRating: number;
+  consumers: number;
+  farmers: number;
+};
 
 const categories = ["All produce", "Vegetables", "Fruits", "Tubers", "Grains", "Eggs"];
 type Theme = "light" | "dark";
+type View = "landing" | "market" | "orders" | "farmer" | "admin" | "profile" | "help" | "delivery" | "returns";
+type CurrentUser = { id: string; email: string; firstName: string; lastName: string; role: "consumer" | "farmer" | "admin" | "support" };
 type NotificationItem = {
   id: number;
   type: "order" | "delivery" | "harvest" | "account";
@@ -116,21 +104,34 @@ function money(value: number) {
 }
 
 export default function Home() {
-  const [view, setView] = useState<"landing" | "market" | "orders" | "farmer" | "profile">("landing");
+  const [products, setProducts] = useState<Product[]>([]);
+  const [marketplaceStats, setMarketplaceStats] = useState<MarketplaceStats | null>(null);
+  const [productsLoading, setProductsLoading] = useState(true);
+  const [productsError, setProductsError] = useState(false);
+  const [view, setView] = useState<View>("landing");
   const [category, setCategory] = useState("All produce");
   const [query, setQuery] = useState("");
-  const [cart, setCart] = useState<Record<number, number>>({});
+  const [cart, setCart] = useState<Record<string, number>>({});
   const [cartOpen, setCartOpen] = useState(false);
   const [checkout, setCheckout] = useState(false);
   const [paid, setPaid] = useState(false);
   const [delivery, setDelivery] = useState<"door" | "pickup">("door");
-  const [liked, setLiked] = useState<number[]>([]);
+  const [liked, setLiked] = useState<string[]>([]);
   const theme = useSyncExternalStore(subscribeToTheme, getThemeSnapshot, () => "light");
   const [signupOpen, setSignupOpen] = useState(false);
   const [signupRole, setSignupRole] = useState<"consumer" | "farmer">("consumer");
   const [signupComplete, setSignupComplete] = useState(false);
+  const [signupError, setSignupError] = useState("");
+  const [signupBusy, setSignupBusy] = useState(false);
   const [signinOpen, setSigninOpen] = useState(false);
   const [signinComplete, setSigninComplete] = useState(false);
+  const [signinIdentifier, setSigninIdentifier] = useState("");
+  const [signinPassword, setSigninPassword] = useState("");
+  const [signinError, setSigninError] = useState("");
+  const [signinBusy, setSigninBusy] = useState(false);
+  const [pendingCheckout, setPendingCheckout] = useState(false);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [sessionLoading, setSessionLoading] = useState(true);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notificationFilter, setNotificationFilter] = useState<"all" | "unread">("all");
@@ -148,15 +149,144 @@ export default function Home() {
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
   }, [view]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    async function loadProduce() {
+      try {
+        const response = await fetch("/api/produce", { signal: controller.signal });
+        if (!response.ok) throw new Error("Could not load produce");
+        const data = await response.json() as { produce: Product[]; stats: MarketplaceStats };
+        setProducts(data.produce);
+        setMarketplaceStats(data.stats);
+        setProductsError(false);
+      } catch (error) {
+        if ((error as Error).name !== "AbortError") setProductsError(true);
+      } finally {
+        if (!controller.signal.aborted) setProductsLoading(false);
+      }
+    }
+    loadProduce();
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/auth/session")
+      .then((response) => response.json())
+      .then((data: { user: CurrentUser | null }) => setCurrentUser(data.user))
+      .finally(() => setSessionLoading(false));
+  }, []);
+
+  const role = currentUser?.role;
+  const isConsumer = role === "consumer";
+  const isFarmer = role === "farmer";
+  const isAdmin = role === "admin" || role === "support";
+  const canPurchase = isConsumer || isFarmer;
+
+  function openSignIn(resumeCheckout = false) {
+    setSigninIdentifier("");
+    setSigninPassword("");
+    setSigninError("");
+    setSigninComplete(false);
+    setShowPassword(false);
+    setPendingCheckout(resumeCheckout);
+    setSigninOpen(true);
+  }
+
+  function closeSignIn() {
+    setSigninOpen(false);
+    setPendingCheckout(false);
+  }
+
+  function navigate(next: View) {
+    const protectedView = next === "orders" || next === "farmer" || next === "admin" || next === "profile";
+    if (!currentUser && protectedView) {
+      openSignIn(false);
+      return;
+    }
+    if ((next === "market" && isAdmin) || (next === "orders" && !canPurchase) || (next === "farmer" && !isFarmer) || (next === "admin" && !isAdmin) || (next === "profile" && !isConsumer && !isFarmer)) return;
+    setView(next);
+  }
+
+  async function signIn(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSigninBusy(true);
+    setSigninError("");
+    try {
+      const response = await fetch("/api/auth/signin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ identifier: signinIdentifier, password: signinPassword }) });
+      const data = await response.json() as { user?: CurrentUser; error?: string };
+      if (!response.ok || !data.user) throw new Error(data.error || "Sign in failed");
+      setCurrentUser(data.user);
+      if (pendingCheckout && ["consumer", "farmer"].includes(data.user.role)) {
+        setPendingCheckout(false);
+        setSigninOpen(false);
+        setCartOpen(false);
+        setCheckout(true);
+        return;
+      }
+      setPendingCheckout(false);
+      setSigninComplete(true);
+    } catch (error) {
+      setSigninError((error as Error).message);
+    } finally {
+      setSigninBusy(false);
+    }
+  }
+
+  async function signOut() {
+    await fetch("/api/auth/signout", { method: "POST" });
+    setCurrentUser(null);
+    setAccountMenuOpen(false);
+    setView("landing");
+  }
+
+  async function beginCheckout() {
+    try {
+      const response = await fetch("/api/auth/session", { cache: "no-store" });
+      const data = await response.json() as { user: CurrentUser | null };
+      if (!response.ok || !data.user || !["consumer", "farmer"].includes(data.user.role)) {
+        setCurrentUser(data.user || null);
+        setCartOpen(false);
+        openSignIn(true);
+        return;
+      }
+      setCurrentUser(data.user);
+      setCartOpen(false);
+      setCheckout(true);
+    } catch {
+      setCartOpen(false);
+      openSignIn(true);
+    }
+  }
+
   function toggleTheme() {
     const next = theme === "light" ? "dark" : "light";
     localStorage.setItem("harvest-near-theme", next);
     window.dispatchEvent(new Event("harvest-near-theme-change"));
   }
 
-  function submitSignup(event: FormEvent<HTMLFormElement>) {
+  async function submitSignup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setSignupComplete(true);
+    setSignupBusy(true);
+    setSignupError("");
+    const form = new FormData(event.currentTarget);
+    try {
+      const response = await fetch("/api/auth/signup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ firstName: form.get("firstName"), lastName: form.get("lastName"), phone: form.get("phone"), email: form.get("email"), password: form.get("password"), role: signupRole, farmName: form.get("farmName"), farmLocation: form.get("farmLocation") }) });
+      const data = await response.json() as { user?: CurrentUser; error?: string };
+      if (!response.ok || !data.user) throw new Error(data.error || "Account creation failed");
+      setCurrentUser(data.user);
+      if (pendingCheckout && ["consumer", "farmer"].includes(data.user.role)) {
+        setPendingCheckout(false);
+        setSignupOpen(false);
+        setCartOpen(false);
+        setCheckout(true);
+        return;
+      }
+      setSignupComplete(true);
+    } catch (error) {
+      setSignupError((error as Error).message);
+    } finally {
+      setSignupBusy(false);
+    }
   }
 
   const visible = useMemo(() => {
@@ -173,7 +303,7 @@ export default function Home() {
       if (sortBy === "stock") return b.stock - a.stock;
       return a.distance - b.distance;
     });
-  }, [category, query, maxDistance, maxPrice, todayOnly, hideLowStock, sortBy]);
+  }, [products, category, query, maxDistance, maxPrice, todayOnly, hideLowStock, sortBy]);
 
   const activeFilterCount = Number(maxDistance < 20) + Number(maxPrice < 6000) + Number(todayOnly) + Number(hideLowStock);
   const pageSize = 8;
@@ -191,14 +321,14 @@ export default function Home() {
   function openNotification(item: NotificationItem) {
     setReadNotifications((current) => current.includes(item.id) ? current : [...current, item.id]);
     setNotificationOpen(false);
-    setView(item.target);
+    navigate(item.target);
   }
 
   function add(product: Product) {
     setCart((current) => ({ ...current, [product.id]: Math.min((current[product.id] || 0) + 1, product.stock) }));
   }
 
-  function update(id: number, delta: number) {
+  function update(id: string, delta: number) {
     setCart((current) => {
       const next = Math.max(0, (current[id] || 0) + delta);
       const copy = { ...current };
@@ -210,15 +340,16 @@ export default function Home() {
   return (
     <div className="app-shell" data-theme={theme}>
       <header className="topbar">
-        <button className="brand brand-image" onClick={() => setView("landing")} aria-label="HarvestNearU home"><img className="brand-lockup" src="/brand/harvestnearu-header-lockup.png" alt="HarvestNearU" /></button>
+        <button className="brand brand-image" onClick={() => navigate("landing")} aria-label="HarvestNearU home"><img className="brand-lockup" src="/brand/harvestnearu-header-lockup.png" alt="HarvestNearU" /></button>
         <nav className="main-nav" aria-label="Main navigation">
-          <button className={view === "landing" ? "active" : ""} onClick={() => setView("landing")}>Home</button>
-          <button className={view === "market" ? "active" : ""} onClick={() => setView("market")}>Shop produce</button>
-          <button className={view === "orders" ? "active" : ""} onClick={() => setView("orders")}>My orders</button>
-          <button className={view === "farmer" ? "active" : ""} onClick={() => setView("farmer")}>Sell on HarvestNearU</button>
+          <button className={view === "landing" ? "active" : ""} onClick={() => navigate("landing")}>Home</button>
+          {!isAdmin && <button className={view === "market" ? "active" : ""} onClick={() => navigate("market")}>Shop produce</button>}
+          {canPurchase && <button className={view === "orders" ? "active" : ""} onClick={() => navigate("orders")}>My orders</button>}
+          {isFarmer && <button className={view === "farmer" ? "active" : ""} onClick={() => navigate("farmer")}>Farmer workspace</button>}
+          {isAdmin && <button className={view === "admin" ? "active" : ""} onClick={() => navigate("admin")}>Administration</button>}
         </nav>
         <div className="header-actions">
-          <button className="cart-button" onClick={() => setCartOpen(true)} aria-label={`Open basket${itemCount ? `, ${itemCount} ${itemCount === 1 ? "item" : "items"}` : ", empty"}`} title="Basket"><ShoppingBag size={18} />{itemCount > 0 && <b>{itemCount}</b>}</button>
+          {!isAdmin && <button className="cart-button" onClick={() => setCartOpen(true)} aria-label={`Open basket${itemCount ? `, ${itemCount} ${itemCount === 1 ? "item" : "items"}` : ", empty"}`} title="Basket"><ShoppingBag size={18} />{itemCount > 0 && <b>{itemCount}</b>}</button>}
           <div className="account-menu-wrap">
             <button className={`account-menu-trigger ${accountMenuOpen ? "active" : ""}`} onClick={() => setAccountMenuOpen((open) => !open)} aria-expanded={accountMenuOpen} aria-haspopup="menu">
               <span className="account-avatar"><UserRound size={17} /></span><ChevronDown size={15} /><span className="sr-only">Account menu</span>
@@ -226,14 +357,20 @@ export default function Home() {
             {accountMenuOpen && <>
               <button className="account-menu-backdrop" aria-label="Close account menu" onClick={() => setAccountMenuOpen(false)} />
               <div className="account-menu" role="menu">
-                <div className="account-menu-heading"><span className="account-avatar"><UserRound size={17} /></span><div><strong>Welcome to HarvestNearU</strong><small>Manage your account and preferences</small></div></div>
-                <button role="menuitem" onClick={() => { setView("profile"); setAccountMenuOpen(false); }}><UserRound size={17} /><span><strong>My profile</strong><small>Customer and farm information</small></span><ChevronRight size={15} /></button>
-                <button role="menuitem" onClick={() => { setAccountMenuOpen(false); setNotificationOpen(true); }}><Bell size={17} /><span><strong>Notifications</strong><small>Orders, harvests and delivery updates</small></span>{unreadNotificationCount > 0 && <i>{unreadNotificationCount}</i>}</button>
+                <div className="account-menu-heading"><span className="account-avatar"><UserRound size={17} /></span><div><strong>{currentUser ? `${currentUser.firstName} ${currentUser.lastName}` : sessionLoading ? "Checking your account" : "Welcome to HarvestNearU"}</strong><small>{currentUser ? `${currentUser.role} account` : "Manage your account and preferences"}</small></div></div>
+                {currentUser && !isAdmin && <button role="menuitem" onClick={() => { navigate("profile"); setAccountMenuOpen(false); }}><UserRound size={17} /><span><strong>My profile</strong><small>{isFarmer ? "Farm and owner information" : "Customer information"}</small></span><ChevronRight size={15} /></button>}
+                {isAdmin && <button role="menuitem" onClick={() => { navigate("admin"); setAccountMenuOpen(false); }}><SlidersHorizontal size={17} /><span><strong>Administration</strong><small>Marketplace operations</small></span><ChevronRight size={15} /></button>}
+                {currentUser && <button role="menuitem" onClick={() => { setAccountMenuOpen(false); setNotificationOpen(true); }}><Bell size={17} /><span><strong>Notifications</strong><small>Orders, harvests and delivery updates</small></span>{unreadNotificationCount > 0 && <i>{unreadNotificationCount}</i>}</button>}
                 <button role="menuitem" onClick={toggleTheme}>{theme === "light" ? <Moon size={17} /> : <Sun size={17} />}<span><strong>{theme === "light" ? "Dark theme" : "Light theme"}</strong><small>Change the appearance</small></span><span className={`theme-switch ${theme === "dark" ? "on" : ""}`}><b /></span></button>
-                <div className="account-menu-auth">
-                  <button onClick={() => { setAccountMenuOpen(false); setSigninComplete(false); setSigninOpen(true); }}><LogIn size={16} /> Sign in</button>
-                  <button onClick={() => { setAccountMenuOpen(false); setSignupComplete(false); setSignupOpen(true); }}><UserRound size={16} /> Create account</button>
+                <div className="account-menu-support" aria-label="Help and support">
+                  <button role="menuitem" onClick={() => { setView("help"); setAccountMenuOpen(false); }}><Headphones size={16} /><span>Help centre</span></button>
+                  <button role="menuitem" onClick={() => { setView("delivery"); setAccountMenuOpen(false); }}><MapPin size={16} /><span>Delivery areas</span></button>
+                  <button role="menuitem" onClick={() => { setView("returns"); setAccountMenuOpen(false); }}><RotateCcw size={16} /><span>Returns & refunds</span></button>
                 </div>
+                {!currentUser ? <div className="account-menu-auth">
+                  <button onClick={() => { setAccountMenuOpen(false); openSignIn(false); }}><LogIn size={16} /> Sign in</button>
+                  <button onClick={() => { setAccountMenuOpen(false); setSignupComplete(false); setSignupOpen(true); }}><UserRound size={16} /> Create account</button>
+                </div> : <div className="account-menu-auth signed-in"><button onClick={signOut}><LogIn size={16} /> Sign out</button></div>}
               </div>
             </>}
           </div>
@@ -241,13 +378,15 @@ export default function Home() {
       </header>
 
       <nav className="mobile-nav" aria-label="Mobile navigation">
-        <button className={view === "landing" ? "active" : ""} onClick={() => setView("landing")}><House size={17} /><span>Home</span></button>
-        <button className={view === "market" ? "active" : ""} onClick={() => setView("market")}><ShoppingBag size={17} /><span>Shop</span></button>
-        <button className={view === "orders" ? "active" : ""} onClick={() => setView("orders")}><PackageCheck size={17} /><span>Orders</span></button>
-        <button className={view === "farmer" ? "active" : ""} onClick={() => setView("farmer")}><Store size={17} /><span>Sell</span></button>
+        <button className={view === "landing" ? "active" : ""} onClick={() => navigate("landing")}><House size={17} /><span>Home</span></button>
+        {!isAdmin && <button className={view === "market" ? "active" : ""} onClick={() => navigate("market")}><ShoppingBag size={17} /><span>Shop</span></button>}
+        {canPurchase && <button className={view === "orders" ? "active" : ""} onClick={() => navigate("orders")}><PackageCheck size={17} /><span>Orders</span></button>}
+        {isFarmer && <button className={view === "farmer" ? "active" : ""} onClick={() => navigate("farmer")}><Store size={17} /><span>Farm</span></button>}
+        {isAdmin && <button className={view === "admin" ? "active" : ""} onClick={() => navigate("admin")}><SlidersHorizontal size={17} /><span>Admin</span></button>}
+        {!currentUser && <button onClick={() => openSignIn(false)}><LogIn size={17}/><span>Sign in</span></button>}
       </nav>
 
-      {view === "landing" ? <LandingPage onShop={() => setView("market")} onFarmer={() => setView("farmer")} /> : view === "market" ? (
+      {view === "landing" ? <LandingPage stats={marketplaceStats} onShop={() => navigate("market")} onFarmer={() => navigate("farmer")} /> : view === "market" ? (
         <main>
           <section className="market-intro">
             <div className="intro-copy">
@@ -256,9 +395,9 @@ export default function Home() {
               <p>Buy today&apos;s harvest directly from trusted farmers near you. Fresher produce, fairer prices, stronger local communities.</p>
             </div>
             <div className="market-stats">
-              <div><strong>42</strong><span>farms nearby</span></div>
-              <div><strong>136</strong><span>fresh listings</span></div>
-              <div><strong>4.8</strong><span>average rating</span></div>
+              <div><strong>{marketplaceStats?.farms ?? "—"}</strong><span>verified farms</span></div>
+              <div><strong>{marketplaceStats?.listings ?? "—"}</strong><span>fresh listings</span></div>
+              <div><strong>{marketplaceStats?.averageRating ?? "—"}</strong><span>average rating</span></div>
             </div>
           </section>
 
@@ -284,7 +423,7 @@ export default function Home() {
               {categories.map((item) => <button key={item} onClick={() => { setCategory(item); setCurrentPage(1); }} className={category === item ? "selected" : ""}>{item}</button>)}
             </div>
 
-            {visible.length ? <div className="product-grid">
+            {productsLoading ? <div className="empty-state"><Clock3 size={28} /><h3>Loading nearby harvests</h3><p>Checking today&apos;s availability with local farms.</p></div> : productsError ? <div className="empty-state"><RotateCcw size={28} /><h3>Could not load harvests</h3><p>Please refresh the page to try again.</p></div> : visible.length ? <div className="product-grid">
               {paginatedProducts.map((product) => (
                 <article className="product-card" key={product.id}>
                   <div className="product-image">
@@ -322,9 +461,9 @@ export default function Home() {
             <div><Truck size={23} /><span><strong>Flexible fulfilment</strong>Doorstep delivery or farm pickup</span></div>
           </section>
         </main>
-      ) : view === "orders" ? <OrdersPage onShop={() => setView("market")} /> : view === "profile" ? <ProfilePage /> : <FarmerDashboard onShop={() => setView("market")} />}
+      ) : view === "orders" && canPurchase ? <OrdersPage products={products} onShop={() => navigate("market")} /> : view === "profile" && (isConsumer || isFarmer) ? <ProfilePage products={products} role={isFarmer ? "farmer" : "consumer"} /> : view === "admin" && isAdmin ? <AdminPage readOnly={role === "support"} /> : view === "help" || view === "delivery" || view === "returns" ? <SupportPage page={view} onNavigate={navigate} /> : view === "farmer" && isFarmer ? <FarmerDashboard products={products} onShop={() => navigate("market")} /> : <LandingPage stats={marketplaceStats} onShop={() => navigate("market")} onFarmer={() => navigate("farmer")} />}
 
-      <SiteFooter view={view} onNavigate={setView} />
+      <SiteFooter view={view} user={currentUser} onNavigate={navigate} />
 
       {cartOpen && <div className="overlay" onMouseDown={() => setCartOpen(false)}>
         <aside className="cart-drawer" onMouseDown={(e) => e.stopPropagation()}>
@@ -336,7 +475,7 @@ export default function Home() {
               <div className="stepper"><button onClick={() => update(product.id, -1)}><Minus size={14} /></button><span>{cart[product.id]}</span><button onClick={() => update(product.id, 1)}><Plus size={14} /></button></div>
             </div>)}</div>
             <div className="delivery-choice"><p>How would you like it?</p><button className={delivery === "door" ? "selected" : ""} onClick={() => setDelivery("door")}><Truck size={20} /><span><strong>Doorstep delivery</strong><small>Tomorrow, 9am–1pm</small></span><b>{money(1800)}</b></button><button className={delivery === "pickup" ? "selected" : ""} onClick={() => setDelivery("pickup")}><Store size={20} /><span><strong>Pickup from collection hub</strong><small>Gudu Market · 2.1 km</small></span><b>Free</b></button></div>
-            <div className="cart-total"><p><span>Subtotal</span><strong>{money(subtotal)}</strong></p><p><span>Delivery</span><strong>{deliveryFee ? money(deliveryFee) : "Free"}</strong></p><p className="total"><span>Total</span><strong>{money(subtotal + deliveryFee)}</strong></p><button className="checkout-button" onClick={() => { setCartOpen(false); setCheckout(true); }}>Continue to payment <ArrowRight size={18} /></button><small>Secure payment powered by Paystack</small></div>
+            <div className="cart-total"><p><span>Subtotal</span><strong>{money(subtotal)}</strong></p><p><span>Delivery</span><strong>{deliveryFee ? money(deliveryFee) : "Free"}</strong></p><p className="total"><span>Total</span><strong>{money(subtotal + deliveryFee)}</strong></p><button className="checkout-button" onClick={beginCheckout}>Continue to payment <ArrowRight size={18} /></button><small>Secure payment powered by Paystack</small></div>
           </> : <div className="empty-cart"><ShoppingBag size={34} /><h3>Your basket is empty</h3><p>Add fresh produce from a farm near you.</p><button onClick={() => setCartOpen(false)}>Explore harvests</button></div>}
         </aside>
       </div>}
@@ -359,12 +498,12 @@ export default function Home() {
               {unread && <button className="mark-read" onClick={() => setReadNotifications((current) => [...current, item.id])} aria-label={`Mark ${item.title} as read`} title="Mark as read"><Check size={14} /></button>}
             </article>;
           })}</div> : <div className="notification-empty"><Check size={27} /><h3>No unread notifications</h3><p>New order and harvest updates will appear here.</p><button onClick={() => setNotificationFilter("all")}>View all notifications</button></div>}
-          <div className="notification-settings"><Bell size={14} /><span>Control which updates you receive from your profile preferences.</span><button onClick={() => { setNotificationOpen(false); setView("profile"); }}>Preferences</button></div>
+          <div className="notification-settings"><Bell size={14} /><span>Control which updates you receive from your profile preferences.</span>{!isAdmin && <button onClick={() => { setNotificationOpen(false); navigate("profile"); }}>Preferences</button>}</div>
         </aside>
       </div>}
 
       {checkout && <div className="modal-overlay"><div className="payment-modal">
-        {!paid ? <><button className="close-modal" onClick={() => setCheckout(false)}><X size={20} /></button><div className="pay-icon"><Leaf size={24} /></div><p className="eyebrow center">PAYMENT</p><h2>Complete your order</h2><p>Your produce is reserved for <strong>09:42</strong></p><div className="pay-summary"><span>Total to pay</span><strong>{money(subtotal + deliveryFee)}</strong></div><label>Email address<input defaultValue="tola.adebayo@example.com" /></label><button className="pay-button" onClick={() => setPaid(true)}>Pay securely with Paystack <ArrowRight size={18} /></button><small>Cards · Bank transfer · USSD</small></> : <div className="success-state"><span><Check size={30} /></span><p className="eyebrow center">ORDER CONFIRMED</p><h2>Your harvest is on its way.</h2><p>Order <strong>#FM-2048</strong> has been sent to {items.length} local {items.length === 1 ? "farmer" : "farmers"}.</p><button onClick={() => { setCheckout(false); setPaid(false); setCart({}); setView("orders"); }}>View order details</button></div>}
+        {!paid ? <><button className="close-modal" onClick={() => setCheckout(false)}><X size={20} /></button><div className="pay-icon"><Leaf size={24} /></div><p className="eyebrow center">PAYMENT</p><h2>Complete your order</h2><p>Your produce is reserved for <strong>09:42</strong></p><div className="pay-summary"><span>Total to pay</span><strong>{money(subtotal + deliveryFee)}</strong></div><label>Email address<input value={currentUser?.email || ""} readOnly /></label><button className="pay-button" onClick={() => setPaid(true)}>Pay securely with Paystack <ArrowRight size={18} /></button><small>Cards · Bank transfer · USSD</small></> : <div className="success-state"><span><Check size={30} /></span><p className="eyebrow center">ORDER CONFIRMED</p><h2>Your harvest is on its way.</h2><p>Order <strong>#FM-2048</strong> has been sent to {items.length} local {items.length === 1 ? "farmer" : "farmers"}.</p><button onClick={() => { setCheckout(false); setPaid(false); setCart({}); setView("orders"); }}>View order details</button></div>}
       </div></div>}
 
       {signupOpen && <div className="modal-overlay" onMouseDown={() => setSignupOpen(false)}><div className="signup-modal" onMouseDown={(event) => event.stopPropagation()}>
@@ -377,40 +516,42 @@ export default function Home() {
             <button className={signupRole === "farmer" ? "selected" : ""} onClick={() => setSignupRole("farmer")}><Store size={19} /><span><strong>Farmer</strong><small>List and sell harvests</small></span></button>
           </div>
           <form className="signup-form" onSubmit={submitSignup}>
-            <div className="form-row"><label>First name<input required placeholder="Tola" /></label><label>Last name<input required placeholder="Adebayo" /></label></div>
-            <label>Phone number<div className="phone-field"><span>+234</span><input required type="tel" placeholder="801 234 5678" /></div></label>
-            <label>Email address<input required type="email" placeholder="you@example.com" /></label>
-            {signupRole === "farmer" && <div className="farmer-fields"><label>Farm or business name<input required placeholder="Adebayo Family Farm" /></label><label>Farm location<input required placeholder="Kuje, Abuja" /></label></div>}
-            <label>Password<input required type="password" minLength={8} placeholder="At least 8 characters" /></label>
+            <div className="form-row"><label>First name<input name="firstName" required placeholder="Tola" /></label><label>Last name<input name="lastName" required placeholder="Adebayo" /></label></div>
+            <label>Phone number<div className="phone-field"><span>+234</span><input name="phone" required type="tel" placeholder="801 234 5678" /></div></label>
+            <label>Email address<input name="email" required type="email" placeholder="you@example.com" /></label>
+            {signupRole === "farmer" && <div className="farmer-fields"><label>Farm or business name<input name="farmName" required placeholder="Adebayo Family Farm" /></label><label>Farm location<input name="farmLocation" required placeholder="Kuje, Abuja" /></label></div>}
+            <label>Password<input name="password" required type="password" minLength={8} placeholder="At least 8 characters" /></label>
             <label className="terms"><input required type="checkbox" /> <span>I agree to the Terms of Service and Privacy Policy.</span></label>
-            <button className="create-account" type="submit">Create {signupRole} account <ArrowRight size={17} /></button>
+            {signupError && <p className="auth-error" role="alert">{signupError}</p>}
+            <button className="create-account" type="submit" disabled={signupBusy}>{signupBusy ? "Creating account..." : `Create ${signupRole} account`} {!signupBusy && <ArrowRight size={17} />}</button>
           </form>
-          <p className="signin-copy">Already have an account? <button onClick={() => { setSignupOpen(false); setSigninComplete(false); setSigninOpen(true); }}>Sign in</button></p>
-        </> : <div className="signup-success"><span><Check size={30} /></span><p>ACCOUNT CREATED</p><h2>Welcome to HarvestNearU.</h2><p>{signupRole === "farmer" ? "Your farmer profile is ready for verification. Add your first harvest to get started." : "Your consumer account is ready. Fresh harvests near you are waiting."}</p><button onClick={() => { setSignupOpen(false); if (signupRole === "farmer") setView("farmer"); }}>{signupRole === "farmer" ? "Open farmer workspace" : "Start shopping"} <ArrowRight size={17} /></button></div>}
+          <p className="signin-copy">Already have an account? <button onClick={() => { setSignupOpen(false); openSignIn(pendingCheckout); }}>Sign in</button></p>
+        </> : <div className="signup-success"><span><Check size={30} /></span><p>ACCOUNT CREATED</p><h2>Welcome to HarvestNearU.</h2><p>{signupRole === "farmer" ? "Your farmer profile is ready for verification. Add your first harvest to get started." : "Your consumer account is ready. Fresh harvests near you are waiting."}</p><button onClick={() => { setSignupOpen(false); navigate(signupRole === "farmer" ? "farmer" : "market"); }}>{signupRole === "farmer" ? "Open farmer workspace" : "Start shopping"} <ArrowRight size={17} /></button></div>}
       </div></div>}
 
-      {signinOpen && <div className="modal-overlay" onMouseDown={() => setSigninOpen(false)}><div className="signin-modal" onMouseDown={(event) => event.stopPropagation()}>
-        <button className="close-modal" onClick={() => setSigninOpen(false)}><X size={20} /></button>
+      {signinOpen && <div className="modal-overlay" onMouseDown={closeSignIn}><div className="signin-modal" onMouseDown={(event) => event.stopPropagation()}>
+        <button className="close-modal" onClick={closeSignIn}><X size={20} /></button>
         {!signinComplete ? <>
           <div className="auth-logo-lockup signin-brand"><img className="auth-approved-lockup" src="/brand/harvestnearu-header-lockup.png" alt="HarvestNearU" /></div>
           <p className="auth-kicker">WELCOME BACK</p>
           <h2>Sign in to HarvestNearU</h2>
           <p className="auth-intro">Continue shopping fresh harvests or manage your farm.</p>
-          <form className="signin-form" onSubmit={(event) => { event.preventDefault(); setSigninComplete(true); }}>
-            <label>Email or phone number<input required autoComplete="username" placeholder="you@example.com or +234..." /></label>
-            <label>Password<div className="password-field"><input required autoComplete="current-password" type={showPassword ? "text" : "password"} placeholder="Enter your password" /><button type="button" onClick={() => setShowPassword((value) => !value)} title={showPassword ? "Hide password" : "Show password"}>{showPassword ? <EyeOff size={17} /> : <Eye size={17} />}</button></div></label>
+          <form className="signin-form" onSubmit={signIn}>
+            <label>Email or phone number<input required autoComplete="username" value={signinIdentifier} onChange={(event) => setSigninIdentifier(event.target.value)} placeholder="you@example.com or +234..." /></label>
+            <label>Password<div className="password-field"><input required autoComplete="current-password" value={signinPassword} onChange={(event) => setSigninPassword(event.target.value)} type={showPassword ? "text" : "password"} placeholder="Enter your password" /><button type="button" onClick={() => setShowPassword((value) => !value)} title={showPassword ? "Hide password" : "Show password"}>{showPassword ? <EyeOff size={17} /> : <Eye size={17} />}</button></div></label>
+            {signinError && <p className="auth-error" role="alert">{signinError}</p>}
             <div className="signin-options"><label><input type="checkbox" /> Keep me signed in</label><button type="button">Forgot password?</button></div>
-            <button className="signin-submit" type="submit">Sign in securely <ArrowRight size={17} /></button>
+            <button className="signin-submit" type="submit" disabled={signinBusy}>{signinBusy ? "Signing in..." : "Sign in securely"} {!signinBusy && <ArrowRight size={17} />}</button>
           </form>
           <div className="auth-divider"><span>or</span></div>
           <p className="signin-copy">New to HarvestNearU? <button onClick={() => { setSigninOpen(false); setSignupComplete(false); setSignupOpen(true); }}>Create an account</button></p>
-        </> : <div className="signup-success"><span><Check size={30} /></span><p>SIGNED IN</p><h2>Good to have you back.</h2><p>Your account is ready and your saved basket is right where you left it.</p><button onClick={() => { setSigninOpen(false); setView("profile"); }}>Open my profile <ArrowRight size={17} /></button></div>}
+        </> : <div className="signup-success"><span><Check size={30} /></span><p>SIGNED IN</p><h2>Good to have you back.</h2><p>Your {currentUser?.role} account is ready.</p><button onClick={() => { closeSignIn(); navigate(isAdmin ? "admin" : isFarmer ? "farmer" : "market"); }}>Continue to my workspace <ArrowRight size={17} /></button></div>}
       </div></div>}
     </div>
   );
 }
 
-function LandingPage({ onShop, onFarmer }: { onShop: () => void; onFarmer: () => void }) {
+function LandingPage({ stats, onShop, onFarmer }: { stats: MarketplaceStats | null; onShop: () => void; onFarmer: () => void }) {
   return <main className="landing-page">
     <section className="landing-hero">
       <img src="/produce/vine-ripe-tomatoes.webp" alt="Fresh tomatoes harvested by a local farmer" />
@@ -423,7 +564,7 @@ function LandingPage({ onShop, onFarmer }: { onShop: () => void; onFarmer: () =>
         <div className="landing-actions"><button onClick={onShop}>Explore nearby harvests <ArrowRight size={17}/></button><button onClick={onFarmer}><Store size={16}/> I&apos;m a farmer</button></div>
         <div className="landing-proof"><span><Check size={13}/> Verified farmers</span><span><MapPin size={13}/> Proximity-first discovery</span><span><Truck size={13}/> Flexible fulfilment</span></div>
       </div>
-      <aside className="hero-harvest-note"><span>AVAILABLE TODAY</span><strong>20 fresh listings</strong><p>from 42 farms near Abuja</p><div><img src="/produce/fresh-sweet-corn.webp" alt=""/><img src="/produce/garden-fresh-spinach.webp" alt=""/><img src="/produce/sweet-ripe-plantain.webp" alt=""/></div></aside>
+      <aside className="hero-harvest-note"><span>ACTIVE HARVESTS</span><strong>{stats ? `${stats.listings} fresh listings` : "Loading harvests"}</strong><p>{stats ? `from ${stats.farms} verified farms near Abuja` : "Checking nearby farms"}</p><div><img src="/produce/fresh-sweet-corn.webp" alt=""/><img src="/produce/garden-fresh-spinach.webp" alt=""/><img src="/produce/sweet-ripe-plantain.webp" alt=""/></div></aside>
     </section>
 
     <section className="landing-intro">
@@ -456,7 +597,63 @@ function LandingPage({ onShop, onFarmer }: { onShop: () => void; onFarmer: () =>
   </main>;
 }
 
-function SiteFooter({ view, onNavigate }: { view: "landing" | "market" | "orders" | "farmer" | "profile"; onNavigate: (view: "landing" | "market" | "orders" | "farmer" | "profile") => void }) {
+function SupportPage({ page, onNavigate }: { page: "help" | "delivery" | "returns"; onNavigate: (view: View) => void }) {
+  const [query, setQuery] = useState("");
+  const [openFaq, setOpenFaq] = useState<number | null>(0);
+  const faqs = [
+    ["How do I place an order?", "Open Shop, choose a harvest and quantity, then select delivery or pickup in your basket before paying securely."],
+    ["How is produce availability confirmed?", "Farmers update their remaining quantities daily. Your items are reserved during checkout and confirmed with the farmer after payment."],
+    ["Can I order from more than one farm?", "Yes. Your basket can contain produce from multiple farms. We group eligible deliveries where possible and show the final fulfilment cost before payment."],
+    ["Which payment methods are accepted?", "You can pay in naira with a Nigerian debit card, bank transfer, or supported mobile payment methods through our secure payment partner."],
+    ["How do I track an order?", "Open My orders to see farmer confirmation, preparation, dispatch, pickup, and delivery updates for every order."],
+    ["What should I do if an item is unavailable?", "We will notify you immediately and offer a suitable replacement or a refund to your original payment method."],
+  ];
+  const visibleFaqs = faqs.filter(([question, answer]) => `${question} ${answer}`.toLowerCase().includes(query.toLowerCase()));
+
+  return <main className="support-page">
+    <section className="support-hero">
+      <p className="eyebrow"><span /> HARVESTNEARU SUPPORT</p>
+      <h1>{page === "help" ? "How can we help?" : page === "delivery" ? "Fresh produce, delivered locally." : "Fair resolutions for fresh produce."}</h1>
+      <p>{page === "help" ? "Find quick answers about orders, payments, accounts, and buying directly from nearby farmers." : page === "delivery" ? "See where HarvestNearU delivers, the fulfilment options available, and what to expect on delivery day." : "Understand what is eligible, how to report an issue, and when your refund will arrive."}</p>
+    </section>
+    <nav className="support-tabs" aria-label="Support pages">
+      <button className={page === "help" ? "active" : ""} onClick={() => onNavigate("help")}><Headphones size={15}/> Help centre</button>
+      <button className={page === "delivery" ? "active" : ""} onClick={() => onNavigate("delivery")}><MapPin size={15}/> Delivery areas</button>
+      <button className={page === "returns" ? "active" : ""} onClick={() => onNavigate("returns")}><RotateCcw size={15}/> Returns & refunds</button>
+    </nav>
+
+    {page === "help" && <section className="support-content">
+      <div className="support-intro"><div><h2>Frequently asked questions</h2><p>Start here for the most common questions from customers and farmers.</p></div><label className="support-search"><Search size={16}/><span className="sr-only">Search help articles</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search help articles"/></label></div>
+      <div className="faq-list">{visibleFaqs.map(([question, answer], index) => <article className={`faq-item ${openFaq === index ? "open" : ""}`} key={question}><button aria-expanded={openFaq === index} onClick={() => setOpenFaq(openFaq === index ? null : index)}>{question}<ChevronRight size={16}/></button>{openFaq === index && <p>{answer}</p>}</article>)}</div>
+      {!visibleFaqs.length && <div className="empty-state"><Search size={26}/><h3>No answers found</h3><p>Try a shorter search term or contact our support team.</p></div>}
+      <div className="support-note"><Headphones size={24}/><div><strong>Still need help?</strong><span>Our support team is available Monday to Saturday, 8am to 6pm.</span></div><button onClick={() => window.location.href = "mailto:hello@harvestnearu.com"}>Email support</button></div>
+    </section>}
+
+    {page === "delivery" && <section className="support-content">
+      <div className="support-intro"><div><h2>Current delivery coverage</h2><p>Availability depends on your address and the farm supplying each item. Your exact options appear in the basket.</p></div></div>
+      <div className="coverage-grid">
+        <article className="coverage-card"><span><Truck size={20}/></span><h3>Central Abuja</h3><p>Doorstep delivery across our primary service area.</p><ul><li><span>Gudu, Wuse, Jabi</span><strong>Same or next day</strong></li><li><span>Maitama, Asokoro</span><strong>Next day</strong></li><li><span>Lugbe, Gwarinpa</span><strong>Next day</strong></li></ul></article>
+        <article className="coverage-card"><span><MapPin size={20}/></span><h3>Greater Abuja</h3><p>Scheduled routes connect farms and collection points.</p><ul><li><span>Kuje, Bwari</span><strong>Tue, Thu, Sat</strong></li><li><span>Gwagwalada, Kwali</span><strong>Wed & Sat</strong></li><li><span>Karu, Mararaba</span><strong>Tue–Sat</strong></li></ul></article>
+        <article className="coverage-card"><span><Store size={20}/></span><h3>Collection hubs</h3><p>Free pickup from convenient community locations.</p><ul><li><span>Gudu Market</span><strong>Daily</strong></li><li><span>Jabi Lake hub</span><strong>Mon–Sat</strong></li><li><span>Kubwa village market</span><strong>Tue–Sun</strong></li></ul></article>
+      </div>
+      <div className="support-note"><LocateFixed size={24}/><div><strong>Is your area not listed?</strong><span>Coverage is expanding based on demand. Tell us your neighbourhood so we can plan the next route.</span></div><button onClick={() => window.location.href = "mailto:hello@harvestnearu.com?subject=Delivery area request"}>Request my area</button></div>
+    </section>}
+
+    {page === "returns" && <section className="support-content">
+      <div className="support-intro"><div><h2>Our fresh produce promise</h2><p>Because produce is perishable, issues should be reported promptly. We assess every request fairly with the supplying farmer.</p></div></div>
+      <div className="policy-grid">
+        <article className="policy-card"><span><Check size={20}/></span><h3>Eligible issues</h3><p>Items that arrive spoiled, damaged, materially different from the listing, or missing from a paid order.</p></article>
+        <article className="policy-card"><span><Clock3 size={20}/></span><h3>Report within 6 hours</h3><p>Contact us within six hours of delivery or pickup. Include clear photos and your HarvestNearU order number.</p></article>
+        <article className="policy-card"><span><RotateCcw size={20}/></span><h3>Refund timing</h3><p>Approved refunds are initiated within 24 hours and usually reach the original payment method in 3–7 business days.</p></article>
+      </div>
+      <div className="refund-steps"><div><strong>Open your order</strong><p>Find the affected purchase under My orders.</p></div><div><strong>Report the issue</strong><p>Describe the problem and select the affected item.</p></div><div><strong>Add clear photos</strong><p>Show the condition of the produce and packaging.</p></div><div><strong>Receive a resolution</strong><p>We review the request and confirm replacement or refund.</p></div></div>
+      <div className="support-note"><PackageCheck size={24}/><div><strong>Need to report an order?</strong><span>Have your order number and photos ready so we can resolve it quickly.</span></div><button onClick={() => onNavigate("orders")}>Go to my orders</button></div>
+    </section>}
+  </main>;
+}
+
+function SiteFooter({ view, user, onNavigate }: { view: View; user: CurrentUser | null; onNavigate: (view: View) => void }) {
+  const role = user?.role;
   return <footer className="site-footer">
     <div className="footer-main">
       <div className="footer-brand">
@@ -464,19 +661,184 @@ function SiteFooter({ view, onNavigate }: { view: "landing" | "market" | "orders
         <p>Fresh Nigerian produce, fair prices, and stronger local farming communities.</p>
         <div className="footer-contact"><a href="mailto:hello@harvestnearu.com"><Mail size={15}/> hello@harvestnearu.com</a><a href="#" aria-label="HarvestNearU social profile"><AtSign size={16}/></a></div>
       </div>
-      <nav className="footer-links" aria-label="Marketplace links"><strong>Marketplace</strong><button className={view === "landing" ? "active" : ""} onClick={() => onNavigate("landing")}>About HarvestNearU</button><button className={view === "market" ? "active" : ""} onClick={() => onNavigate("market")}>Shop produce</button><button className={view === "orders" ? "active" : ""} onClick={() => onNavigate("orders")}>My orders</button><button className={view === "farmer" ? "active" : ""} onClick={() => onNavigate("farmer")}>Farmer workspace</button></nav>
-      <nav className="footer-links" aria-label="Support links"><strong>Account & support</strong><button className={view === "profile" ? "active" : ""} onClick={() => onNavigate("profile")}>My profile</button><button>Help centre</button><button>Delivery areas</button><button>Returns & refunds</button></nav>
+      <nav className="footer-links" aria-label="Marketplace links"><strong>Marketplace</strong><button className={view === "landing" ? "active" : ""} onClick={() => onNavigate("landing")}>About HarvestNearU</button>{role !== "admin" && role !== "support" && <button className={view === "market" ? "active" : ""} onClick={() => onNavigate("market")}>Shop produce</button>}{(role === "consumer" || role === "farmer") && <button className={view === "orders" ? "active" : ""} onClick={() => onNavigate("orders")}>My orders</button>}{role === "farmer" && <button className={view === "farmer" ? "active" : ""} onClick={() => onNavigate("farmer")}>Farmer workspace</button>}{(role === "admin" || role === "support") && <button className={view === "admin" ? "active" : ""} onClick={() => onNavigate("admin")}>Administration</button>}</nav>
+      <nav className="footer-links" aria-label="Support links"><strong>Account & support</strong>{(role === "consumer" || role === "farmer") && <button className={view === "profile" ? "active" : ""} onClick={() => onNavigate("profile")}>My profile</button>}<button className={view === "help" ? "active" : ""} onClick={() => onNavigate("help")}>Help centre</button><button className={view === "delivery" ? "active" : ""} onClick={() => onNavigate("delivery")}>Delivery areas</button><button className={view === "returns" ? "active" : ""} onClick={() => onNavigate("returns")}>Returns & refunds</button></nav>
       <div className="footer-newsletter"><strong>Harvest notes</strong><p>Weekly produce updates and seasonal picks from farms near you.</p><form onSubmit={(event) => event.preventDefault()}><label><span className="sr-only">Email address</span><input type="email" required placeholder="Email address"/></label><button aria-label="Subscribe"><ArrowRight size={16}/></button></form></div>
     </div>
     <div className="footer-bottom"><span>© 2026 HarvestNearU Nigeria</span><div><button>Privacy</button><button>Terms</button><button>Cookies</button></div><span className="footer-local"><MapPin size={12}/> Fresh Local Produce, Found Here</span></div>
   </footer>;
 }
 
-function ProfilePage() {
-  const [role, setRole] = useState<"consumer" | "farmer">("consumer");
+type AdminOverview = {
+  metrics: { users: number; verified_farms: number; pending_farms: number; listings: number; orders: number; open_refunds: number };
+  users: Array<{ id: string; first_name: string; last_name: string; email: string; role: string; is_active: boolean; created_at: string }>;
+};
+
+type AdminEntityType = "users" | "farms" | "produce";
+type AdminEntity = Record<string, unknown> & { id: string };
+type AdminOptions = { owners: Array<{ id: string; name: string }>; farms: Array<{ id: string; name: string }>; categories: Array<{ id: string; name: string }> };
+
+function AdminPage({ readOnly }: { readOnly: boolean }) {
+  const [overview, setOverview] = useState<AdminOverview | null>(null);
+  const [section, setSection] = useState<"overview" | AdminEntityType>("overview");
+  const [entities, setEntities] = useState<AdminEntity[]>([]);
+  const [selected, setSelected] = useState<AdminEntity | null>(null);
+  const [options, setOptions] = useState<AdminOptions>({ owners: [], farms: [], categories: [] });
+  const [addOpen, setAddOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [failed, setFailed] = useState(false);
+
+  async function loadOverview() {
+    const response = await fetch("/api/admin/overview");
+    if (!response.ok) throw new Error("Forbidden");
+    setOverview(await response.json());
+  }
+
+  async function loadEntities(type: AdminEntityType) {
+    setBusy(true);
+    const response = await fetch(`/api/admin/entities?type=${type}`);
+    const data = await response.json() as { entities?: AdminEntity[]; error?: string };
+    if (!response.ok) throw new Error(data.error || "Could not load records");
+    setEntities(data.entities || []);
+    setBusy(false);
+  }
+
+  useEffect(() => {
+    Promise.all([
+      fetch("/api/admin/overview").then((response) => { if (!response.ok) throw new Error("Forbidden"); return response.json(); }),
+      fetch("/api/admin/entities?type=options").then((response) => { if (!response.ok) throw new Error("Forbidden"); return response.json(); }),
+    ]).then(([overviewData, optionsData]: [AdminOverview, AdminOptions]) => { setOverview(overviewData); setOptions(optionsData); }).catch(() => setFailed(true));
+  }, []);
+
+  useEffect(() => {
+    if (section === "overview") return;
+    let cancelled = false;
+    fetch(`/api/admin/entities?type=${section}`).then(async (response) => {
+      const data = await response.json() as { entities?: AdminEntity[]; error?: string };
+      if (!response.ok) throw new Error(data.error || "Could not load records");
+      if (!cancelled) { setEntities(data.entities || []); setBusy(false); }
+    }).catch((reason: Error) => { if (!cancelled) { setError(reason.message); setBusy(false); } });
+    return () => { cancelled = true; };
+  }, [section]);
+
+  async function openDetails(type: AdminEntityType, id: string) {
+    setError("");
+    const response = await fetch(`/api/admin/entities?type=${type}&id=${id}`);
+    const data = await response.json() as { entity?: AdminEntity; error?: string };
+    if (!response.ok || !data.entity) return setError(data.error || "Could not load details");
+    setSelected(data.entity);
+  }
+
+  async function addEntity(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (section === "overview") return;
+    setBusy(true); setError("");
+    const values = Object.fromEntries(new FormData(event.currentTarget).entries());
+    const response = await fetch(`/api/admin/entities?type=${section}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(values) });
+    const data = await response.json() as { error?: string };
+    if (!response.ok) { setError(data.error || "Could not add record"); setBusy(false); return; }
+    setAddOpen(false);
+    await Promise.all([loadEntities(section), loadOverview()]);
+  }
+
+  async function removeEntity() {
+    if (!selected || section === "overview" || !window.confirm(`Remove this ${section === "produce" ? "produce listing" : section.slice(0, -1)}? Historical records will be retained.`)) return;
+    setBusy(true); setError("");
+    const response = await fetch(`/api/admin/entities?type=${section}&id=${selected.id}`, { method: "DELETE" });
+    const data = await response.json() as { error?: string };
+    if (!response.ok) { setError(data.error || "Could not remove record"); setBusy(false); return; }
+    setSelected(null);
+    await Promise.all([loadEntities(section), loadOverview()]);
+  }
+
+  async function editEntity(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selected || section === "overview") return;
+    setBusy(true); setError("");
+    try {
+      const values = Object.fromEntries(new FormData(event.currentTarget).entries());
+      const response = await fetch(`/api/admin/entities?type=${section}&id=${selected.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(values) });
+      const responseText = await response.text();
+      const data = responseText ? JSON.parse(responseText) as { entity?: AdminEntity; error?: string } : {};
+      if (!response.ok || !data.entity) throw new Error(data.error || "Could not update record");
+      setEditOpen(false);
+      await Promise.all([loadEntities(section), loadOverview()]);
+      await openDetails(section, selected.id);
+    } catch (reason) {
+      setError((reason as Error).message || "Could not update record");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function updateFarmVerification(status: "verified" | "rejected" | "pending") {
+    if (!selected || section !== "farms") return;
+    setBusy(true); setError("");
+    try {
+      const response = await fetch(`/api/admin/entities?type=farms&id=${selected.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ verificationStatus: status }) });
+      const responseText = await response.text();
+      let data: { farm?: { verification_status: string; verified_at: string | null }; error?: string } = {};
+      if (responseText) {
+        try { data = JSON.parse(responseText) as typeof data; } catch { data.error = "The server returned an invalid response"; }
+      }
+      if (!response.ok || !data.farm) throw new Error(data.error || `Could not update verification (${response.status})`);
+      setSelected({ ...selected, verification_status: data.farm.verification_status, verified_at: data.farm.verified_at, updated_at: new Date().toISOString() });
+      await Promise.all([loadEntities("farms"), loadOverview()]);
+    } catch (reason) {
+      setError((reason as Error).message || "Could not update verification");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (failed) return <main className="admin-page"><div className="empty-state"><X size={28}/><h3>Administration unavailable</h3><p>Your session does not have permission to view this workspace.</p></div></main>;
+  if (!overview) return <DataLoading />;
+  const metrics = overview.metrics;
+  return <main className="admin-page">
+    <header className="admin-heading"><div><p className="eyebrow"><span/> MARKETPLACE OPERATIONS</p><h1>Administration</h1><p>Monitor people, farms, listings, orders, and customer resolutions.</p></div><span className="admin-live"><i/> {readOnly ? "Read-only support access" : "Live database"}</span></header>
+    <nav className="admin-tabs" aria-label="Administration sections">{(["overview", "users", "farms", "produce"] as const).map((item) => <button key={item} className={section === item ? "active" : ""} onClick={() => { setSection(item); setSelected(null); setError(""); setBusy(item !== "overview"); }}>{item === "overview" ? <House size={15}/> : item === "users" ? <UserRound size={15}/> : item === "farms" ? <Store size={15}/> : <Leaf size={15}/>}<span>{item}</span></button>)}</nav>
+
+    {section === "overview" ? <>
+      <section className="admin-metrics"><article><span><UserRound size={19}/></span><small>ACTIVE USERS</small><strong>{metrics.users}</strong><p>Across every marketplace role</p></article><article><span><Store size={19}/></span><small>VERIFIED FARMS</small><strong>{metrics.verified_farms}</strong><p>{metrics.pending_farms} awaiting review</p></article><article><span><Leaf size={19}/></span><small>ACTIVE LISTINGS</small><strong>{metrics.listings}</strong><p>Available marketplace harvests</p></article><article><span><PackageCheck size={19}/></span><small>ORDERS</small><strong>{metrics.orders}</strong><p>All recorded purchases</p></article></section>
+      <div className="admin-grid"><section className="admin-panel"><div className="admin-panel-head"><div><h2>Recent users</h2><p>Latest accounts across the marketplace</p></div><button onClick={() => { setBusy(true); setSection("users"); }}>View all <ArrowRight size={15}/></button></div><div className="admin-user-list">{overview.users.slice(0, 8).map((user) => <button className="admin-user-row" key={user.id} onClick={() => { setBusy(true); setSection("users"); setTimeout(() => openDetails("users", user.id), 0); }}><span>{user.first_name[0]}{user.last_name[0]}</span><div><strong>{user.first_name} {user.last_name}</strong><small>{user.email}</small></div><b className={`role-badge ${user.role}`}>{user.role}</b><i className={user.is_active ? "active" : ""}>{user.is_active ? "Active" : "Disabled"}</i></button>)}</div></section><aside className="admin-side"><section><div className="admin-panel-head"><div><h2>Attention needed</h2><p>Items requiring administrator action</p></div></div><button onClick={() => { setBusy(true); setSection("farms"); }}><span><Store size={17}/></span><div><strong>Farm verification</strong><small>{metrics.pending_farms} pending applications</small></div><ChevronRight size={16}/></button><button><span><RotateCcw size={17}/></span><div><strong>Refund requests</strong><small>{metrics.open_refunds} open cases</small></div><ChevronRight size={16}/></button></section><section className="admin-health"><div className="admin-panel-head"><div><h2>System status</h2><p>Core marketplace services</p></div></div><div><span><i/> Neon database</span><strong>Operational</strong></div><div><span><i/> Produce API</span><strong>Operational</strong></div><div><span><i/> Authentication</span><strong>Operational</strong></div></section></aside></div>
+    </> : <section className="entity-manager">
+      <div className="entity-toolbar"><div><h2>{section === "produce" ? "Produce listings" : section[0].toUpperCase() + section.slice(1)}</h2><p>{entities.length} database records</p></div>{!readOnly && <button onClick={() => { setError(""); setAddOpen(true); }}><Plus size={16}/> Add {section === "produce" ? "produce" : section.slice(0, -1)}</button>}</div>
+      {error && <p className="admin-error" role="alert">{error}</p>}
+      {busy && !addOpen ? <div className="entity-loading"><Clock3 size={20}/> Updating records...</div> : <div className="entity-table">{entities.map((entity) => <button key={entity.id} onClick={() => openDetails(section, entity.id)}>{section === "users" ? <><span className="entity-avatar">{String(entity.first_name)[0]}{String(entity.last_name)[0]}</span><span><strong>{String(entity.first_name)} {String(entity.last_name)}</strong><small>{String(entity.email)}</small></span><b className={`role-badge ${entity.role}`}>{String(entity.role)}</b><i>{entity.is_active ? "Active" : "Disabled"}</i></> : section === "farms" ? <><span className="entity-icon"><Store size={17}/></span><span><strong>{String(entity.name)}</strong><small>{String(entity.city)}, {String(entity.state)} · {String(entity.owner_name)}</small></span><b className={`status-badge ${entity.verification_status}`}>{String(entity.verification_status)}</b><i>{String(entity.listing_count)} listings</i></> : <><span className="entity-thumb">{entity.image_url ? <img src={String(entity.image_url)} alt=""/> : <Leaf size={17}/>}</span><span><strong>{String(entity.title)}</strong><small>{String(entity.farm_name)} · {String(entity.category_name)}</small></span><b className={`status-badge ${entity.status}`}>{String(entity.status)}</b><i>{money(Number(entity.unit_price_kobo) / 100)} / {String(entity.unit)}</i></>}</button>)}</div>}
+    </section>}
+
+    {selected && section !== "overview" && <div className="admin-drawer-overlay" onMouseDown={() => setSelected(null)}><aside className="admin-detail" onMouseDown={(event) => event.stopPropagation()}><header><div><small>{section === "produce" ? "PRODUCE LISTING" : section.slice(0, -1).toUpperCase()}</small><h2>{entityTitle(section, selected)}</h2></div><button onClick={() => setSelected(null)} aria-label="Close details"><X size={19}/></button></header><div className="entity-details">{Object.entries(selected).filter(([key, value]) => value !== null && value !== "" && !["id", "password_hash"].includes(key)).map(([key, value]) => <div key={key}><span>{key.replaceAll("_", " ")}</span><strong>{formatEntityValue(key, value)}</strong></div>)}</div>{!readOnly && <footer className="admin-detail-actions"><button className="edit-entity" onClick={() => { setError(""); setEditOpen(true); }} disabled={busy}>Edit details</button>{section === "farms" && selected.verification_status !== "verified" && <button className="verify-farm" onClick={() => updateFarmVerification("verified")} disabled={busy}><Check size={16}/> Verify farm</button>}{section === "farms" && selected.verification_status !== "rejected" && <button className="reject-farm" onClick={() => updateFarmVerification("rejected")} disabled={busy}><X size={16}/> Reject</button>}<button className="remove-entity" onClick={removeEntity} disabled={busy}><Trash2 size={16}/> Remove {section === "produce" ? "listing" : section.slice(0, -1)}</button></footer>}</aside></div>}
+
+    {addOpen && section !== "overview" && <div className="modal-overlay" onMouseDown={() => setAddOpen(false)}><div className="admin-add-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close-modal" onClick={() => setAddOpen(false)}><X size={19}/></button><p className="auth-kicker">NEW {section === "produce" ? "LISTING" : section.slice(0, -1).toUpperCase()}</p><h2>Add {section === "produce" ? "produce" : section.slice(0, -1)}</h2><p>Create a new marketplace record. Required fields are marked.</p><form onSubmit={addEntity}>{section === "users" ? <><div className="form-row"><label>First name<input name="firstName" required/></label><label>Last name<input name="lastName" required/></label></div><label>Email<input name="email" type="email" required/></label><label>Phone<input name="phone" required/></label><label>Role<select name="role" required><option value="consumer">Consumer</option><option value="farmer">Farmer</option><option value="support">Support</option><option value="admin">Administrator</option></select></label><label>Temporary password<input name="password" type="password" minLength={8} required/></label></> : section === "farms" ? <><label>Farmer owner<select name="ownerId" required><option value="">Select owner</option>{options.owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.name}</option>)}</select></label><label>Farm name<input name="name" required/></label><div className="form-row"><label>Phone<input name="phone" required/></label><label>Email<input name="email" type="email"/></label></div><label>Address<input name="address" required/></label><div className="form-row"><label>City<input name="city" required/></label><label>State<input name="state" required/></label></div><label className="admin-check"><input type="checkbox" name="offersDelivery" value="true"/> Offers delivery</label></> : <><label>Farm<select name="farmId" required><option value="">Select farm</option>{options.farms.map((farm) => <option key={farm.id} value={farm.id}>{farm.name}</option>)}</select></label><label>Category<select name="categoryId" required><option value="">Select category</option>{options.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>Produce name<input name="name" required/></label><div className="form-row"><label>Unit<input name="unit" placeholder="basket" required/></label><label>Price (NGN)<input name="price" type="number" min="1" required/></label></div><div className="form-row"><label>Stock quantity<input name="stock" type="number" min="1" required/></label><label>Harvest date<input name="harvestDate" type="date" required/></label></div><label>Image path<input name="imageUrl" placeholder="/produce/example.webp"/></label><label>Badge<input name="badge" placeholder="New harvest"/></label></>} {error && <p className="admin-error" role="alert">{error}</p>}<button className="admin-submit" disabled={busy}>{busy ? "Saving..." : "Create record"} {!busy && <ArrowRight size={16}/>}</button></form></div></div>}
+    {editOpen && selected && section !== "overview" && <div className="modal-overlay admin-edit-overlay" onMouseDown={() => setEditOpen(false)}><div className="admin-add-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close-modal" onClick={() => setEditOpen(false)}><X size={19}/></button><p className="auth-kicker">EDIT {section === "produce" ? "LISTING" : section.slice(0, -1).toUpperCase()}</p><h2>{entityTitle(section, selected)}</h2><p>Update this record. Changes are saved to the audit log.</p><form onSubmit={editEntity}>{section === "users" ? <><div className="form-row"><label>First name<input name="firstName" defaultValue={String(selected.first_name)} required/></label><label>Last name<input name="lastName" defaultValue={String(selected.last_name)} required/></label></div><label>Email<input name="email" type="email" defaultValue={String(selected.email)} required/></label><label>Phone<input name="phone" defaultValue={String(selected.phone || "")} required/></label><label>Role<select name="role" defaultValue={String(selected.role)} required><option value="consumer">Consumer</option><option value="farmer">Farmer</option><option value="support">Support</option><option value="admin">Administrator</option></select></label><label>Account status<select name="isActive" defaultValue={selected.is_active ? "true" : "false"}><option value="true">Active</option><option value="false">Disabled</option></select></label></> : section === "farms" ? <><label>Farmer owner<select name="ownerId" defaultValue={String(selected.owner_id)} required>{options.owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.name}</option>)}</select></label><label>Farm name<input name="name" defaultValue={String(selected.name)} required/></label><div className="form-row"><label>Phone<input name="phone" defaultValue={String(selected.phone)} required/></label><label>Email<input name="email" type="email" defaultValue={String(selected.email || "")}/></label></div><label>Address<input name="address" defaultValue={String(selected.address_text)} required/></label><div className="form-row"><label>City<input name="city" defaultValue={String(selected.city)} required/></label><label>State<input name="state" defaultValue={String(selected.state)} required/></label></div><label className="admin-check"><input type="checkbox" name="offersDelivery" value="true" defaultChecked={Boolean(selected.offers_delivery)}/> Offers delivery</label></> : <><label>Farm<select name="farmId" defaultValue={String(selected.farm_id)} required>{options.farms.map((farm) => <option key={farm.id} value={farm.id}>{farm.name}</option>)}</select></label><label>Listing title<input name="title" defaultValue={String(selected.title)} required/></label><div className="form-row"><label>Unit<input name="unit" defaultValue={String(selected.unit)} required/></label><label>Price (NGN)<input name="price" type="number" min="1" defaultValue={Number(selected.unit_price_kobo) / 100} required/></label></div><div className="form-row"><label>Available stock<input name="stock" type="number" min={Number(selected.quantity_reserved || 0)} defaultValue={Number(selected.quantity_available)} required/></label><label>Harvest date<input name="harvestDate" type="date" defaultValue={String(selected.harvest_date).slice(0, 10)} required/></label></div><label>Status<select name="status" defaultValue={String(selected.status)}><option value="draft">Draft</option><option value="active">Active</option><option value="paused">Paused</option><option value="sold_out">Sold out</option><option value="expired">Expired</option></select></label><label>Badge<input name="badge" defaultValue={String(selected.badge || "")}/></label></>} {error && <p className="admin-error" role="alert">{error}</p>}<button className="admin-submit" disabled={busy}>{busy ? "Saving changes..." : "Save changes"} {!busy && <ArrowRight size={16}/>}</button></form></div></div>}
+  </main>;
+}
+
+function entityTitle(type: AdminEntityType, entity: AdminEntity) {
+  if (type === "users") return `${entity.first_name} ${entity.last_name}`;
+  if (type === "farms") return String(entity.name);
+  return String(entity.title);
+}
+
+function formatEntityValue(key: string, value: unknown) {
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (key.endsWith("_kobo")) return money(Number(value) / 100);
+  if (key.endsWith("_at") || key.endsWith("_date")) return new Date(String(value)).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: key.endsWith("_at") ? "short" : undefined });
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+function DataLoading() {
+  return <main className="profile-page"><div className="empty-state"><Clock3 size={28}/><h3>Loading marketplace data</h3><p>Fetching the latest information from HarvestNearU.</p></div></main>;
+}
+
+function ProfilePage({ products, role }: { products: Product[]; role: "consumer" | "farmer" }) {
   const [editing, setEditing] = useState(false);
+  if (!products.length) return <DataLoading />;
   return <main className="profile-page">
-    <header className="profile-heading"><div><p className="eyebrow"><span /> ACCOUNT</p><h1>My profile</h1><p>Manage your identity, preferences, and HarvestNearU activity.</p></div><div className="profile-role-switch"><button className={role === "consumer" ? "selected" : ""} onClick={() => setRole("consumer")}><UserRound size={15}/> Consumer</button><button className={role === "farmer" ? "selected" : ""} onClick={() => setRole("farmer")}><Store size={15}/> Farmer</button></div></header>
+    <header className="profile-heading"><div><p className="eyebrow"><span /> {role.toUpperCase()} ACCOUNT</p><h1>My profile</h1><p>Manage your identity, preferences, and HarvestNearU activity.</p></div></header>
 
     {role === "consumer" ? <div className="consumer-profile">
       <section className="profile-identity">
@@ -512,8 +874,9 @@ function ProfilePage() {
   </main>;
 }
 
-function OrdersPage({ onShop }: { onShop: () => void }) {
+function OrdersPage({ products, onShop }: { products: Product[]; onShop: () => void }) {
   const [tab, setTab] = useState<"active" | "past">("active");
+  if (products.length < 6) return <DataLoading />;
   return <main className="my-orders-page">
     <header className="orders-heading">
       <div><p className="eyebrow"><span /> YOUR PURCHASES</p><h1>My orders</h1><p>Follow your fresh produce from farm gate to your doorstep.</p></div>
@@ -553,7 +916,8 @@ function OrdersPage({ onShop }: { onShop: () => void }) {
   </main>;
 }
 
-function FarmerDashboard({ onShop }: { onShop: () => void }) {
+function FarmerDashboard({ products, onShop }: { products: Product[]; onShop: () => void }) {
+  if (!products.length) return <DataLoading />;
   const orders = [
     { id: "#FM-2041", customer: "Chioma Okafor", item: "3 baskets · Tomatoes", time: "12 min ago", status: "Prepare" },
     { id: "#FM-2037", customer: "Musa Bello", item: "2 dozens · Sweet corn", time: "34 min ago", status: "Ready" },
