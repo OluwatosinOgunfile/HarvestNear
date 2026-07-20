@@ -103,6 +103,17 @@ function money(value: number) {
   return new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 }).format(value);
 }
 
+function listingImageDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    if (!file.type.match(/^image\/(jpeg|png|webp)$/)) return reject(new Error("Upload a JPG, PNG, or WebP image"));
+    if (file.size > 2 * 1024 * 1024) return reject(new Error("Listing images must be 2 MB or smaller"));
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("Could not read the selected image"));
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function Home() {
   const [products, setProducts] = useState<Product[]>([]);
   const [marketplaceStats, setMarketplaceStats] = useState<MarketplaceStats | null>(null);
@@ -140,7 +151,9 @@ export default function Home() {
   const [sortBy, setSortBy] = useState<"nearest" | "price-low" | "price-high" | "rating" | "stock">("nearest");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [maxDistance, setMaxDistance] = useState(20);
-  const [maxPrice, setMaxPrice] = useState(6000);
+  const [maxPrice, setMaxPrice] = useState(50000);
+  const [distanceFilterActive, setDistanceFilterActive] = useState(false);
+  const [priceFilterActive, setPriceFilterActive] = useState(false);
   const [todayOnly, setTodayOnly] = useState(false);
   const [hideLowStock, setHideLowStock] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -153,7 +166,7 @@ export default function Home() {
     const controller = new AbortController();
     async function loadProduce() {
       try {
-        const response = await fetch("/api/produce", { signal: controller.signal });
+        const response = await fetch("/api/produce", { signal: controller.signal, cache: "no-store" });
         if (!response.ok) throw new Error("Could not load produce");
         const data = await response.json() as { produce: Product[]; stats: MarketplaceStats };
         setProducts(data.produce);
@@ -167,7 +180,7 @@ export default function Home() {
     }
     loadProduce();
     return () => controller.abort();
-  }, []);
+  }, [view]);
 
   useEffect(() => {
     fetch("/api/auth/session")
@@ -293,7 +306,8 @@ export default function Home() {
     const filtered = products.filter((product) =>
       (category === "All produce" || product.category === category) &&
       (product.name.toLowerCase().includes(query.toLowerCase()) || product.farmer.toLowerCase().includes(query.toLowerCase())) &&
-      product.distance <= maxDistance && product.price <= maxPrice &&
+      (!distanceFilterActive || product.distance <= maxDistance) &&
+      (!priceFilterActive || product.price <= maxPrice) &&
       (!todayOnly || product.available === "Today") && (!hideLowStock || product.stock > 15)
     );
     return filtered.sort((a, b) => {
@@ -303,9 +317,9 @@ export default function Home() {
       if (sortBy === "stock") return b.stock - a.stock;
       return a.distance - b.distance;
     });
-  }, [products, category, query, maxDistance, maxPrice, todayOnly, hideLowStock, sortBy]);
+  }, [products, category, query, distanceFilterActive, maxDistance, priceFilterActive, maxPrice, todayOnly, hideLowStock, sortBy]);
 
-  const activeFilterCount = Number(maxDistance < 20) + Number(maxPrice < 6000) + Number(todayOnly) + Number(hideLowStock);
+  const activeFilterCount = Number(distanceFilterActive) + Number(priceFilterActive) + Number(todayOnly) + Number(hideLowStock);
   const pageSize = 8;
   const totalPages = Math.max(1, Math.ceil(visible.length / pageSize));
   const safePage = Math.min(currentPage, totalPages);
@@ -407,10 +421,10 @@ export default function Home() {
             <button className={`filter-button ${activeFilterCount ? "active" : ""}`} onClick={() => setFiltersOpen((open) => !open)}><SlidersHorizontal size={18} /> Filters {activeFilterCount > 0 && <b>{activeFilterCount}</b>}</button>
             {filtersOpen && <div className="filter-popover">
               <div className="filter-head"><div><strong>Filter harvests</strong><span>Refine what is shown near you</span></div><button onClick={() => setFiltersOpen(false)}><X size={17}/></button></div>
-              <label className="range-filter"><span><strong>Maximum distance</strong><b>{maxDistance} km</b></span><input type="range" min="3" max="20" step="1" value={maxDistance} onChange={(event) => { setMaxDistance(Number(event.target.value)); setCurrentPage(1); }}/><small><i>3 km</i><i>20 km</i></small></label>
-              <label className="range-filter"><span><strong>Maximum unit price</strong><b>{money(maxPrice)}</b></span><input type="range" min="1000" max="6000" step="500" value={maxPrice} onChange={(event) => { setMaxPrice(Number(event.target.value)); setCurrentPage(1); }}/><small><i>₦1,000</i><i>₦6,000</i></small></label>
+              <label className="range-filter"><span><strong>Maximum distance</strong><b>{distanceFilterActive ? `${maxDistance} km` : "Any distance"}</b></span><input type="number" min="1" step="1" value={distanceFilterActive ? maxDistance : ""} placeholder="Enter distance in km" onChange={(event) => { const value = event.target.value; setDistanceFilterActive(value !== ""); if (value) setMaxDistance(Number(value)); setCurrentPage(1); }}/></label>
+              <label className="range-filter"><span><strong>Maximum unit price</strong><b>{priceFilterActive ? money(maxPrice) : "Any price"}</b></span><input type="number" min="1" step="100" value={priceFilterActive ? maxPrice : ""} placeholder="Enter maximum price" onChange={(event) => { const value = event.target.value; setPriceFilterActive(value !== ""); if (value) setMaxPrice(Number(value)); setCurrentPage(1); }}/></label>
               <div className="quick-filters"><label><span><strong>Available today</strong><small>Only produce ready now</small></span><input type="checkbox" checked={todayOnly} onChange={(event) => { setTodayOnly(event.target.checked); setCurrentPage(1); }}/></label><label><span><strong>Hide low stock</strong><small>More than 15 units left</small></span><input type="checkbox" checked={hideLowStock} onChange={(event) => { setHideLowStock(event.target.checked); setCurrentPage(1); }}/></label></div>
-              <div className="filter-actions"><button onClick={() => { setMaxDistance(20); setMaxPrice(6000); setTodayOnly(false); setHideLowStock(false); setCurrentPage(1); }}>Reset all</button><button onClick={() => setFiltersOpen(false)}>Show {visible.length} harvests</button></div>
+              <div className="filter-actions"><button onClick={() => { setMaxDistance(20); setMaxPrice(50000); setDistanceFilterActive(false); setPriceFilterActive(false); setTodayOnly(false); setHideLowStock(false); setCurrentPage(1); }}>Reset all</button><button onClick={() => setFiltersOpen(false)}>Show {visible.length} harvests</button></div>
             </div>}
           </section>
 
@@ -461,7 +475,7 @@ export default function Home() {
             <div><Truck size={23} /><span><strong>Flexible fulfilment</strong>Doorstep delivery or farm pickup</span></div>
           </section>
         </main>
-      ) : view === "orders" && canPurchase ? <OrdersPage products={products} onShop={() => navigate("market")} /> : view === "profile" && (isConsumer || isFarmer) ? <ProfilePage products={products} role={isFarmer ? "farmer" : "consumer"} /> : view === "admin" && isAdmin ? <AdminPage readOnly={role === "support"} /> : view === "help" || view === "delivery" || view === "returns" ? <SupportPage page={view} onNavigate={navigate} /> : view === "farmer" && isFarmer ? <FarmerDashboard products={products} onShop={() => navigate("market")} /> : <LandingPage stats={marketplaceStats} onShop={() => navigate("market")} onFarmer={() => navigate("farmer")} />}
+      ) : view === "orders" && canPurchase ? <OrdersPage products={products} onShop={() => navigate("market")} /> : view === "profile" && (isConsumer || isFarmer) ? <ProfilePage products={products} role={isFarmer ? "farmer" : "consumer"} /> : view === "admin" && isAdmin ? <AdminPage readOnly={role === "support"} /> : view === "help" || view === "delivery" || view === "returns" ? <SupportPage page={view} onNavigate={navigate} /> : view === "farmer" && isFarmer ? <FarmerWorkspace onShop={() => navigate("market")} /> : <LandingPage stats={marketplaceStats} onShop={() => navigate("market")} onFarmer={() => navigate("farmer")} />}
 
       <SiteFooter view={view} user={currentUser} onNavigate={navigate} />
 
@@ -916,6 +930,8 @@ function OrdersPage({ products, onShop }: { products: Product[]; onShop: () => v
   </main>;
 }
 
+// Kept as a visual reference while the database-backed workspace is rolled out.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function FarmerDashboard({ products, onShop }: { products: Product[]; onShop: () => void }) {
   if (!products.length) return <DataLoading />;
   const orders = [
@@ -930,5 +946,96 @@ function FarmerDashboard({ products, onShop }: { products: Product[]; onShop: ()
       <section className="orders-panel"><div className="panel-head"><div><h2>Orders to fulfil</h2><p>Today&apos;s customer orders</p></div><button>View all <ArrowRight size={15} /></button></div>{orders.map((order) => <div className="order-row" key={order.id}><span className="order-icon"><ShoppingBag size={18} /></span><div><strong>{order.customer}</strong><p>{order.id} · {order.item}</p></div><small>{order.time}</small><button className={order.status.toLowerCase()}>{order.status}</button></div>)}</section>
       <section className="inventory-panel"><div className="panel-head"><div><h2>Inventory pulse</h2><p>Your active harvests</p></div><button><SlidersHorizontal size={16} /></button></div>{products.slice(0, 3).map((p) => <div className="inventory-row" key={p.id}><img src={p.image} alt="" /><div><strong>{p.name}</strong><p>{p.stock} {p.unit}s remaining</p><span><i style={{ width: `${p.stock / (p.stock + p.sold) * 100}%` }} /></span></div><b>{Math.round(p.stock / (p.stock + p.sold) * 100)}%</b></div>)}</section>
     </div>
+  </main>;
+}
+
+type FarmerWorkspaceData = {
+  user: CurrentUser;
+  farm: { id: string; name: string; verification_status: string };
+  metrics: { today_sales_kobo: number; open_orders: number; available_stock: number; active_listings: number; next_payout_kobo: number };
+  orders: Array<{ id: string; order_number: string; status: string; placed_at: string; customer: string; items: string }>;
+  listings: Array<{ id: string; title: string; unit: string; unit_price_kobo: number; quantity_available: number; quantity_reserved: number; quantity_sold: number; status: string; harvest_date: string; category_id: string; image_url: string | null; badge?: string | null }>;
+  categories: Array<{ id: string; name: string }>;
+};
+
+function FarmerWorkspace({ onShop }: { onShop: () => void }) {
+  const [data, setData] = useState<FarmerWorkspaceData | null>(null);
+  const [error, setError] = useState("");
+  const [listingOpen, setListingOpen] = useState(false);
+  const [manageListing, setManageListing] = useState<FarmerWorkspaceData["listings"][number] | null>(null);
+  const [showAllOrders, setShowAllOrders] = useState(false);
+  const [showAllListings, setShowAllListings] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function refresh() {
+    const response = await fetch("/api/farmer/dashboard", { cache: "no-store" });
+    const result = await response.json() as FarmerWorkspaceData & { error?: string };
+    if (!response.ok) throw new Error(result.error || "Could not load farmer workspace");
+    setData(result);
+  }
+
+  useEffect(() => {
+    fetch("/api/farmer/dashboard", { cache: "no-store" }).then(async (response) => {
+      const result = await response.json() as FarmerWorkspaceData & { error?: string };
+      if (!response.ok) throw new Error(result.error || "Could not load farmer workspace");
+      setData(result);
+    }).catch((reason: Error) => setError(reason.message));
+  }, []);
+
+  async function createListing(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if (!data) return;
+    setBusy(true); setError("");
+    try {
+      const form = new FormData(event.currentTarget);
+      const image = form.get("image");
+      form.delete("image");
+      const values = Object.fromEntries(form.entries());
+      const imageUrl = image instanceof File && image.size ? await listingImageDataUrl(image) : "";
+      const response = await fetch("/api/farmer/dashboard", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...values, imageUrl, farmId: data.farm.id }) });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || "Could not create listing");
+      setListingOpen(false); await refresh();
+    } catch (reason) { setError((reason as Error).message); } finally { setBusy(false); }
+  }
+
+  async function advanceOrder(order: FarmerWorkspaceData["orders"][number]) {
+    const status = order.status === "confirmed" || order.status === "paid" ? "preparing" : order.status === "preparing" ? "ready" : order.status === "ready" ? "collected" : null;
+    if (!status) return;
+    setBusy(true); setError("");
+    try {
+      const response = await fetch("/api/farmer/dashboard", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "order", id: order.id, status }) });
+      const result = await response.json() as { error?: string }; if (!response.ok) throw new Error(result.error || "Could not update order"); await refresh();
+    } catch (reason) { setError((reason as Error).message); } finally { setBusy(false); }
+  }
+
+  async function updateInventory(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if (!manageListing) return;
+    setBusy(true); setError("");
+    try {
+      const form = new FormData(event.currentTarget);
+      const image = form.get("image");
+      form.delete("image");
+      const values = Object.fromEntries(form.entries());
+      const imageUrl = image instanceof File && image.size ? await listingImageDataUrl(image) : manageListing.image_url || "";
+      const response = await fetch("/api/farmer/dashboard", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...values, imageUrl, type: "listing", id: manageListing.id }) });
+      const result = await response.json() as { error?: string }; if (!response.ok) throw new Error(result.error || "Could not update listing"); setManageListing(null); await refresh();
+    } catch (reason) { setError((reason as Error).message); } finally { setBusy(false); }
+  }
+
+  if (error && !data) return <main className="farmer-page"><div className="empty-state"><X size={28}/><h3>Farmer workspace unavailable</h3><p>{error}</p></div></main>;
+  if (!data) return <DataLoading />;
+  const orders = showAllOrders ? data.orders : data.orders.slice(0, 3);
+  const listings = showAllListings ? data.listings : data.listings.slice(0, 3);
+  return <main className="farmer-page">
+    <div className="farmer-heading"><div><button onClick={onShop}><ArrowLeft size={16}/> Marketplace</button><p className="eyebrow"><span/> FARMER WORKSPACE</p><h1>Good morning, {data.user.firstName}.</h1><p>{data.farm.name} · <span className={`farm-verification ${data.farm.verification_status}`}>{data.farm.verification_status}</span></p></div><button className="new-listing" onClick={() => { setError(""); setListingOpen(true); }} disabled={data.farm.verification_status !== "verified"}><Plus size={18}/> Add new listing</button></div>
+    {data.farm.verification_status !== "verified" && <div className="farmer-notice"><Clock3 size={18}/><span><strong>Farm verification required</strong>Your farm must be verified before produce can be published.</span></div>}
+    {error && <p className="admin-error" role="alert">{error}</p>}
+    <div className="metric-grid"><div><span>Today&apos;s sales</span><strong>{money(Number(data.metrics.today_sales_kobo) / 100)}</strong><small>Net earnings from paid orders</small></div><div><span>Open orders</span><strong>{data.metrics.open_orders}</strong><small>Orders requiring fulfilment</small></div><div><span>Produce listed</span><strong>{Number(data.metrics.available_stock)} <i>units</i></strong><small>Across {data.metrics.active_listings} active listings</small></div><div><span>Next payout</span><strong>{money(Number(data.metrics.next_payout_kobo) / 100)}</strong><small>Fulfilled orders awaiting settlement</small></div></div>
+    <div className="farmer-columns">
+      <section className="orders-panel"><div className="panel-head"><div><h2>Orders to fulfil</h2><p>Customer orders for {data.farm.name}</p></div>{data.orders.length > 3 && <button onClick={() => setShowAllOrders((value) => !value)}>{showAllOrders ? "Show recent" : "View all"} <ArrowRight className={showAllOrders ? "back" : ""} size={15}/></button>}</div>{orders.length ? orders.map((order) => { const action = order.status === "confirmed" || order.status === "paid" ? "Prepare" : order.status === "preparing" ? "Mark ready" : order.status === "ready" ? "Collected" : order.status; return <div className="order-row" key={order.id}><span className="order-icon"><ShoppingBag size={18}/></span><div><strong>{order.customer}</strong><p>#{order.order_number} · {order.items}</p></div><small>{new Date(order.placed_at).toLocaleTimeString("en-NG", { hour: "numeric", minute: "2-digit" })}</small><button disabled={busy || !["confirmed","paid","preparing","ready"].includes(order.status)} className={order.status} onClick={() => advanceOrder(order)}>{action}</button></div>}) : <div className="panel-empty">No orders to fulfil.</div>}</section>
+      <section className="inventory-panel"><div className="panel-head"><div><h2>Inventory pulse</h2><p>Your produce listings</p></div>{data.listings.length > 3 && <button onClick={() => setShowAllListings((value) => !value)}>{showAllListings ? "Show recent" : "View all"} <ArrowRight className={showAllListings ? "back" : ""} size={15}/></button>}</div>{listings.length ? listings.map((listing) => { const available = Number(listing.quantity_available) - Number(listing.quantity_reserved); const total = Number(listing.quantity_available) + Number(listing.quantity_sold); const percent = total ? Math.round(available / total * 100) : 0; return <button className="inventory-row farmer-inventory-row" key={listing.id} onClick={() => { setError(""); setManageListing(listing); }}><span className="inventory-image">{listing.image_url ? <img src={listing.image_url} alt=""/> : <Leaf size={18}/>}</span><div><strong>{listing.title}</strong><p>{available} {listing.unit}s available · {listing.status}</p><span><i style={{ width: `${Math.max(0, percent)}%` }}/></span></div><b>{percent}%</b></button>}) : <div className="panel-empty">No listings yet.</div>}</section>
+    </div>
+    {listingOpen && <div className="modal-overlay" onMouseDown={() => setListingOpen(false)}><div className="admin-add-modal farmer-listing-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close-modal" onClick={() => setListingOpen(false)}><X size={19}/></button><p className="auth-kicker">NEW HARVEST</p><h2>Add a produce listing</h2><p>Publish available produce from {data.farm.name}.</p><form onSubmit={createListing}><label>Category<select name="categoryId" required><option value="">Select category</option>{data.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>Produce name<input name="name" required/></label><div className="form-row"><label>Unit<input name="unit" placeholder="basket" required/></label><label>Price (NGN)<input name="price" type="number" min="1" required/></label></div><div className="form-row"><label>Available quantity<input name="stock" type="number" min="1" required/></label><label>Harvest date<input name="harvestDate" type="date" required/></label></div><label>Produce picture<input name="image" type="file" accept="image/png,image/jpeg,image/webp" required/><small>JPG, PNG, or WebP. Maximum 2 MB.</small></label><label>Badge<input name="badge" placeholder="Picked today"/></label>{error && <p className="admin-error">{error}</p>}<button className="admin-submit" disabled={busy}>{busy ? "Publishing..." : "Publish listing"} {!busy && <ArrowRight size={16}/>}</button></form></div></div>}
+    {manageListing && <div className="modal-overlay" onMouseDown={() => setManageListing(null)}><div className="admin-add-modal farmer-listing-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close-modal" onClick={() => setManageListing(null)}><X size={19}/></button><p className="auth-kicker">EDIT HARVEST</p><h2>{manageListing.title}</h2><p>Update the listing details shown to customers.</p><form onSubmit={updateInventory}><label>Category<select name="categoryId" defaultValue={manageListing.category_id} required>{data.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>Produce name<input name="name" defaultValue={manageListing.title} required/></label><div className="form-row"><label>Unit<input name="unit" defaultValue={manageListing.unit} required/></label><label>Price (NGN)<input name="price" type="number" min="1" defaultValue={Number(manageListing.unit_price_kobo) / 100} required/></label></div><div className="form-row"><label>Available quantity<input name="stock" type="number" min={Number(manageListing.quantity_reserved)} defaultValue={Number(manageListing.quantity_available)} required/></label><label>Harvest date<input name="harvestDate" type="date" defaultValue={String(manageListing.harvest_date).slice(0, 10)} required/></label></div>{manageListing.image_url && <div className="listing-image-preview"><img src={manageListing.image_url} alt={`Current ${manageListing.title}`}/><span>Current picture</span></div>}<label>Change picture<input name="image" type="file" accept="image/png,image/jpeg,image/webp"/><small>Leave empty to keep the current picture. Maximum 2 MB.</small></label><label>Badge<input name="badge" defaultValue={manageListing.badge || ""} placeholder="Picked today"/></label><label>Listing status<select name="status" defaultValue={manageListing.status === "paused" ? "paused" : "active"}><option value="active">Active</option><option value="paused">Paused</option></select></label>{error && <p className="admin-error">{error}</p>}<button className="admin-submit" disabled={busy}>{busy ? "Saving..." : "Save listing"} {!busy && <ArrowRight size={16}/>}</button></form></div></div>}
   </main>;
 }
