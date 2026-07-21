@@ -117,6 +117,14 @@ function roleLabel(role: CurrentUser["role"]) {
   return `${role.charAt(0).toUpperCase()}${role.slice(1)} account`;
 }
 
+const viewPaths: Record<View, string> = { landing: "/", market: "/produce", orders: "/orders", farmer: "/farmer", admin: "/admin", profile: "/profile", help: "/help", delivery: "/delivery-areas", returns: "/returns-refunds" };
+
+function viewFromPath(pathname: string): View {
+  const normalized = pathname.length > 1 ? pathname.replace(/\/$/, "") : pathname;
+  if (normalized === "/produce" || normalized === "/market") return "market";
+  return (Object.entries(viewPaths).find(([, path]) => path === normalized)?.[0] as View | undefined) || "landing";
+}
+
 async function uploadListingImage(file: File) {
   if (!file.type.match(/^image\/(jpeg|png|webp)$/)) throw new Error("Upload a JPG, PNG, or WebP image");
   if (file.size > 4 * 1024 * 1024) throw new Error("Listing images must be 4 MB or smaller");
@@ -196,6 +204,13 @@ export default function Home() {
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
   }, [view]);
+
+  useEffect(() => {
+    const syncView = () => setView(viewFromPath(window.location.pathname));
+    syncView();
+    window.addEventListener("popstate", syncView);
+    return () => window.removeEventListener("popstate", syncView);
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -278,6 +293,18 @@ export default function Home() {
   const isAdmin = role === "admin" || role === "support";
   const canPurchase = isConsumer || isFarmer;
 
+  useEffect(() => {
+    if (sessionLoading) return;
+    const protectedView = view === "orders" || view === "farmer" || view === "admin" || view === "profile";
+    const denied = (!currentUser && protectedView) || (view === "market" && isAdmin) || (view === "orders" && !canPurchase) || (view === "farmer" && !isFarmer) || (view === "admin" && !isAdmin) || (view === "profile" && !isConsumer && !isFarmer);
+    if (!denied) return;
+    window.history.replaceState({}, "", "/");
+    queueMicrotask(() => {
+      setView("landing");
+      if (!currentUser && protectedView) openSignIn(false);
+    });
+  }, [view, sessionLoading, currentUser, isAdmin, canPurchase, isFarmer, isConsumer]);
+
   function openSignIn(resumeCheckout = false) {
     setSigninIdentifier("");
     setSigninPassword("");
@@ -300,6 +327,7 @@ export default function Home() {
       return;
     }
     if ((next === "market" && isAdmin) || (next === "orders" && !canPurchase) || (next === "farmer" && !isFarmer) || (next === "admin" && !isAdmin) || (next === "profile" && !isConsumer && !isFarmer)) return;
+    if (window.location.pathname !== viewPaths[next]) window.history.pushState({}, "", viewPaths[next]);
     setView(next);
   }
 
@@ -334,6 +362,7 @@ export default function Home() {
     setCurrentUser(null);
     setCart({}); setLiked([]); setNotifications([]);
     setAccountMenuOpen(false);
+    window.history.replaceState({}, "", "/");
     setView("landing");
   }
 
@@ -348,7 +377,9 @@ export default function Home() {
     setAccountMenuOpen(false);
     setNotificationOpen(false);
     setCartOpen(false);
-    setView(user.role === "farmer" ? "farmer" : user.role === "admin" || user.role === "support" ? "admin" : "landing");
+    const targetView: View = user.role === "farmer" ? "farmer" : user.role === "admin" || user.role === "support" ? "admin" : "landing";
+    window.history.replaceState({}, "", viewPaths[targetView]);
+    setView(targetView);
     if (["consumer", "farmer"].includes(user.role)) void Promise.all([fetch("/api/cart", { cache: "no-store" }), fetch("/api/favourites", { cache: "no-store" }), fetch("/api/notifications", { cache: "no-store" })]).then(async ([cartResponse, favouriteResponse, notificationResponse]) => {
       const cartData = await cartResponse.json() as { cart?: Record<string, number> };
       const favouriteData = await favouriteResponse.json() as { favourites?: string[] };
@@ -552,9 +583,9 @@ export default function Home() {
                 {currentUser && <button role="menuitem" onClick={() => { setAccountMenuOpen(false); setNotificationOpen(true); }}><Bell size={17} /><span><strong>Notifications</strong><small>Orders, harvests and delivery updates</small></span>{unreadNotificationCount > 0 && <i>{unreadNotificationCount}</i>}</button>}
                 <button role="menuitem" onClick={toggleTheme}>{theme === "light" ? <Moon size={17} /> : <Sun size={17} />}<span><strong>{theme === "light" ? "Dark theme" : "Light theme"}</strong><small>Change the appearance</small></span><span className={`theme-switch ${theme === "dark" ? "on" : ""}`}><b /></span></button>
                 <div className="account-menu-support" aria-label="Help and support">
-                  <button role="menuitem" onClick={() => { setView("help"); setAccountMenuOpen(false); }}><Headphones size={16} /><span>Help centre</span></button>
-                  <button role="menuitem" onClick={() => { setView("delivery"); setAccountMenuOpen(false); }}><MapPin size={16} /><span>Delivery areas</span></button>
-                  <button role="menuitem" onClick={() => { setView("returns"); setAccountMenuOpen(false); }}><RotateCcw size={16} /><span>Returns & refunds</span></button>
+                  <button role="menuitem" onClick={() => { navigate("help"); setAccountMenuOpen(false); }}><Headphones size={16} /><span>Help centre</span></button>
+                  <button role="menuitem" onClick={() => { navigate("delivery"); setAccountMenuOpen(false); }}><MapPin size={16} /><span>Delivery areas</span></button>
+                  <button role="menuitem" onClick={() => { navigate("returns"); setAccountMenuOpen(false); }}><RotateCcw size={16} /><span>Returns & refunds</span></button>
                 </div>
                 {!currentUser ? <div className="account-menu-auth">
                   <button onClick={() => { setAccountMenuOpen(false); openSignIn(false); }}><LogIn size={16} /> Sign in</button>
@@ -692,7 +723,7 @@ export default function Home() {
       </div>}
 
       {checkout && <div className="modal-overlay"><div className="payment-modal">
-        {!paid ? <><button className="close-modal" onClick={() => setCheckout(false)}><X size={20} /></button><div className="pay-icon"><Leaf size={24} /></div><p className="eyebrow center">PAYMENT</p><h2>Complete your order</h2><p>Stock availability will be confirmed when payment completes.</p><div className="pay-summary"><span>Total to pay</span><strong>{money(subtotal + deliveryFee)}</strong></div><label>Email address<input value={currentUser?.email || ""} readOnly /></label>{checkoutError && <p className="auth-error" role="alert">{checkoutError}</p>}<button className="pay-button" disabled={checkoutBusy} onClick={completeOrder}>{checkoutBusy ? "Confirming order..." : "Pay securely with Paystack"} {!checkoutBusy && <ArrowRight size={18} />}</button><small>Cards · Bank transfer · USSD</small></> : <div className="success-state"><span><Check size={30} /></span><p className="eyebrow center">ORDER CONFIRMED</p><h2>Your harvest is on its way.</h2><p>Order <strong>#{confirmedOrderNumber}</strong> has been sent to {items.length} local {items.length === 1 ? "farmer" : "farmers"}.</p><button onClick={() => { setCheckout(false); setPaid(false); setCart({}); fetch("/api/cart", { method: "DELETE" }); setView("orders"); }}>View order details</button></div>}
+        {!paid ? <><button className="close-modal" onClick={() => setCheckout(false)}><X size={20} /></button><div className="pay-icon"><Leaf size={24} /></div><p className="eyebrow center">PAYMENT</p><h2>Complete your order</h2><p>Stock availability will be confirmed when payment completes.</p><div className="pay-summary"><span>Total to pay</span><strong>{money(subtotal + deliveryFee)}</strong></div><label>Email address<input value={currentUser?.email || ""} readOnly /></label>{checkoutError && <p className="auth-error" role="alert">{checkoutError}</p>}<button className="pay-button" disabled={checkoutBusy} onClick={completeOrder}>{checkoutBusy ? "Confirming order..." : "Pay securely with Paystack"} {!checkoutBusy && <ArrowRight size={18} />}</button><small>Cards · Bank transfer · USSD</small></> : <div className="success-state"><span><Check size={30} /></span><p className="eyebrow center">ORDER CONFIRMED</p><h2>Your harvest is on its way.</h2><p>Order <strong>#{confirmedOrderNumber}</strong> has been sent to {items.length} local {items.length === 1 ? "farmer" : "farmers"}.</p><button onClick={() => { setCheckout(false); setPaid(false); setCart({}); fetch("/api/cart", { method: "DELETE" }); navigate("orders"); }}>View order details</button></div>}
       </div></div>}
 
       {signupOpen && <div className="modal-overlay" onMouseDown={() => setSignupOpen(false)}><div className="signup-modal" onMouseDown={(event) => event.stopPropagation()}>
