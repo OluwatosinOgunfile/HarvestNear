@@ -1,0 +1,33 @@
+.farmer-heading-actions {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.farmer-heading-actions > label { display: grid; gap: 5px; color: var(--muted); font-size: 8px; font-weight: 800; }
+.farmer-heading-actions select { height: 42px; min-width: 190px; padding: 0 32px 0 10px; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 4px; }
+.farmer-heading-actions .add-farm { height: 42px; padding: 0 13px; display: flex; align-items: center; gap: 6px; color: var(--green); background: transparent; border: 1px solid var(--green); border-radius: 4px; font-size: 10px; font-weight: 800; }
+.farmer-heading .farmer-heading-actions > button { height: 42px; margin: 0; padding: 0 14px; align-self: flex-end; justify-content: center; border-radius: 4px; font-size: 10px; font-weight: 800; white-space: nowrap; }
+.farmer-heading .farmer-heading-actions > .add-farm { color: var(--green); background: transparent; border: 1px solid var(--green); }
+.farmer-heading .farmer-heading-actions > .new-listing { color: white; background: var(--green); border: 1px solid var(--green); }
+.farmer-heading .farmer-heading-actions > .new-listing:disabled { color: var(--muted); background: #edf1ea; border-color: var(--line); opacity: 1; }
+.active-farm-identity { display: flex; align-items: center; gap: 7px; }
+.farm-verified-mark { width: 18px; height: 18px; display: inline-grid; place-items: center; color: var(--green); line-height: 0; }
+.farmer-upgrade-card { margin-top: 18px; padding: 20px 22px; display: grid; grid-template-columns: 42px 1fr auto; gap: 15px; align-items: center; color: var(--ink); background: #f3f8f0; border: 1px solid var(--line); border-radius: 6px; }
+.farmer-upgrade-card > span { width: 42px; height: 42px; display: grid; place-items: center; color: var(--green); background: #e3eee0; border-radius: 5px; }
+.farmer-upgrade-card h2 { margin: 4px 0 5px; font: 500 19px Georgia, serif; }
+.farmer-upgrade-card p { margin: 0; color: var(--muted); font-size: 9px; }
+.farmer-upgrade-card .eyebrow { color: var(--green); font-size: 8px; font-weight: 800; }
+.farmer-upgrade-card > button { height: 39px; padding: 0 13px; display: flex; align-items: center; gap: 6px; color: white; background: var(--green); border: 0; border-radius: 4px; font-size: 9px; font-weight: 800; }
+.app-shell[data-theme="dark"] .farmer-heading-actions select { background: #19211c; }
+.app-shell[data-theme="dark"] .farmer-heading .farmer-heading-actions > .new-listing:disabled { color: #9caaa0; background: #202a23; }
+.app-shell[data-theme="dark"] .farmer-upgrade-card { background: #19251d; }
+.app-shell[data-theme="dark"] .farmer-upgrade-card > span { background: #26382c; }
+@media (max-width: 760px) {
+  .farmer-heading-actions { margin-top: 18px; justify-content: flex-start; }
+  .farmer-heading-actions > label { width: 100%; }
+  .farmer-heading-actions select { width: 100%; }
+  .farmer-upgrade-card { grid-template-columns: 42px 1fr; }
+  .farmer-upgrade-card > button { grid-column: 1 / 3; justify-content: center; }
+}

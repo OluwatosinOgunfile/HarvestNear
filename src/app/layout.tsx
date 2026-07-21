@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import "./theme.css";
 import "./orders.css";
+import "./farm-management.css";
 import "./catalog.css";
 import "./footer.css";
 import "./landing.css";

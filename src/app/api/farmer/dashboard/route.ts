@@ -1,5 +1,6 @@
 import { del } from "@vercel/blob";
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
@@ -16,11 +17,13 @@ function validListingImage(value?: string) {
   try { return new URL(value).hostname.endsWith(".blob.vercel-storage.com"); } catch { return false; }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const user = await farmerSession();
   if (!user) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const sql = getDatabase();
-  const [farm] = await sql`SELECT id, name, verification_status FROM farms WHERE owner_id = ${user.id} ORDER BY created_at LIMIT 1`;
+  const farms = await sql`SELECT id, name, verification_status, city, state FROM farms WHERE owner_id = ${user.id} ORDER BY created_at`;
+  const requestedFarmId = new URL(request.url).searchParams.get("farmId");
+  const farm = farms.find((item) => String(item.id) === requestedFarmId) || farms[0];
   if (!farm) return NextResponse.json({ error: "No farm is linked to this account" }, { status: 404 });
 
   const [metricRows, orders, listings, categories] = await Promise.all([
@@ -31,7 +34,10 @@ export async function GET() {
       (SELECT count(*)::int FROM produce_listings WHERE farm_id = ${farm.id} AND status = 'active') AS active_listings,
       coalesce((SELECT sum(subtotal_kobo) FROM farm_orders fo WHERE fo.farm_id = ${farm.id} AND fo.status IN ('delivered','collected') AND NOT EXISTS (SELECT 1 FROM payouts WHERE payouts.farm_order_id = fo.id)), 0) AS payout_gross_kobo,
       coalesce((SELECT sum(platform_fee_kobo) FROM farm_orders fo WHERE fo.farm_id = ${farm.id} AND fo.status IN ('delivered','collected') AND NOT EXISTS (SELECT 1 FROM payouts WHERE payouts.farm_order_id = fo.id)), 0) AS payout_fee_kobo,
-      coalesce((SELECT sum(farmer_net_kobo) FROM farm_orders fo WHERE fo.farm_id = ${farm.id} AND fo.status IN ('delivered','collected') AND NOT EXISTS (SELECT 1 FROM payouts WHERE payouts.farm_order_id = fo.id)), 0) AS next_payout_kobo`,
+      coalesce((SELECT sum(farmer_net_kobo) FROM farm_orders fo WHERE fo.farm_id = ${farm.id} AND fo.status IN ('delivered','collected') AND NOT EXISTS (SELECT 1 FROM payouts WHERE payouts.farm_order_id = fo.id)), 0) AS next_payout_kobo,
+      coalesce((SELECT sum(subtotal_kobo) FROM farm_orders WHERE farm_id = ${farm.id} AND status IN ('delivered','collected')), 0) AS cumulative_gross_kobo,
+      coalesce((SELECT sum(platform_fee_kobo) FROM farm_orders WHERE farm_id = ${farm.id} AND status IN ('delivered','collected')), 0) AS cumulative_fee_kobo,
+      coalesce((SELECT sum(farmer_net_kobo) FROM farm_orders WHERE farm_id = ${farm.id} AND status IN ('delivered','collected')), 0) AS cumulative_net_kobo`,
     sql`SELECT fo.id, o.order_number, fo.status, fo.subtotal_kobo, fo.farmer_net_kobo, o.fulfilment_method, o.placed_at,
       o.delivery_address_snapshot, o.customer_note, users.id AS customer_id, users.email AS customer_email, users.phone AS customer_phone, users.avatar_url AS customer_avatar,
       delivery.tracking_code, delivery.status AS delivery_status, delivery.window_start, delivery.window_end,
@@ -48,13 +54,16 @@ export async function GET() {
       WHERE listing.farm_id = ${farm.id} ORDER BY listing.created_at DESC LIMIT 50`,
     sql`SELECT id, name FROM produce_categories WHERE is_active ORDER BY name`,
   ]);
-  return NextResponse.json({ user, farm, metrics: metricRows[0], orders: orders.map((order) => ({ ...order, customer_avatar: order.customer_avatar ? profileImageUrl(String(order.customer_id), order.customer_avatar) : null })), listings: listings.map((listing) => ({ ...listing, stored_image_url: listing.image_url, image_url: listing.image_url ? listingImageUrl(String(listing.id), listing.image_url) : null })), categories });
+  return NextResponse.json({ user, farm, farms, metrics: metricRows[0], orders: orders.map((order) => ({ ...order, customer_avatar: order.customer_avatar ? profileImageUrl(String(order.customer_id), order.customer_avatar) : null })), listings: listings.map((listing) => ({ ...listing, stored_image_url: listing.image_url, image_url: listing.image_url ? listingImageUrl(String(listing.id), listing.image_url) : null })), categories });
 }
 
 export async function POST(request: Request) {
   const user = await farmerSession();
   if (!user) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await request.json().catch(() => null) as Record<string, string> | null;
+  if (body?.type === "farm") {
+    return POSTFarm(request, user, body);
+  }
   if (!body?.farmId || !body.categoryId || !body.name || !body.unit || !body.price || !body.stock || !body.harvestDate) return NextResponse.json({ error: "Complete all required fields" }, { status: 400 });
   if (!validListingImage(body.imageUrl)) return NextResponse.json({ error: "Upload a JPG, PNG, or WebP image no larger than 2 MB" }, { status: 400 });
   const sql = getDatabase();
@@ -75,14 +84,27 @@ export async function POST(request: Request) {
   }
 }
 
+async function POSTFarm(_request: Request, user: { id: string; email: string }, body: Record<string, string>) {
+  if (!body.name?.trim() || !body.location?.trim() || !body.phone?.trim()) return NextResponse.json({ error: "Farm name, location, and phone are required" }, { status: 400 });
+  const latitude = Number(body.latitude), longitude = Number(body.longitude);
+  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) return NextResponse.json({ error: "Capture valid farm coordinates" }, { status: 400 });
+  const parts = body.location.split(",").map((part) => part.trim()).filter(Boolean);
+  const slug = `${body.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}-${randomUUID().slice(0, 8)}`;
+  const sql = getDatabase();
+  const [farm] = await sql`INSERT INTO farms (owner_id, name, slug, description, phone, email, address_text, city, state, latitude, longitude, verification_status, offers_pickup) VALUES (${user.id}, ${body.name.trim()}, ${slug}, 'New farm awaiting profile completion and verification.', ${body.phone.trim()}, ${user.email}, ${body.location.trim()}, ${parts[0] || "Abuja"}, ${parts.at(-1) || "FCT"}, ${latitude}, ${longitude}, 'pending', true) RETURNING id, name, verification_status`;
+  await sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) VALUES (${user.id}, 'farm', 'Farm submitted for verification', ${`${body.name.trim()} has been added and is awaiting administrator verification.`}, '/farmer', ${JSON.stringify({ farmId: String(farm.id), status: "pending" })}::jsonb)`;
+  return NextResponse.json({ farm }, { status: 201 });
+}
+
 export async function PATCH(request: Request) {
   const user = await farmerSession();
   if (!user) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await request.json().catch(() => null) as Record<string, string> | null;
   const sql = getDatabase();
   if (body?.type === "order" && body.id && ["preparing", "ready", "dispatched"].includes(body.status)) {
-    const [order] = await sql`SELECT id, order_id FROM farm_orders WHERE id = ${body.id} AND farm_id IN (SELECT id FROM farms WHERE owner_id = ${user.id})`;
+    const [order] = await sql`SELECT farm_order.id, farm_order.order_id, customer_order.fulfilment_method FROM farm_orders farm_order JOIN orders customer_order ON customer_order.id = farm_order.order_id WHERE farm_order.id = ${body.id} AND farm_order.farm_id IN (SELECT id FROM farms WHERE owner_id = ${user.id})`;
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
+    if (body.status === "dispatched" && ["farm_pickup", "collection_hub"].includes(String(order.fulfilment_method))) return NextResponse.json({ error: "Pickup orders are completed when the customer confirms collection" }, { status: 409 });
     const [customerOrder] = await sql`SELECT customer_id, order_number FROM orders WHERE id = ${order.order_id}`;
     if (!customerOrder) return NextResponse.json({ error: "Customer order not found" }, { status: 404 });
     const copy = body.status === "preparing" ? "A farmer is preparing produce for your order." : body.status === "ready" ? "Your produce is packed and ready for fulfilment." : "Your produce has left the farm and is on the way.";

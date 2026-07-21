@@ -21,7 +21,10 @@ export async function GET() {
       (SELECT count(*)::int FROM reviews WHERE NOT is_visible) AS hidden_reviews,
       (SELECT count(*)::int FROM carts WHERE expires_at > now()) AS active_carts,
       (SELECT count(*)::int FROM notifications WHERE read_at IS NULL) AS unread_notifications,
-      coalesce((SELECT sum(total_kobo) FROM orders WHERE paid_at IS NOT NULL AND status NOT IN ('cancelled','refunded')), 0) AS gross_sales_kobo`,
+      coalesce((SELECT sum(total_kobo) FROM orders WHERE paid_at IS NOT NULL AND status NOT IN ('cancelled','refunded')), 0) AS gross_sales_kobo,
+      coalesce((SELECT sum(subtotal_kobo) FROM farm_orders WHERE status IN ('delivered','collected')), 0) AS cumulative_gross_kobo,
+      coalesce((SELECT sum(platform_fee_kobo) FROM farm_orders WHERE status IN ('delivered','collected')), 0) AS cumulative_fee_kobo,
+      coalesce((SELECT sum(farmer_net_kobo) FROM farm_orders WHERE status IN ('delivered','collected')), 0) AS cumulative_net_kobo`,
     sql`SELECT id, first_name, last_name, email, role, is_active, created_at FROM users ORDER BY created_at DESC LIMIT 100`,
   ]);
   return NextResponse.json({ metrics: metrics[0], users });

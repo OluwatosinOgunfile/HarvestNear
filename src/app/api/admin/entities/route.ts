@@ -42,6 +42,7 @@ export async function GET(request: NextRequest) {
     ` : await sql`
       SELECT users.id, users.first_name, users.last_name, users.email, users.phone, users.role, users.is_active, users.avatar_url, users.created_at,
         (SELECT count(*)::int FROM farms WHERE owner_id = users.id) AS farm_count,
+        (SELECT string_agg(farm.name, ', ' ORDER BY farm.created_at) FROM farms farm WHERE farm.owner_id = users.id) AS farm_names,
         (SELECT count(*)::int FROM orders WHERE customer_id = users.id) AS order_count
       FROM users ORDER BY users.created_at DESC LIMIT 100
     `;
@@ -98,10 +99,12 @@ export async function GET(request: NextRequest) {
       LEFT JOIN LATERAL (SELECT * FROM payments WHERE order_id = orders.id ORDER BY created_at DESC LIMIT 1) payment ON true
       LEFT JOIN deliveries delivery ON delivery.order_id = orders.id WHERE orders.id = ${id} LIMIT 1
     ` : await sql`
-      SELECT orders.id, orders.order_number, orders.status, orders.total_kobo, orders.fulfilment_method, orders.placed_at,
+      SELECT orders.id, orders.order_number, orders.status, orders.subtotal_kobo, orders.delivery_fee_kobo, orders.total_kobo, orders.fulfilment_method, orders.placed_at,
         users.first_name || ' ' || users.last_name AS customer_name, users.email AS customer_email,
         delivery.status AS delivery_status, delivery.tracking_code,
-        (SELECT count(*)::int FROM order_items WHERE order_id = orders.id) AS item_count
+        (SELECT count(*)::int FROM order_items WHERE order_id = orders.id) AS item_count,
+        (SELECT string_agg(DISTINCT item.farm_name, ', ' ORDER BY item.farm_name) FROM order_items item WHERE item.order_id = orders.id) AS farm_names,
+        coalesce((SELECT json_agg(json_build_object('id', item.id, 'product', item.product_name, 'farm', item.farm_name, 'quantity', item.quantity, 'unit', item.unit, 'unit_price_kobo', item.unit_price_kobo, 'line_total_kobo', item.line_total_kobo) ORDER BY item.created_at) FROM order_items item WHERE item.order_id = orders.id), '[]') AS items
       FROM orders JOIN users ON users.id = orders.customer_id LEFT JOIN deliveries delivery ON delivery.order_id = orders.id
       ORDER BY orders.created_at DESC LIMIT 100
     `;
