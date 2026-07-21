@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
         farms.offers_delivery, farms.created_at, users.first_name || ' ' || users.last_name AS owner_name,
         (SELECT count(*)::int FROM produce_listings WHERE farm_id = farms.id AND status = 'active') AS listing_count
       FROM farms JOIN users ON users.id = farms.owner_id
-      ORDER BY CASE farms.verification_status WHEN 'pending' THEN 0 WHEN 'rejected' THEN 1 WHEN 'verified' THEN 2 ELSE 3 END, farms.created_at DESC
+      ORDER BY farms.created_at DESC
       LIMIT 100
     `;
     return NextResponse.json(id ? { entity: rows[0] ?? null } : { entities: rows });
@@ -118,7 +118,7 @@ export async function GET(request: NextRequest) {
       SELECT refund.id, refund.status, refund.reason, refund.amount_kobo, refund.requested_at, orders.order_number,
         users.first_name || ' ' || users.last_name AS customer_name
       FROM refunds refund JOIN orders ON orders.id = refund.order_id JOIN users ON users.id = refund.requested_by
-      ORDER BY CASE refund.status WHEN 'requested' THEN 0 WHEN 'under_review' THEN 1 WHEN 'approved' THEN 2 ELSE 3 END, refund.requested_at DESC LIMIT 100
+      ORDER BY refund.requested_at DESC LIMIT 100
     `;
     return NextResponse.json(id ? { entity: rows[0] ?? null } : { entities: rows });
   }
