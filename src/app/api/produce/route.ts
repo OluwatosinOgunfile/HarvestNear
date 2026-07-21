@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getDatabase } from "@/lib/db";
+import { listingImageUrl } from "@/lib/images";
 
 export const dynamic = "force-dynamic";
 
@@ -79,7 +80,7 @@ export async function GET(request: NextRequest) {
         available: daysAway <= 0 ? "Today" : daysAway === 1 ? "Tomorrow" : harvestDate.toLocaleDateString("en-NG", { weekday: "short", day: "numeric", month: "short", timeZone: "Africa/Lagos" }),
         rating: Number(row.rating),
         badge: row.badge ? String(row.badge) : undefined,
-        image: row.image ? String(row.image) : "/produce/vine-ripe-tomatoes.webp",
+        image: row.image ? listingImageUrl(String(row.id), row.image) : "/produce/vine-ripe-tomatoes.webp",
       };
     });
 

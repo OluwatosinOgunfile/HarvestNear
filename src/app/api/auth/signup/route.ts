@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { createSession } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
 
-type SignupBody = { firstName?: string; lastName?: string; phone?: string; email?: string; password?: string; role?: string; farmName?: string; farmLocation?: string };
+type SignupBody = { firstName?: string; lastName?: string; phone?: string; email?: string; password?: string; role?: string; farmName?: string; farmLocation?: string; latitude?: string; longitude?: string };
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null) as SignupBody | null;
@@ -17,6 +17,11 @@ export async function POST(request: Request) {
   if (body.password.length < 8) return NextResponse.json({ error: "Password must contain at least 8 characters" }, { status: 400 });
   if (role === "farmer" && (!body.farmName?.trim() || !body.farmLocation?.trim())) {
     return NextResponse.json({ error: "Farm name and location are required for farmer accounts" }, { status: 400 });
+  }
+  const latitude = Number(body?.latitude);
+  const longitude = Number(body?.longitude);
+  if (role === "farmer" && (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180)) {
+    return NextResponse.json({ error: "Capture or enter valid farm coordinates" }, { status: 400 });
   }
 
   try {
@@ -35,7 +40,7 @@ export async function POST(request: Request) {
           RETURNING id, email, first_name, last_name, role
         ), new_farm AS (
           INSERT INTO farms (owner_id, name, slug, description, phone, email, address_text, city, state, latitude, longitude, verification_status, offers_pickup)
-          SELECT id, ${body.farmName!.trim()}, ${farmSlug}, 'New farm awaiting profile completion and verification.', ${phone}, ${email}, ${body.farmLocation!.trim()}, ${city}, ${state}, 9.0765, 7.3986, 'pending', true
+          SELECT id, ${body.farmName!.trim()}, ${farmSlug}, 'New farm awaiting profile completion and verification.', ${phone}, ${email}, ${body.farmLocation!.trim()}, ${city}, ${state}, ${latitude}, ${longitude}, 'pending', true
           FROM new_user RETURNING id
         )
         SELECT new_user.*, new_farm.id AS farm_id FROM new_user CROSS JOIN new_farm

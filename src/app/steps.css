@@ -3,7 +3,8 @@
 }
 
 .steps-line article{
-  padding:48px 28px 0 0;
+  padding:48px 14px 0;
+  text-align:center;
 }
 
 .steps-line article>span{
@@ -11,6 +12,8 @@
   height:28px;
   padding:0;
   top:0;
+  left:50%;
+  transform:translateX(-50%);
   display:grid;
   place-items:center;
   color:white;
@@ -28,9 +31,19 @@
   height:1px;
   position:absolute;
   top:14px;
-  left:36px;
-  right:8px;
+  left:calc(50% + 18px);
+  right:calc(-50% + 18px);
   background:#cfd9d0;
+}
+
+.steps-line article>div{
+  margin-right:auto;
+  margin-left:auto;
+}
+
+.steps-line article>p{
+  margin-right:auto;
+  margin-left:auto;
 }
 
 .app-shell[data-theme="dark"] .steps-line article>span{
@@ -67,6 +80,7 @@
 
   .steps-line article>span{
     position:static;
+    transform:none;
     flex:none;
   }
 

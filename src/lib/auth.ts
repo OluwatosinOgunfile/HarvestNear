@@ -4,6 +4,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { cookies, headers } from "next/headers";
 
 import { getDatabase } from "@/lib/db";
+import { profileImageUrl } from "@/lib/images";
 
 export type SessionUser = {
   id: string;
@@ -11,6 +12,9 @@ export type SessionUser = {
   firstName: string;
   lastName: string;
   role: "consumer" | "farmer" | "admin" | "support";
+  avatarUrl: string | null;
+  impersonating?: boolean;
+  administrator?: { id: string; firstName: string; lastName: string };
 };
 
 const COOKIE_NAME = "harvestnearu_session";
@@ -58,9 +62,11 @@ export async function getSessionUser(): Promise<SessionUser | null> {
 
   const sql = getDatabase();
   const [user] = await sql`
-    SELECT users.id, users.email, users.first_name, users.last_name, users.role
+    SELECT users.id, users.email, users.first_name, users.last_name, users.role, users.avatar_url, users.updated_at,
+      administrator.id AS administrator_id, administrator.first_name AS administrator_first_name, administrator.last_name AS administrator_last_name
     FROM user_sessions session
     JOIN users ON users.id = session.user_id
+    LEFT JOIN users administrator ON administrator.id = session.impersonator_user_id
     WHERE session.token_hash = ${hashToken(token)}
       AND session.expires_at > now()
       AND users.is_active
@@ -72,5 +78,46 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     id: String(user.id), email: String(user.email),
     firstName: String(user.first_name), lastName: String(user.last_name),
     role: user.role as SessionUser["role"],
+    avatarUrl: user.avatar_url ? `${profileImageUrl(String(user.id), String(user.avatar_url))}?v=${new Date(String(user.updated_at)).getTime()}` : null,
+    impersonating: Boolean(user.administrator_id),
+    administrator: user.administrator_id ? { id: String(user.administrator_id), firstName: String(user.administrator_first_name), lastName: String(user.administrator_last_name) } : undefined,
   };
+}
+
+export async function startImpersonation(targetUserId: string) {
+  const token = (await cookies()).get(COOKIE_NAME)?.value;
+  if (!token) return null;
+  const sql = getDatabase();
+  const [session] = await sql`
+    SELECT session.id, session.user_id, users.role
+    FROM user_sessions session JOIN users ON users.id = session.user_id
+    WHERE session.token_hash = ${hashToken(token)} AND session.expires_at > now()
+      AND session.impersonator_user_id IS NULL
+    LIMIT 1
+  `;
+  if (!session || session.role !== "admin" || String(session.user_id) === targetUserId) return null;
+  const [target] = await sql`SELECT id, first_name, last_name, role FROM users WHERE id = ${targetUserId} AND is_active LIMIT 1`;
+  if (!target) return null;
+  await sql.transaction([
+    sql`UPDATE user_sessions SET impersonator_user_id = ${session.user_id}, user_id = ${target.id}, impersonation_started_at = now(), last_seen_at = now() WHERE id = ${session.id}`,
+    sql`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES (${session.user_id}, 'user.impersonation_started', 'user', ${targetUserId}, ${JSON.stringify({ targetRole: target.role, sessionId: String(session.id) })}::jsonb)`,
+  ]);
+  return target;
+}
+
+export async function stopImpersonation() {
+  const token = (await cookies()).get(COOKIE_NAME)?.value;
+  if (!token) return null;
+  const sql = getDatabase();
+  const [session] = await sql`
+    SELECT id, user_id AS target_user_id, impersonator_user_id
+    FROM user_sessions WHERE token_hash = ${hashToken(token)} AND expires_at > now()
+      AND impersonator_user_id IS NOT NULL LIMIT 1
+  `;
+  if (!session) return null;
+  await sql.transaction([
+    sql`UPDATE user_sessions SET user_id = ${session.impersonator_user_id}, impersonator_user_id = NULL, impersonation_started_at = NULL, last_seen_at = now() WHERE id = ${session.id}`,
+    sql`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES (${session.impersonator_user_id}, 'user.impersonation_ended', 'user', ${session.target_user_id}, ${JSON.stringify({ sessionId: String(session.id) })}::jsonb)`,
+  ]);
+  return { administratorId: String(session.impersonator_user_id) };
 }

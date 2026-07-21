@@ -11,6 +11,8 @@ import "./brand-header.css";
 import "./steps.css";
 import "./support.css";
 import "./admin.css";
+import "./spinner.css";
+import "./polish.css";
 
 export const metadata: Metadata = {
   title: "HarvestNearU | Fresh Local Produce, Found Here",
