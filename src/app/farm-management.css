@@ -20,14 +20,29 @@
 .farmer-upgrade-card p { margin: 0; color: var(--muted); font-size: 9px; }
 .farmer-upgrade-card .eyebrow { color: var(--green); font-size: 8px; font-weight: 800; }
 .farmer-upgrade-card > button { height: 39px; padding: 0 13px; display: flex; align-items: center; gap: 6px; color: white; background: var(--green); border: 0; border-radius: 4px; font-size: 9px; font-weight: 800; }
+.profile-farm-switcher { margin: 18px 0; padding: 18px 20px; display: grid; grid-template-columns: 250px 1fr; gap: 22px; align-items: center; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 6px; }
+.profile-farm-switcher h2 { margin: 4px 0; font: 500 19px Georgia, serif; }
+.profile-farm-switcher p { margin: 0; color: var(--muted); font-size: 8px; line-height: 1.5; }
+.profile-farm-switcher .eyebrow { color: var(--green); font-size: 7px; font-weight: 900; }
+.profile-farm-switcher > div:last-child { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; }
+.profile-farm-switcher button { min-height: 58px; padding: 9px 10px; display: grid; grid-template-columns: 30px 1fr auto; grid-template-rows: auto auto; column-gap: 8px; align-items: center; color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 5px; text-align: left; }
+.profile-farm-switcher button > span { width: 30px; height: 30px; grid-row: 1 / 3; display: grid; place-items: center; color: var(--green); background: #edf3e9; border-radius: 4px; }
+.profile-farm-switcher button strong { align-self: end; font-size: 9px; }
+.profile-farm-switcher button small { align-self: start; color: var(--muted); font-size: 7px; }
+.profile-farm-switcher button > svg { grid-column: 3; grid-row: 1 / 3; color: var(--green); }
+.profile-farm-switcher button > i { grid-column: 3; grid-row: 1 / 3; color: #8b6119; font-size: 7px; font-style: normal; font-weight: 800; text-transform: capitalize; }
+.profile-farm-switcher button.active { border-color: var(--green); box-shadow: inset 0 0 0 1px var(--green); }
 .app-shell[data-theme="dark"] .farmer-heading-actions select { background: #19211c; }
 .app-shell[data-theme="dark"] .farmer-heading .farmer-heading-actions > .new-listing:disabled { color: #9caaa0; background: #202a23; }
 .app-shell[data-theme="dark"] .farmer-upgrade-card { background: #19251d; }
 .app-shell[data-theme="dark"] .farmer-upgrade-card > span { background: #26382c; }
+.app-shell[data-theme="dark"] .profile-farm-switcher button > span { background: #26382c; }
 @media (max-width: 760px) {
   .farmer-heading-actions { margin-top: 18px; justify-content: flex-start; }
   .farmer-heading-actions > label { width: 100%; }
   .farmer-heading-actions select { width: 100%; }
   .farmer-upgrade-card { grid-template-columns: 42px 1fr; }
   .farmer-upgrade-card > button { grid-column: 1 / 3; justify-content: center; }
+  .profile-farm-switcher { grid-template-columns: 1fr; padding: 16px; }
+  .profile-farm-switcher > div:last-child { grid-template-columns: 1fr; }
 }
