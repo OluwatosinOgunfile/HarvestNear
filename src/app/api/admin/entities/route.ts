@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { del } from "@vercel/blob";
 
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
@@ -93,22 +94,28 @@ export async function GET(request: NextRequest) {
       SELECT orders.*, users.first_name || ' ' || users.last_name AS customer_name, users.email AS customer_email, users.phone AS customer_phone,
         payment.status AS payment_status, payment.provider_reference, delivery.status AS delivery_status, delivery.tracking_code,
         receipt.original_name AS payment_receipt_name, receipt.submitted_at AS payment_receipt_submitted_at,
+        refund.id AS refund_id, refund.status AS refund_status, refund.resolution_method AS refund_method,
+        refund.amount_kobo AS refund_amount_kobo, refund.cancellation_fee_kobo AS refund_fee_kobo,
         delivery.courier_name, delivery.courier_phone, delivery.scheduled_date, delivery.window_start, delivery.window_end,
         coalesce((SELECT json_agg(json_build_object('product', item.product_name, 'farm', item.farm_name, 'quantity', item.quantity, 'unit', item.unit, 'total_kobo', item.line_total_kobo) ORDER BY item.created_at) FROM order_items item WHERE item.order_id = orders.id), '[]') AS items,
         coalesce((SELECT json_agg(json_build_object('status', event.status, 'message', event.message, 'occurred_at', event.occurred_at) ORDER BY event.occurred_at) FROM delivery_events event JOIN deliveries d ON d.id = event.delivery_id WHERE d.order_id = orders.id), '[]') AS delivery_events
       FROM orders JOIN users ON users.id = orders.customer_id
       LEFT JOIN LATERAL (SELECT * FROM payments WHERE order_id = orders.id ORDER BY created_at DESC LIMIT 1) payment ON true
       LEFT JOIN manual_payment_receipts receipt ON receipt.order_id = orders.id
+      LEFT JOIN LATERAL (SELECT * FROM refunds WHERE order_id = orders.id ORDER BY requested_at DESC LIMIT 1) refund ON true
       LEFT JOIN deliveries delivery ON delivery.order_id = orders.id WHERE orders.id = ${id} LIMIT 1
     ` : await sql`
       SELECT orders.id, orders.order_number, orders.status, orders.subtotal_kobo, orders.delivery_fee_kobo, orders.total_kobo, orders.fulfilment_method, orders.placed_at,
         users.first_name || ' ' || users.last_name AS customer_name, users.email AS customer_email,
         delivery.status AS delivery_status, delivery.tracking_code,
         EXISTS (SELECT 1 FROM manual_payment_receipts receipt WHERE receipt.order_id = orders.id) AS receipt_submitted,
+        refund.id AS refund_id, refund.status AS refund_status, refund.resolution_method AS refund_method,
+        refund.amount_kobo AS refund_amount_kobo, refund.cancellation_fee_kobo AS refund_fee_kobo,
         (SELECT count(*)::int FROM order_items WHERE order_id = orders.id) AS item_count,
         (SELECT string_agg(DISTINCT item.farm_name, ', ' ORDER BY item.farm_name) FROM order_items item WHERE item.order_id = orders.id) AS farm_names,
         coalesce((SELECT json_agg(json_build_object('id', item.id, 'product', item.product_name, 'farm', item.farm_name, 'quantity', item.quantity, 'unit', item.unit, 'unit_price_kobo', item.unit_price_kobo, 'line_total_kobo', item.line_total_kobo) ORDER BY item.created_at) FROM order_items item WHERE item.order_id = orders.id), '[]') AS items
       FROM orders JOIN users ON users.id = orders.customer_id LEFT JOIN deliveries delivery ON delivery.order_id = orders.id
+      LEFT JOIN LATERAL (SELECT * FROM refunds WHERE order_id = orders.id ORDER BY requested_at DESC LIMIT 1) refund ON true
       ORDER BY orders.created_at DESC LIMIT 100
     `;
     return NextResponse.json(id ? { entity: rows[0] ?? null } : { entities: rows });
@@ -117,14 +124,16 @@ export async function GET(request: NextRequest) {
   if (type === "refunds") {
     const rows = id ? await sql`
       SELECT refund.*, orders.order_number, orders.total_kobo AS order_total_kobo,
-        users.first_name || ' ' || users.last_name AS customer_name, users.email AS customer_email
+        users.first_name || ' ' || users.last_name AS customer_name, users.email AS customer_email,
+        receipt.original_name AS payment_receipt_name, receipt.submitted_at AS payment_receipt_submitted_at
       FROM refunds refund JOIN orders ON orders.id = refund.order_id JOIN users ON users.id = refund.requested_by
+      LEFT JOIN manual_payment_receipts receipt ON receipt.order_id = refund.order_id
       WHERE refund.id = ${id} LIMIT 1
     ` : await sql`
-      SELECT refund.id, refund.status, refund.reason, refund.amount_kobo, refund.requested_at, orders.order_number,
+      SELECT refund.id, refund.status, refund.reason, refund.amount_kobo, refund.resolution_method, refund.cancellation_fee_kobo, refund.requested_at, orders.order_number,
         users.first_name || ' ' || users.last_name AS customer_name
       FROM refunds refund JOIN orders ON orders.id = refund.order_id JOIN users ON users.id = refund.requested_by
-      ORDER BY refund.requested_at DESC LIMIT 100
+      ORDER BY CASE WHEN refund.status IN ('requested','under_review') THEN 0 ELSE 1 END, refund.requested_at DESC LIMIT 100
     `;
     return NextResponse.json(id ? { entity: rows[0] ?? null } : { entities: rows });
   }
@@ -267,12 +276,23 @@ export async function PATCH(request: NextRequest) {
     if (type === "refunds") {
       const allowed = ["requested","under_review","approved","rejected","processing","completed","failed"];
       if (!allowed.includes(body.status)) return NextResponse.json({ error: "Invalid refund status" }, { status: 400 });
+      const [refundBefore] = await sql`SELECT resolution_method, amount_kobo, requested_by, order_id FROM refunds WHERE id = ${id}`;
+      if (!refundBefore) return NextResponse.json({ error: "Refund not found" }, { status: 404 });
       const [entity] = await sql`UPDATE refunds SET status = ${body.status}::refund_status, resolution_note = ${body.adminNote || null}, reviewed_by = ${administrator.id}, resolved_at = CASE WHEN ${body.status} IN ('completed','rejected','failed') THEN now() ELSE NULL END, completed_at = CASE WHEN ${body.status} = 'completed' THEN now() ELSE completed_at END, updated_at = now() WHERE id = ${id} RETURNING id, requested_by, order_id, status`;
       if (!entity) return NextResponse.json({ error: "Refund not found" }, { status: 404 });
       if (body.status === "completed") {
         await sql`UPDATE orders SET status = 'refunded', updated_at = now() WHERE id = ${entity.order_id}`;
         await sql`UPDATE farm_orders SET status = 'refunded', updated_at = now() WHERE order_id = ${entity.order_id}`;
-        await sql`UPDATE payments SET status = 'refunded', updated_at = now() WHERE order_id = ${entity.order_id} AND status = 'successful'`;
+        await sql`UPDATE payments SET status = 'refunded', updated_at = now() WHERE order_id = ${entity.order_id} AND status <> 'refunded'`;
+        if (refundBefore.resolution_method === "store_credit") {
+          const [existingCredit] = await sql`SELECT id FROM store_credit_transactions WHERE user_id = ${refundBefore.requested_by} AND transaction_type = 'refund_credit' AND reference_type = 'refund' AND reference_id = ${id}`;
+          if (!existingCredit) await sql.transaction([
+            sql`INSERT INTO store_credit_accounts (user_id, balance_kobo) VALUES (${refundBefore.requested_by}, ${refundBefore.amount_kobo}) ON CONFLICT (user_id) DO UPDATE SET balance_kobo = store_credit_accounts.balance_kobo + excluded.balance_kobo, updated_at = now()`,
+            sql`INSERT INTO store_credit_transactions (user_id, amount_kobo, transaction_type, reference_type, reference_id, description) VALUES (${refundBefore.requested_by}, ${refundBefore.amount_kobo}, 'refund_credit', 'refund', ${id}, 'Credit from cancelled order')`,
+          ]);
+        }
+        const [receipt] = await sql`DELETE FROM manual_payment_receipts WHERE order_id = ${entity.order_id} RETURNING blob_url`;
+        if (receipt?.blob_url) await del(String(receipt.blob_url)).catch((error) => console.error("Cancelled-order receipt cleanup failed", error));
       }
       await sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) VALUES (${entity.requested_by}, 'order', 'Refund status updated', ${`Your refund request is now ${body.status.replaceAll("_", " ")}.`}, '/orders', ${JSON.stringify({ refundId: id, orderId: String(entity.order_id), status: body.status })}::jsonb)`;
       await sql`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES (${administrator.id}, 'refund.status_updated', 'refund', ${id}, ${JSON.stringify({ status: body.status, adminNote: body.adminNote || null })}::jsonb)`;

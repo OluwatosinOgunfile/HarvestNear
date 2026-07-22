@@ -16,11 +16,12 @@ export async function GET() {
   if (!user || !["consumer", "farmer"].includes(user.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const sql = getDatabase();
   const orders = await sql`
-    SELECT orders.id, orders.order_number, orders.status, orders.total_kobo, orders.subtotal_kobo,
+    SELECT orders.id, orders.order_number, orders.status, orders.total_kobo, orders.subtotal_kobo, orders.discount_kobo,
       orders.delivery_fee_kobo, orders.fulfilment_method, orders.delivery_address_snapshot,
       orders.placed_at, orders.delivered_at,
       EXISTS (SELECT 1 FROM manual_payment_receipts receipt WHERE receipt.order_id = orders.id) AS receipt_submitted,
       (SELECT payment.status FROM payments payment WHERE payment.order_id = orders.id ORDER BY payment.created_at DESC LIMIT 1) AS payment_status,
+      (SELECT json_build_object('status', refund.status, 'resolution_method', refund.resolution_method, 'amount_kobo', refund.amount_kobo, 'cancellation_fee_kobo', refund.cancellation_fee_kobo, 'requested_at', refund.requested_at) FROM refunds refund WHERE refund.order_id = orders.id ORDER BY refund.requested_at DESC LIMIT 1) AS refund,
       (SELECT json_build_object('id', delivery.id, 'status', delivery.status, 'tracking_code', delivery.tracking_code,
         'courier_name', delivery.courier_name, 'courier_phone', delivery.courier_phone, 'scheduled_date', delivery.scheduled_date,
         'window_start', delivery.window_start, 'window_end', delivery.window_end,
@@ -52,6 +53,7 @@ export async function POST(request: Request) {
   if (!items.length) return NextResponse.json({ error: "Your basket is empty" }, { status: 400 });
 
   const sql = getDatabase();
+  const [paymentSettings] = await sql`SELECT is_enabled, bank_name, account_name, account_number FROM manual_payment_settings WHERE id = 1`;
   const listingIds = items.map((item) => item.listingId);
   const listings = await sql`
     SELECT listing.id, listing.title, listing.unit, listing.unit_price_kobo, listing.quantity_available,
@@ -71,32 +73,46 @@ export async function POST(request: Request) {
   const orderNumber = `HN-${Date.now().toString().slice(-8)}`;
   const subtotalKobo = listings.reduce((sum, listing) => sum + Number(listing.unit_price_kobo) * Number(requested.get(String(listing.id))), 0);
   const deliveryFeeKobo = fulfilmentMethod === "doorstep" ? 180000 : 0;
+  const grossTotalKobo = subtotalKobo + deliveryFeeKobo;
+  const [creditAccount] = await sql`SELECT balance_kobo FROM store_credit_accounts WHERE user_id = ${user.id}`;
+  const creditAppliedKobo = Math.min(grossTotalKobo, Number(creditAccount?.balance_kobo || 0));
+  const payableKobo = grossTotalKobo - creditAppliedKobo;
+  const paidWithCredit = payableKobo === 0;
+  if (!paidWithCredit && (!paymentSettings?.is_enabled || !paymentSettings.bank_name || !paymentSettings.account_name || !paymentSettings.account_number)) return NextResponse.json({ error: "Manual bank payment is not currently available" }, { status: 503 });
   const farms = new Map<string, typeof listings>();
   for (const listing of listings) farms.set(String(listing.farm_id), [...(farms.get(String(listing.farm_id)) ?? []), listing]);
 
   const queries = [sql`
-    INSERT INTO orders (id, order_number, customer_id, status, subtotal_kobo, delivery_fee_kobo, total_kobo, fulfilment_method, delivery_address_snapshot, placed_at, paid_at)
-    VALUES (${orderId}, ${orderNumber}, ${user.id}, 'pending_payment', ${subtotalKobo}, ${deliveryFeeKobo}, ${subtotalKobo + deliveryFeeKobo}, ${fulfilmentMethod}::fulfilment_method,
-      ${fulfilmentMethod === "doorstep" ? JSON.stringify({ city: "Gudu", state: "FCT" }) : null}::jsonb, now(), null)
+    INSERT INTO orders (id, order_number, customer_id, status, subtotal_kobo, delivery_fee_kobo, discount_kobo, total_kobo, fulfilment_method, delivery_address_snapshot, placed_at, paid_at)
+    VALUES (${orderId}, ${orderNumber}, ${user.id}, ${paidWithCredit ? "confirmed" : "pending_payment"}::order_status, ${subtotalKobo}, ${deliveryFeeKobo}, ${creditAppliedKobo}, ${payableKobo}, ${fulfilmentMethod}::fulfilment_method,
+      ${fulfilmentMethod === "doorstep" ? JSON.stringify({ city: "Gudu", state: "FCT" }) : null}::jsonb, now(), ${paidWithCredit ? new Date() : null})
   `];
 
   for (const [farmId, farmListings] of farms) {
     const farmOrderId = randomUUID();
     const farmSubtotal = farmListings.reduce((sum, listing) => sum + Number(listing.unit_price_kobo) * Number(requested.get(String(listing.id))), 0);
-    queries.push(sql`INSERT INTO farm_orders (id, order_id, farm_id, status, subtotal_kobo, platform_fee_kobo, farmer_net_kobo) VALUES (${farmOrderId}, ${orderId}, ${farmId}, 'pending_payment', ${farmSubtotal}, ${Math.round(farmSubtotal * .1)}, ${Math.round(farmSubtotal * .9)})`);
+    queries.push(sql`INSERT INTO farm_orders (id, order_id, farm_id, status, subtotal_kobo, platform_fee_kobo, farmer_net_kobo, confirmed_at) VALUES (${farmOrderId}, ${orderId}, ${farmId}, ${paidWithCredit ? "confirmed" : "pending_payment"}::order_status, ${farmSubtotal}, ${Math.round(farmSubtotal * .1)}, ${Math.round(farmSubtotal * .9)}, ${paidWithCredit ? new Date() : null})`);
     for (const listing of farmListings) {
       const quantity = Number(requested.get(String(listing.id)));
       queries.push(sql`INSERT INTO order_items (order_id, farm_order_id, listing_id, product_name, farm_name, unit, quantity, unit_price_kobo, line_total_kobo, image_url) VALUES (${orderId}, ${farmOrderId}, ${listing.id}, ${listing.title}, ${listing.farm_name}, ${listing.unit}, ${quantity}, ${listing.unit_price_kobo}, ${Number(listing.unit_price_kobo) * quantity}, ${listing.image_url})`);
       queries.push(sql`UPDATE produce_listings SET quantity_available = quantity_available - ${quantity}, quantity_sold = quantity_sold + ${quantity}, status = CASE WHEN quantity_available - ${quantity} <= quantity_reserved THEN 'sold_out'::listing_status ELSE status END, updated_at = now(), version = version + 1 WHERE id = ${listing.id} AND quantity_available - quantity_reserved >= ${quantity}`);
     }
   }
-  queries.push(sql`INSERT INTO payments (order_id, provider, provider_reference, status, amount_kobo, payment_channel, provider_response) VALUES (${orderId}, 'manual', ${`manual-${orderNumber}`}, 'initialized', ${subtotalKobo + deliveryFeeKobo}, 'bank_transfer', '{"mode":"manual","receiptSubmitted":false}'::jsonb)`);
+  if (payableKobo > 0) queries.push(sql`INSERT INTO payments (order_id, provider, provider_reference, status, amount_kobo, payment_channel, provider_response) VALUES (${orderId}, 'manual', ${`manual-${orderNumber}`}, 'initialized', ${payableKobo}, 'bank_transfer', '{"mode":"manual","receiptSubmitted":false}'::jsonb)`);
+  if (creditAppliedKobo > 0) queries.push(sql`UPDATE store_credit_accounts SET balance_kobo = balance_kobo - ${creditAppliedKobo}, updated_at = now() WHERE user_id = ${user.id} AND balance_kobo >= ${creditAppliedKobo}`);
+  if (creditAppliedKobo > 0) queries.push(sql`INSERT INTO store_credit_transactions (user_id, amount_kobo, transaction_type, reference_type, reference_id, description) VALUES (${user.id}, ${-creditAppliedKobo}, 'order_debit', 'order', ${orderId}, ${`Account credit applied to order ${orderNumber}`})`);
   queries.push(sql`DELETE FROM cart_items WHERE cart_id IN (SELECT id FROM carts WHERE user_id = ${user.id})`);
-  queries.push(sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) VALUES (${user.id}, 'order', 'Payment receipt required', ${`Order ${orderNumber} is reserved. Upload your bank-transfer receipt for administrator confirmation.`}, '/orders', ${JSON.stringify({ orderId, orderNumber })}::jsonb)`);
+  queries.push(sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) VALUES (${user.id}, 'order', ${paidWithCredit ? "Order confirmed with account credit" : "Payment receipt required"}, ${paidWithCredit ? `Your account credit paid order ${orderNumber} in full.` : `Order ${orderNumber} is reserved. Upload your bank-transfer receipt for administrator confirmation.`}, '/orders', ${JSON.stringify({ orderId, orderNumber, creditAppliedKobo })}::jsonb)`);
+  if (paidWithCredit) queries.push(sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) SELECT DISTINCT farm.owner_id, 'order', 'New order to fulfil', ${`Order ${orderNumber} is paid and ready for fulfilment.`}, '/farmer', ${JSON.stringify({ orderId, orderNumber })}::jsonb FROM farm_orders farm_order JOIN farms farm ON farm.id = farm_order.farm_id WHERE farm_order.order_id = ${orderId}`);
+  if (paidWithCredit && fulfilmentMethod === "doorstep") {
+    const deliveryId = randomUUID(); const trackingCode = `TRK-${orderNumber.slice(3)}`;
+    queries.push(sql`INSERT INTO deliveries (id, order_id, status, tracking_code, scheduled_date, window_start, window_end, notes) VALUES (${deliveryId}, ${orderId}, 'scheduled', ${trackingCode}, current_date + 1, '09:00', '13:00', 'Paid with account credit; awaiting farm preparation')`);
+    queries.push(sql`INSERT INTO delivery_events (delivery_id, status, message) VALUES (${deliveryId}, 'scheduled', 'Payment completed with account credit')`);
+  }
 
   try {
     await sql.transaction(queries);
-    return NextResponse.json({ orderId, orderNumber }, { status: 201 });
+    return NextResponse.json({ orderId, orderNumber, requiresReceipt: !paidWithCredit, creditAppliedKobo, payableKobo }, { status: 201 });
   } catch (error) {
     console.error("Checkout failed", error);
     return NextResponse.json({ error: "Could not complete the order. Refresh your basket and try again." }, { status: 409 });
