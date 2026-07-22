@@ -20,6 +20,7 @@ button { color:inherit; cursor:pointer; }
 .main-nav button.active { color:var(--ink); border-color:var(--green); }
 .mobile-nav{display:none}
 .header-actions { display:flex; align-items:center; gap:9px; }
+.notification-button{width:40px;height:40px;position:relative;display:grid;place-items:center;color:var(--green);background:white;border:1px solid var(--line);border-radius:6px}.notification-button:hover,.notification-button.active{background:#f0f5ed;border-color:#94ad98}.notification-button b{min-width:18px;height:18px;padding:0 4px;position:absolute;top:-6px;right:-6px;display:grid;place-items:center;color:white;background:#b74637;border:2px solid white;border-radius:9px;font-size:7px;line-height:1}.app-shell[data-theme="dark"] .notification-button{color:#a9d3b3;background:#1d2921;border-color:#435148}.app-shell[data-theme="dark"] .notification-button:hover,.app-shell[data-theme="dark"] .notification-button.active{background:#293a2f;border-color:#78a184}.app-shell[data-theme="dark"] .notification-button b{color:white;background:#d66352;border-color:#142019}
 .icon-btn,.avatar { width:40px; height:40px; border:1px solid var(--line); display:grid; place-items:center; background:white; border-radius:6px; }
 .avatar { background:#e7eddf; color:var(--green); font-size:13px; font-weight:800; }
 .signup-trigger { height:40px; padding:0 13px; display:flex; align-items:center; gap:7px; color:var(--green); background:white; border:1px solid var(--green); border-radius:6px; font-size:12px; font-weight:700; }

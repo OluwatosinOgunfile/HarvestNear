@@ -613,6 +613,7 @@ export default function Home() {
           {isAdmin && <button className={view === "admin" ? "active" : ""} onClick={() => navigate("admin")}>Administration</button>}
         </nav>}
         <div className="header-actions">
+          {!sessionLoading && currentUser && <button className={`notification-button ${notificationOpen ? "active" : ""}`} onClick={() => { setAccountMenuOpen(false); setNotificationOpen(true); }} aria-label={`Open notifications${unreadNotificationCount ? `, ${unreadNotificationCount} unread` : ", no unread notifications"}`} title="Notifications"><Bell size={18}/>{unreadNotificationCount > 0 && <b>{unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}</b>}</button>}
           {!sessionLoading && !isAdmin && <button className="cart-button" onClick={() => setCartOpen(true)} aria-label={`Open basket${itemCount ? `, ${itemCount} ${itemCount === 1 ? "item" : "items"}` : ", empty"}`} title="Basket"><ShoppingBag size={18} />{itemCount > 0 && <b>{itemCount}</b>}</button>}
           <div className="account-menu-wrap">
             <button className={`account-menu-trigger ${accountMenuOpen ? "active" : ""}`} onClick={() => setAccountMenuOpen((open) => !open)} aria-expanded={accountMenuOpen} aria-haspopup="menu" disabled={sessionLoading}>
