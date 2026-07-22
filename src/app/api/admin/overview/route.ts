@@ -21,6 +21,7 @@ export async function GET() {
       (SELECT count(*)::int FROM reviews WHERE NOT is_visible) AS hidden_reviews,
       (SELECT count(*)::int FROM carts WHERE expires_at > now()) AS active_carts,
       (SELECT count(*)::int FROM notifications WHERE read_at IS NULL) AS unread_notifications,
+      coalesce((SELECT sum(balance_kobo) FROM store_credit_accounts), 0) AS outstanding_credit_kobo,
       coalesce((SELECT sum(total_kobo) FROM orders WHERE paid_at IS NOT NULL AND status NOT IN ('cancelled','refunded')), 0) AS gross_sales_kobo,
       coalesce((SELECT sum(subtotal_kobo) FROM farm_orders WHERE status IN ('delivered','collected')), 0) AS cumulative_gross_kobo,
       coalesce((SELECT sum(platform_fee_kobo) FROM farm_orders WHERE status IN ('delivered','collected')), 0) AS cumulative_fee_kobo,

@@ -935,13 +935,20 @@ function SiteFooter({ view, user, onNavigate }: { view: View; user: CurrentUser 
 }
 
 type AdminOverview = {
-  metrics: { users: number; verified_farms: number; pending_farms: number; listings: number; orders: number; open_orders: number; open_refunds: number; failed_deliveries: number; hidden_reviews: number; active_carts: number; unread_notifications: number; gross_sales_kobo: number; cumulative_gross_kobo: number; cumulative_fee_kobo: number; cumulative_net_kobo: number };
+  metrics: { users: number; verified_farms: number; pending_farms: number; listings: number; orders: number; open_orders: number; open_refunds: number; failed_deliveries: number; hidden_reviews: number; active_carts: number; unread_notifications: number; outstanding_credit_kobo: number; gross_sales_kobo: number; cumulative_gross_kobo: number; cumulative_fee_kobo: number; cumulative_net_kobo: number };
   users: Array<{ id: string; first_name: string; last_name: string; email: string; role: string; is_active: boolean; created_at: string }>;
 };
 
 type AdminEntityType = "users" | "farms" | "produce" | "orders" | "refunds" | "reviews" | "activity";
 type AdminEntity = Record<string, unknown> & { id: string };
 type AdminOptions = { owners: Array<{ id: string; name: string }>; farms: Array<{ id: string; name: string }>; categories: Array<{ id: string; name: string }> };
+
+function adminEntityFilterValue(section: AdminEntityType, entity: AdminEntity) {
+  if (section === "users") return String(entity.role || "unknown");
+  if (["farms", "produce", "orders", "refunds"].includes(section)) return String(entity.status || entity.verification_status || "unknown");
+  if (section === "reviews") return entity.is_visible ? "visible" : "hidden";
+  return String(entity.entity_type || "system");
+}
 
 function AdminPage({ readOnly, onImpersonated }: { readOnly: boolean; onImpersonated: (user: CurrentUser) => void }) {
   const [overview, setOverview] = useState<AdminOverview | null>(null);
@@ -956,6 +963,12 @@ function AdminPage({ readOnly, onImpersonated }: { readOnly: boolean; onImperson
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [failed, setFailed] = useState(false);
+  const [entitySearch, setEntitySearch] = useState("");
+  const [entityFilter, setEntityFilter] = useState("all");
+  const [balanceOnly, setBalanceOnly] = useState(false);
+  const [joinedDateFilter, setJoinedDateFilter] = useState("all");
+  const [joinedDateSort, setJoinedDateSort] = useState("newest");
+  const [filterReferenceTime] = useState(() => Date.now());
 
   async function loadOverview() {
     const response = await fetch("/api/admin/overview");
@@ -990,6 +1003,33 @@ function AdminPage({ readOnly, onImpersonated }: { readOnly: boolean; onImperson
     }).catch((reason: Error) => { if (!cancelled) { setError(reason.message); setBusy(false); } });
     return () => { cancelled = true; };
   }, [section]);
+
+  const filterOptions = useMemo(() => {
+    if (section === "overview") return [];
+    const values = new Set(entities.map((entity) => adminEntityFilterValue(section, entity)).filter(Boolean));
+    return [...values].sort((left, right) => left.localeCompare(right));
+  }, [entities, section]);
+  const effectiveEntityFilter = filterOptions.includes(entityFilter) ? entityFilter : "all";
+  const visibleEntities = useMemo(() => {
+    if (section === "overview") return entities;
+    const query = entitySearch.trim().toLowerCase();
+    const filtered = entities.filter((entity) => {
+      if (effectiveEntityFilter !== "all" && adminEntityFilterValue(section, entity) !== effectiveEntityFilter) return false;
+      if (section === "users" && balanceOnly && Number(entity.account_credit_kobo || 0) <= 0) return false;
+      if (section === "users" && joinedDateFilter !== "all") {
+        const joinedAt = new Date(String(entity.created_at)).getTime();
+        const days = Number(joinedDateFilter);
+        if (!Number.isFinite(joinedAt) || joinedAt < filterReferenceTime - days * 24 * 60 * 60 * 1000) return false;
+      }
+      if (!query) return true;
+      return Object.entries(entity).some(([key, value]) => !["password_hash", "items"].includes(key) && value !== null && String(value).toLowerCase().includes(query));
+    });
+    if (section !== "users") return filtered;
+    return [...filtered].sort((left, right) => {
+      const difference = new Date(String(right.created_at)).getTime() - new Date(String(left.created_at)).getTime();
+      return joinedDateSort === "oldest" ? -difference : difference;
+    });
+  }, [balanceOnly, effectiveEntityFilter, entities, entitySearch, filterReferenceTime, joinedDateFilter, joinedDateSort, section]);
 
   async function openDetails(type: AdminEntityType, id: string) {
     setError("");
@@ -1113,11 +1153,21 @@ function AdminPage({ readOnly, onImpersonated }: { readOnly: boolean; onImperson
 
     {section === "overview" ? <>
       <section className="admin-metrics"><article><span><UserRound size={19}/></span><small>ACTIVE USERS</small><strong>{metrics.users}</strong><p>{metrics.active_carts} active shopping carts</p></article><article><span><Store size={19}/></span><small>VERIFIED FARMS</small><strong>{metrics.verified_farms}</strong><p>{metrics.pending_farms} awaiting review</p></article><article><span><Leaf size={19}/></span><small>ACTIVE LISTINGS</small><strong>{metrics.listings}</strong><p>Available marketplace harvests</p></article><article><span><PackageCheck size={19}/></span><small>OPEN ORDERS</small><strong>{metrics.open_orders}</strong><p>{metrics.orders} orders recorded</p></article><article><span><RotateCcw size={19}/></span><small>OPEN REFUNDS</small><strong>{metrics.open_refunds}</strong><p>Awaiting a resolution</p></article><article><span><AtSign size={19}/></span><small>CUMULATIVE GROSS SALES</small><strong>{money(Number(metrics.cumulative_gross_kobo) / 100)}</strong><p>Completed produce sales</p></article><article><span><Minus size={19}/></span><small>PROCESSING FEES</small><strong>{money(Number(metrics.cumulative_fee_kobo) / 100)}</strong><p>Cumulative platform revenue</p></article><article><span><Check size={19}/></span><small>FARMER NET SALES</small><strong>{money(Number(metrics.cumulative_net_kobo) / 100)}</strong><p>Earned after processing fees</p></article><article><span><Truck size={19}/></span><small>DELIVERY ISSUES</small><strong>{metrics.failed_deliveries}</strong><p>Failed deliveries</p></article><article><span><Bell size={19}/></span><small>UNREAD UPDATES</small><strong>{metrics.unread_notifications}</strong><p>{metrics.hidden_reviews} hidden reviews</p></article></section>
+      <section className="admin-credit-balance"><span><AtSign size={20}/></span><div><small>OUTSTANDING ACCOUNT CREDIT</small><strong>{money(Number(metrics.outstanding_credit_kobo) / 100)}</strong><p>Total customer credit currently available for future marketplace purchases.</p></div><button onClick={() => { setBusy(true); setSection("users"); }}>View customer balances <ArrowRight size={15}/></button></section>
       <div className="admin-grid"><section className="admin-panel"><div className="admin-panel-head"><div><h2>Recent users</h2><p>Latest accounts across the marketplace</p></div><button onClick={() => { setBusy(true); setSection("users"); }}>View all <ArrowRight size={15}/></button></div><div className="admin-user-list">{overview.users.slice(0, 8).map((user) => <button className="admin-user-row" key={user.id} onClick={() => { setBusy(true); setSection("users"); setTimeout(() => openDetails("users", user.id), 0); }}><span>{user.first_name[0]}{user.last_name[0]}</span><div><strong>{user.first_name} {user.last_name}</strong><small>{user.email}</small></div><b className={`role-badge ${user.role}`}>{user.role}</b><i className={user.is_active ? "active" : ""}>{user.is_active ? "Active" : "Disabled"}</i></button>)}</div></section><aside className="admin-side"><section><div className="admin-panel-head"><div><h2>Attention needed</h2><p>Items requiring administrator action</p></div></div><button onClick={() => { setBusy(true); setSection("farms"); }}><span><Store size={17}/></span><div><strong>Farm verification</strong><small>{metrics.pending_farms} pending applications</small></div><ChevronRight size={16}/></button><button onClick={() => { setBusy(true); setSection("refunds"); }}><span><RotateCcw size={17}/></span><div><strong>Refund requests</strong><small>{metrics.open_refunds} open cases</small></div><ChevronRight size={16}/></button><button onClick={() => { setBusy(true); setSection("orders"); }}><span><Truck size={17}/></span><div><strong>Delivery exceptions</strong><small>{metrics.failed_deliveries} failed deliveries</small></div><ChevronRight size={16}/></button></section><section className="admin-health"><div className="admin-panel-head"><div><h2>System status</h2><p>Core marketplace services</p></div></div><div><span><i/> Neon database</span><strong>Operational</strong></div><div><span><i/> Blob image storage</span><strong>Operational</strong></div><div><span><i/> Authentication</span><strong>Operational</strong></div></section></aside></div>
     </> : <section className="entity-manager">
       <div className="entity-toolbar"><div><h2>{section === "produce" ? "Produce listings" : section[0].toUpperCase() + section.slice(1)}</h2><p>{entities.length} database records</p></div>{!readOnly && ["users","farms","produce"].includes(section) && <button onClick={() => { setError(""); setAddOpen(true); }}><Plus size={16}/> Add {section === "produce" ? "produce" : section.slice(0, -1)}</button>}</div>
+      <div className="entity-list-controls">
+        <div className="entity-search"><Search size={16}/><input type="search" aria-label={`Search ${section}`} value={entitySearch} onChange={(event) => setEntitySearch(event.target.value)} placeholder={`Search ${section === "produce" ? "produce listings" : section}...`}/>{entitySearch && <button type="button" onClick={() => setEntitySearch("")} aria-label="Clear search"><X size={14}/></button>}</div>
+        <label className="entity-filter"><SlidersHorizontal size={16}/><span className="sr-only">Filter {section}</span><select value={effectiveEntityFilter} onChange={(event) => setEntityFilter(event.target.value)}><option value="all">All {section === "users" ? "roles" : section === "reviews" ? "visibility" : section === "activity" ? "entity types" : "statuses"}</option>{filterOptions.map((option) => <option key={option} value={option}>{option.replaceAll("_", " ")}</option>)}</select></label>
+        {section === "users" && <label className="entity-filter entity-date-filter"><Clock3 size={16}/><span className="sr-only">Filter by joined date</span><select value={joinedDateFilter} onChange={(event) => setJoinedDateFilter(event.target.value)}><option value="all">Joined anytime</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last 12 months</option></select></label>}
+        {section === "users" && <label className="entity-filter entity-date-sort"><span className="sr-only">Sort by joined date</span><select value={joinedDateSort} onChange={(event) => setJoinedDateSort(event.target.value)}><option value="newest">Newest joined</option><option value="oldest">Oldest joined</option></select></label>}
+        {section === "users" && <button className={`entity-balance-filter ${balanceOnly ? "active" : ""}`} type="button" aria-pressed={balanceOnly} onClick={() => setBalanceOnly((current) => !current)}><AtSign size={15}/> Has balance <b>{entities.filter((entity) => Number(entity.account_credit_kobo || 0) > 0).length}</b></button>}
+        <span className="entity-result-count">Showing <strong>{visibleEntities.length}</strong> of {entities.length}</span>
+        {(entitySearch || effectiveEntityFilter !== "all" || (section === "users" && (balanceOnly || joinedDateFilter !== "all" || joinedDateSort !== "newest"))) && <button className="entity-clear-filters" type="button" onClick={() => { setEntitySearch(""); setEntityFilter("all"); setBalanceOnly(false); setJoinedDateFilter("all"); setJoinedDateSort("newest"); }}><X size={14}/> Clear</button>}
+      </div>
       {error && <p className="admin-error" role="alert">{error}</p>}
-      {busy && !addOpen ? <div className="entity-loading"><Clock3 size={20}/> Updating records...</div> : <div className="entity-table">{entities.map((entity) => <AdminEntityRow key={entity.id} section={section} entity={entity} onOpen={() => openDetails(section, entity.id)} onReviewRefund={(refundId) => { setSection("refunds"); setSelected(null); setBusy(true); void openDetails("refunds", refundId).finally(() => setBusy(false)); }}/>)}</div>}
+      {busy && !addOpen ? <div className="entity-loading"><Clock3 size={20}/> Updating records...</div> : visibleEntities.length ? <div className="entity-table">{visibleEntities.map((entity) => <AdminEntityRow key={entity.id} section={section} entity={entity} onOpen={() => openDetails(section, entity.id)} onReviewRefund={(refundId) => { setSection("refunds"); setSelected(null); setBusy(true); void openDetails("refunds", refundId).finally(() => setBusy(false)); }}/>)}</div> : <div className="entity-empty"><Search size={22}/><strong>No matching records</strong><p>Try a different search term or filter.</p><button type="button" onClick={() => { setEntitySearch(""); setEntityFilter("all"); setBalanceOnly(false); setJoinedDateFilter("all"); setJoinedDateSort("newest"); }}>Clear search and filter</button></div>}
     </section>}
 
     {selected && section !== "overview" && <div className="admin-drawer-overlay" onMouseDown={() => setSelected(null)}>
@@ -1170,7 +1220,7 @@ function AdminOrderRow({ entity, onOpen, onReviewRefund }: { entity: AdminEntity
 }
 
 function AdminEntityRow({ section, entity, onOpen, onReviewRefund }: { section: AdminEntityType; entity: AdminEntity; onOpen: () => void; onReviewRefund: (refundId: string) => void }) {
-  if (section === "users") return <button onClick={onOpen}><span className={`entity-avatar ${entity.avatar_url ? "has-photo" : ""}`}>{entity.avatar_url ? <img src={String(entity.avatar_url)} alt=""/> : <>{String(entity.first_name)[0]}{String(entity.last_name)[0]}</>}</span><span><strong>{String(entity.first_name)} {String(entity.last_name)}</strong><small>{String(entity.email)}</small>{entity.role === "farmer" && <span className="entity-farms"><Store size={11}/>{entity.farm_names ? String(entity.farm_names) : "No farms added"}</span>}<AdminEntityDate label="Joined" value={entity.created_at}/></span><b className={`role-badge ${entity.role}`}>{String(entity.role)}</b><i>{entity.is_active ? "Active" : "Disabled"}</i></button>;
+  if (section === "users") return <button onClick={onOpen}><span className={`entity-avatar ${entity.avatar_url ? "has-photo" : ""}`}>{entity.avatar_url ? <img src={String(entity.avatar_url)} alt=""/> : <>{String(entity.first_name)[0]}{String(entity.last_name)[0]}</>}</span><span><strong>{String(entity.first_name)} {String(entity.last_name)}</strong><small>{String(entity.email)}</small>{entity.role === "farmer" && <span className="entity-farms"><Store size={11}/>{entity.farm_names ? String(entity.farm_names) : "No farms added"}</span>}<span className="entity-credit-balance"><AtSign size={11}/> Credit {money(Number(entity.account_credit_kobo || 0) / 100)}</span><AdminEntityDate label="Joined" value={entity.created_at}/></span><b className={`role-badge ${entity.role}`}>{String(entity.role)}</b><i>{entity.is_active ? "Active" : "Disabled"}</i></button>;
   if (section === "farms") return <button onClick={onOpen}><span className="entity-icon"><Store size={17}/></span><span><strong>{String(entity.name)}</strong><small>{String(entity.city)}, {String(entity.state)} · {String(entity.owner_name)}</small><AdminEntityDate label="Created" value={entity.created_at}/></span><b className={`status-badge ${entity.verification_status}`}>{String(entity.verification_status)}</b><i>{String(entity.listing_count)} listings</i></button>;
   if (section === "produce") return <button onClick={onOpen}><span className="entity-thumb">{entity.image_url ? <img src={String(entity.image_url)} alt=""/> : <Leaf size={17}/>}</span><span><strong>{String(entity.title)}</strong><small>{String(entity.farm_name)} · {String(entity.category_name)}</small><span className="entity-date-group"><AdminEntityDate label="Listed" value={entity.created_at}/><AdminEntityDate label="Harvest" value={entity.harvest_date}/></span></span><b className={`status-badge ${entity.status}`}>{String(entity.status)}</b><i>{money(Number(entity.unit_price_kobo) / 100)} / {String(entity.unit)}</i></button>;
   if (section === "orders") return <AdminOrderRow entity={entity} onOpen={onOpen} onReviewRefund={onReviewRefund}/>;

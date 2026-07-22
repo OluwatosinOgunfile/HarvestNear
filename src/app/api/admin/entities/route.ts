@@ -37,12 +37,14 @@ export async function GET(request: NextRequest) {
       SELECT users.id, users.first_name, users.last_name, users.email, users.phone, users.role, users.is_active, users.avatar_url,
         users.email_verified_at, users.phone_verified_at, users.last_login_at, users.created_at, users.updated_at,
         (SELECT count(*)::int FROM farms WHERE owner_id = users.id) AS farm_count,
+        coalesce((SELECT balance_kobo FROM store_credit_accounts WHERE user_id = users.id), 0) AS account_credit_kobo,
         (SELECT count(*)::int FROM orders WHERE customer_id = users.id) AS order_count,
         (SELECT count(*)::int FROM addresses WHERE user_id = users.id) AS address_count
       FROM users WHERE users.id = ${id} LIMIT 1
     ` : await sql`
       SELECT users.id, users.first_name, users.last_name, users.email, users.phone, users.role, users.is_active, users.avatar_url, users.created_at,
         (SELECT count(*)::int FROM farms WHERE owner_id = users.id) AS farm_count,
+        coalesce((SELECT balance_kobo FROM store_credit_accounts WHERE user_id = users.id), 0) AS account_credit_kobo,
         (SELECT string_agg(farm.name, ', ' ORDER BY farm.created_at) FROM farms farm WHERE farm.owner_id = users.id) AS farm_names,
         (SELECT count(*)::int FROM orders WHERE customer_id = users.id) AS order_count
       FROM users ORDER BY users.created_at DESC LIMIT 100
