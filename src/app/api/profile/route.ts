@@ -19,16 +19,21 @@ export async function GET(request: Request) {
     count(DISTINCT item.farm_name)::int AS farms_supported,
     count(DISTINCT orders.id) FILTER (WHERE orders.status IN ('delivered','collected'))::int AS completed_orders
     FROM orders LEFT JOIN order_items item ON item.order_id = orders.id WHERE orders.customer_id = ${session.id}`;
+  const [creditAccount, creditTransactions] = await Promise.all([
+    sql`SELECT balance_kobo, updated_at FROM store_credit_accounts WHERE user_id = ${session.id}`,
+    sql`SELECT id, amount_kobo, transaction_type, reference_type, reference_id, description, created_at FROM store_credit_transactions WHERE user_id = ${session.id} ORDER BY created_at DESC LIMIT 20`,
+  ]);
+  const storeCredit = { balance_kobo: Number(creditAccount[0]?.balance_kobo || 0), updated_at: creditAccount[0]?.updated_at || null, transactions: creditTransactions };
   if (session.role === "consumer") {
     const [preferences] = await sql`SELECT preferred_radius_km, dietary_preferences, marketing_consent FROM consumer_profiles WHERE user_id = ${session.id}`;
-    return NextResponse.json({ user: { ...user, avatar_url: user.avatar_url ? profileImageUrl(String(user.id), user.avatar_url) : null }, addresses, stats, preferences: preferences ?? { preferred_radius_km: 20, dietary_preferences: [], marketing_consent: false } });
+    return NextResponse.json({ user: { ...user, avatar_url: user.avatar_url ? profileImageUrl(String(user.id), user.avatar_url) : null }, addresses, stats, storeCredit, preferences: preferences ?? { preferred_radius_km: 20, dietary_preferences: [], marketing_consent: false } });
   }
   const farms = await sql`SELECT id, name, description, phone, email, address_text, city, state, logo_url, cover_image_url, verification_status, delivery_radius_km, offers_pickup, offers_delivery, average_rating, review_count, created_at FROM farms WHERE owner_id = ${session.id} ORDER BY created_at`;
   const requestedFarmId = new URL(request.url).searchParams.get("farmId");
   const farm = farms.find((item) => String(item.id) === requestedFarmId) || farms[0];
   const listings = farm ? await sql`SELECT listing.id, listing.title, listing.unit, listing.unit_price_kobo, listing.quantity_available, listing.status, image.url AS image_url FROM produce_listings listing LEFT JOIN LATERAL (SELECT url FROM listing_images WHERE listing_id = listing.id ORDER BY sort_order LIMIT 1) image ON true WHERE listing.farm_id = ${farm.id} ORDER BY listing.created_at DESC LIMIT 6` : [];
   const [farmStats] = farm ? await sql`SELECT count(DISTINCT fo.id) FILTER (WHERE fo.status IN ('delivered','collected'))::int AS fulfilled_orders, count(DISTINCT o.customer_id)::int AS customers FROM farm_orders fo JOIN orders o ON o.id = fo.order_id WHERE fo.farm_id = ${farm.id}` : [{ fulfilled_orders: 0, customers: 0 }];
-  return NextResponse.json({ user: { ...user, avatar_url: user.avatar_url ? profileImageUrl(String(user.id), user.avatar_url) : null }, addresses, stats, farm, farms, listings: listings.map((listing) => ({ ...listing, image_url: listing.image_url ? listingImageUrl(String(listing.id), listing.image_url) : null })), farmStats });
+  return NextResponse.json({ user: { ...user, avatar_url: user.avatar_url ? profileImageUrl(String(user.id), user.avatar_url) : null }, addresses, stats, storeCredit, farm, farms, listings: listings.map((listing) => ({ ...listing, image_url: listing.image_url ? listingImageUrl(String(listing.id), listing.image_url) : null })), farmStats });
 }
 
 export async function POST(request: Request) {

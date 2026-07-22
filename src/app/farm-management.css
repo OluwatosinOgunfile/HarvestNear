@@ -32,6 +32,7 @@
 .profile-farm-switcher button > svg { grid-column: 3; grid-row: 1 / 3; color: var(--green); }
 .profile-farm-switcher button > i { grid-column: 3; grid-row: 1 / 3; color: #8b6119; font-size: 7px; font-style: normal; font-weight: 800; text-transform: capitalize; }
 .profile-farm-switcher button.active { border-color: var(--green); box-shadow: inset 0 0 0 1px var(--green); }
+.farmer-readonly-notice{margin:12px 0;padding:12px 15px;display:flex;align-items:center;gap:10px;color:#654d16;background:#fff5ce;border:1px solid #dec36a;border-radius:6px}.farmer-readonly-notice>svg{flex:none}.farmer-readonly-notice strong,.farmer-readonly-notice span{display:block}.farmer-readonly-notice strong{margin-bottom:3px;font-size:9px}.farmer-readonly-notice span{font-size:8px;line-height:1.45}.app-shell[data-theme="dark"] .farmer-readonly-notice{color:#f0d77f;background:#332d1c;border-color:#756329}
 .farm-switch-loading { position: fixed; inset: 0; z-index: 90; display: flex; align-items: center; justify-content: center; gap: 12px; color: var(--ink); background: rgba(241, 245, 239, .72); backdrop-filter: blur(3px); cursor: wait; }
 .farm-switch-loading > span { width: 42px; height: 42px; display: grid; place-items: center; color: #fff; background: var(--green); border-radius: 50%; box-shadow: 0 8px 22px rgba(25, 70, 43, .22); }
 .farm-switch-loading svg { animation: farm-switch-spin .8s linear infinite; }

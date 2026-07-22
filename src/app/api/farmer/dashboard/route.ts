@@ -101,8 +101,10 @@ async function POSTFarm(_request: Request, user: { id: string; email: string }, 
 }
 
 export async function PATCH(request: Request) {
-  const user = await farmerSession(true);
-  if (!user) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const session = await farmerSession();
+  if (!session) return NextResponse.json({ error: "Sign in with a farmer account to update this workspace" }, { status: 403 });
+  if (!canMutateAs(session)) return NextResponse.json({ error: "Administrator impersonation is read-only. Return to administration and sign in as the farmer to update fulfilment." }, { status: 403 });
+  const user = session;
   if (!await checkRateLimit(request, "farmer.write", 60, 60 * 60, user.id)) return NextResponse.json({ error: "Update limit reached. Try again later." }, { status: 429 });
   const body = await request.json().catch(() => null) as Record<string, string> | null;
   const sql = getDatabase();
