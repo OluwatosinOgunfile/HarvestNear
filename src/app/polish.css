@@ -22,6 +22,24 @@ textarea {
   transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
+/* Desktop readability: preserve the compact mobile scale while lifting dense UI text. */
+@media (min-width: 621px) {
+  body { font-size:17px; }
+  .app-shell small { font-size:10px!important; line-height:1.5; }
+  .app-shell :is(input:not([type="checkbox"]),select,textarea) { font-size:12px!important; }
+  :is(.admin-page,.profile-page,.my-orders-page,.farmer-page,.support-page) :is(button,label) { font-size:11px; line-height:1.4; }
+  :is(.admin-page,.profile-page,.my-orders-page,.farmer-page,.support-page) p:not(.eyebrow):not(.auth-kicker) { font-size:11px; line-height:1.55; }
+  .admin-page :is(.role-badge,.status-badge,.entity-date,.entity-farms,.entity-credit-balance,.entity-result-count,.entity-payment-receipt,.entity-refund-alert,.admin-tab-count) { font-size:9.5px; line-height:1.35; }
+  .admin-page .entity-table strong,.admin-page .admin-user-row strong { font-size:12px; line-height:1.4; }
+  .admin-page .entity-table small,.admin-page .admin-user-row small { font-size:10px; }
+  :is(.eyebrow,.auth-kicker) { font-size:10px; line-height:1.4; }
+  .account-menu-heading strong,.account-menu>button strong { font-size:12px; }
+  .account-menu-heading small,.account-menu>button small { font-size:10px!important; }
+  .account-menu-auth button { font-size:11px; }
+  .notification-drawer :is(button,p,span) { line-height:1.45; }
+  .site-footer :is(p,a,button,small) { font-size:11px; line-height:1.55; }
+}
+
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
