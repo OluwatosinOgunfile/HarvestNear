@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getSessionUser, startImpersonation, stopImpersonation } from "@/lib/auth";
+import { checkRateLimit } from "@/lib/security";
 
 export async function POST(request: NextRequest) {
+  if (!await checkRateLimit(request, "admin.impersonate", 30, 60 * 60)) return NextResponse.json({ error: "Impersonation limit reached. Try again later." }, { status: 429 });
   const body = await request.json().catch(() => null) as { userId?: string } | null;
   const userId = String(body?.userId || "");
   if (!/^[0-9a-f-]{36}$/i.test(userId)) return NextResponse.json({ error: "Select a valid user" }, { status: 400 });

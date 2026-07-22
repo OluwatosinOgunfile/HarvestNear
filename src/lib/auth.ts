@@ -17,7 +17,7 @@ export type SessionUser = {
   administrator?: { id: string; firstName: string; lastName: string };
 };
 
-const COOKIE_NAME = "harvestnearu_session";
+const COOKIE_NAME = process.env.NODE_ENV === "production" ? "__Host-harvestnearu_session" : "harvestnearu_session";
 const SESSION_DAYS = 7;
 
 function hashToken(token: string) {
@@ -42,6 +42,7 @@ export async function createSession(userId: string) {
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
+    priority: "high",
     expires: expiresAt,
   });
 }

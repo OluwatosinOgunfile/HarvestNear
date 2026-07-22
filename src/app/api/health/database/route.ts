@@ -7,14 +7,11 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const sql = getDatabase();
-    const [database] = await sql`
-      SELECT current_database() AS name, NOW() AS checked_at
-    `;
+    await sql`SELECT 1 AS healthy`;
 
     return NextResponse.json({
       connected: true,
-      database: database.name,
-      checkedAt: database.checked_at,
+      healthy: true,
     });
   } catch (error) {
     console.error("Database health check failed", error);

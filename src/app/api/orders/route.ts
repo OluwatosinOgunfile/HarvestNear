@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
 import { listingImageUrl } from "@/lib/images";
+import { canMutateAs, checkRateLimit } from "@/lib/security";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,8 @@ export async function GET() {
     SELECT orders.id, orders.order_number, orders.status, orders.total_kobo, orders.subtotal_kobo,
       orders.delivery_fee_kobo, orders.fulfilment_method, orders.delivery_address_snapshot,
       orders.placed_at, orders.delivered_at,
+      EXISTS (SELECT 1 FROM manual_payment_receipts receipt WHERE receipt.order_id = orders.id) AS receipt_submitted,
+      (SELECT payment.status FROM payments payment WHERE payment.order_id = orders.id ORDER BY payment.created_at DESC LIMIT 1) AS payment_status,
       (SELECT json_build_object('id', delivery.id, 'status', delivery.status, 'tracking_code', delivery.tracking_code,
         'courier_name', delivery.courier_name, 'courier_phone', delivery.courier_phone, 'scheduled_date', delivery.scheduled_date,
         'window_start', delivery.window_start, 'window_end', delivery.window_end,
@@ -40,9 +43,11 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const user = await getSessionUser();
-  if (!user || !["consumer", "farmer"].includes(user.role)) return NextResponse.json({ error: "Sign in to place an order" }, { status: 401 });
+  if (!user || !["consumer", "farmer"].includes(user.role) || !canMutateAs(user)) return NextResponse.json({ error: "Sign in with a non-impersonated account to place an order" }, { status: 401 });
+  if (!await checkRateLimit(request, "orders.create", 10, 10 * 60, user.id)) return NextResponse.json({ error: "Too many checkout attempts. Try again later." }, { status: 429 });
   const body = await request.json().catch(() => null) as { items?: CheckoutItem[]; fulfilmentMethod?: string } | null;
-  const items = body?.items?.filter((item) => item.listingId && Number.isInteger(item.quantity) && item.quantity > 0) ?? [];
+  if (!Array.isArray(body?.items) || body.items.length > 50) return NextResponse.json({ error: "Invalid basket" }, { status: 400 });
+  const items = body.items.filter((item) => /^[0-9a-f-]{36}$/i.test(item.listingId) && Number.isInteger(item.quantity) && item.quantity > 0 && item.quantity <= 10_000);
   const fulfilmentMethod = body?.fulfilmentMethod === "pickup" ? "farm_pickup" : "doorstep";
   if (!items.length) return NextResponse.json({ error: "Your basket is empty" }, { status: 400 });
 
@@ -63,7 +68,6 @@ export async function POST(request: Request) {
   }
 
   const orderId = randomUUID();
-  const deliveryId = randomUUID();
   const orderNumber = `HN-${Date.now().toString().slice(-8)}`;
   const subtotalKobo = listings.reduce((sum, listing) => sum + Number(listing.unit_price_kobo) * Number(requested.get(String(listing.id))), 0);
   const deliveryFeeKobo = fulfilmentMethod === "doorstep" ? 180000 : 0;
@@ -72,32 +76,23 @@ export async function POST(request: Request) {
 
   const queries = [sql`
     INSERT INTO orders (id, order_number, customer_id, status, subtotal_kobo, delivery_fee_kobo, total_kobo, fulfilment_method, delivery_address_snapshot, placed_at, paid_at)
-    VALUES (${orderId}, ${orderNumber}, ${user.id}, 'confirmed', ${subtotalKobo}, ${deliveryFeeKobo}, ${subtotalKobo + deliveryFeeKobo}, ${fulfilmentMethod}::fulfilment_method,
-      ${fulfilmentMethod === "doorstep" ? JSON.stringify({ city: "Gudu", state: "FCT" }) : null}::jsonb, now(), now())
+    VALUES (${orderId}, ${orderNumber}, ${user.id}, 'pending_payment', ${subtotalKobo}, ${deliveryFeeKobo}, ${subtotalKobo + deliveryFeeKobo}, ${fulfilmentMethod}::fulfilment_method,
+      ${fulfilmentMethod === "doorstep" ? JSON.stringify({ city: "Gudu", state: "FCT" }) : null}::jsonb, now(), null)
   `];
 
   for (const [farmId, farmListings] of farms) {
     const farmOrderId = randomUUID();
     const farmSubtotal = farmListings.reduce((sum, listing) => sum + Number(listing.unit_price_kobo) * Number(requested.get(String(listing.id))), 0);
-    queries.push(sql`INSERT INTO farm_orders (id, order_id, farm_id, status, subtotal_kobo, platform_fee_kobo, farmer_net_kobo, confirmed_at) VALUES (${farmOrderId}, ${orderId}, ${farmId}, 'confirmed', ${farmSubtotal}, ${Math.round(farmSubtotal * .1)}, ${Math.round(farmSubtotal * .9)}, now())`);
+    queries.push(sql`INSERT INTO farm_orders (id, order_id, farm_id, status, subtotal_kobo, platform_fee_kobo, farmer_net_kobo) VALUES (${farmOrderId}, ${orderId}, ${farmId}, 'pending_payment', ${farmSubtotal}, ${Math.round(farmSubtotal * .1)}, ${Math.round(farmSubtotal * .9)})`);
     for (const listing of farmListings) {
       const quantity = Number(requested.get(String(listing.id)));
       queries.push(sql`INSERT INTO order_items (order_id, farm_order_id, listing_id, product_name, farm_name, unit, quantity, unit_price_kobo, line_total_kobo, image_url) VALUES (${orderId}, ${farmOrderId}, ${listing.id}, ${listing.title}, ${listing.farm_name}, ${listing.unit}, ${quantity}, ${listing.unit_price_kobo}, ${Number(listing.unit_price_kobo) * quantity}, ${listing.image_url})`);
       queries.push(sql`UPDATE produce_listings SET quantity_available = quantity_available - ${quantity}, quantity_sold = quantity_sold + ${quantity}, status = CASE WHEN quantity_available - ${quantity} <= quantity_reserved THEN 'sold_out'::listing_status ELSE status END, updated_at = now(), version = version + 1 WHERE id = ${listing.id} AND quantity_available - quantity_reserved >= ${quantity}`);
     }
   }
-  queries.push(sql`INSERT INTO payments (order_id, provider_reference, status, amount_kobo, paid_at, provider_response) VALUES (${orderId}, ${`demo-${orderNumber}`}, 'successful', ${subtotalKobo + deliveryFeeKobo}, now(), '{"mode":"demo"}'::jsonb)`);
+  queries.push(sql`INSERT INTO payments (order_id, provider, provider_reference, status, amount_kobo, payment_channel, provider_response) VALUES (${orderId}, 'manual', ${`manual-${orderNumber}`}, 'initialized', ${subtotalKobo + deliveryFeeKobo}, 'bank_transfer', '{"mode":"manual","receiptSubmitted":false}'::jsonb)`);
   queries.push(sql`DELETE FROM cart_items WHERE cart_id IN (SELECT id FROM carts WHERE user_id = ${user.id})`);
-  queries.push(sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) VALUES (${user.id}, 'order', 'Order confirmed', ${`Your order ${orderNumber} has been confirmed and sent to the participating farms.`}, '/orders', ${JSON.stringify({ orderId, orderNumber })}::jsonb)`);
-  for (const [, farmListings] of farms) {
-    const ownerId = String(farmListings[0].farm_owner_id);
-    queries.push(sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) VALUES (${ownerId}, 'order', 'New order to fulfil', ${`Order ${orderNumber} includes produce from your farm.`}, '/farmer', ${JSON.stringify({ orderId, orderNumber })}::jsonb)`);
-  }
-  if (fulfilmentMethod === "doorstep") {
-    const trackingCode = `TRK-${orderNumber.slice(3)}`;
-    queries.push(sql`INSERT INTO deliveries (id, order_id, status, tracking_code, scheduled_date, window_start, window_end, notes) VALUES (${deliveryId}, ${orderId}, 'scheduled', ${trackingCode}, current_date + 1, '09:00', '13:00', 'Awaiting farm preparation')`);
-    queries.push(sql`INSERT INTO delivery_events (delivery_id, status, message) VALUES (${deliveryId}, 'scheduled', 'Delivery scheduled and produce reserved')`);
-  }
+  queries.push(sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) VALUES (${user.id}, 'order', 'Payment receipt required', ${`Order ${orderNumber} is reserved. Upload your bank-transfer receipt for administrator confirmation.`}, '/orders', ${JSON.stringify({ orderId, orderNumber })}::jsonb)`);
 
   try {
     await sql.transaction(queries);
@@ -110,7 +105,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   const user = await getSessionUser();
-  if (!user || !["consumer", "farmer"].includes(user.role)) return NextResponse.json({ error: "Sign in to update an order" }, { status: 401 });
+  if (!user || !["consumer", "farmer"].includes(user.role) || !canMutateAs(user)) return NextResponse.json({ error: "Impersonation is read-only" }, { status: 403 });
   const body = await request.json().catch(() => null) as { orderId?: string; action?: string } | null;
   if (!body?.orderId || body.action !== "confirm_receipt") return NextResponse.json({ error: "Invalid order update" }, { status: 400 });
   const sql = getDatabase();

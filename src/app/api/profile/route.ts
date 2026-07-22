@@ -5,6 +5,7 @@ import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
 import { listingImageUrl } from "@/lib/images";
 import { profileImageUrl } from "@/lib/images";
+import { canMutateAs, checkRateLimit, validText } from "@/lib/security";
 
 export const dynamic = "force-dynamic";
 
@@ -33,8 +34,10 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const session = await getSessionUser();
   if (!session || !["consumer", "farmer"].includes(session.role) || session.impersonating) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!await checkRateLimit(request, "farms.create", 8, 60 * 60, session.id)) return NextResponse.json({ error: "Farm creation limit reached. Try again later." }, { status: 429 });
   const body = await request.json().catch(() => null) as Record<string, string> | null;
   if (body?.type !== "farm" || !body.name?.trim() || !body.location?.trim() || !body.phone?.trim()) return NextResponse.json({ error: "Farm name, location, and phone are required" }, { status: 400 });
+  if (!validText(body.name, 140) || !validText(body.location, 300) || !validText(body.phone, 30)) return NextResponse.json({ error: "One or more farm fields are too long" }, { status: 400 });
   const latitude = Number(body.latitude);
   const longitude = Number(body.longitude);
   if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) return NextResponse.json({ error: "Capture or enter valid farm coordinates" }, { status: 400 });
@@ -60,9 +63,10 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   const session = await getSessionUser();
-  if (!session || !["consumer", "farmer"].includes(session.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!session || !["consumer", "farmer"].includes(session.role) || !canMutateAs(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await request.json().catch(() => null) as Record<string, string | boolean> | null;
   if (!body?.firstName || !body.lastName || !body.email) return NextResponse.json({ error: "Name and email are required" }, { status: 400 });
+  if (!validText(body.firstName, 80) || !validText(body.lastName, 80) || !validText(body.email, 254) || (body.phone && !validText(body.phone, 30))) return NextResponse.json({ error: "One or more profile fields are too long" }, { status: 400 });
   const sql = getDatabase();
   try {
     await sql`UPDATE users SET first_name = ${String(body.firstName).trim()}, last_name = ${String(body.lastName).trim()}, email = ${String(body.email).trim().toLowerCase()}, phone = ${body.phone ? String(body.phone).trim() : null}, updated_at = now() WHERE id = ${session.id}`;

@@ -92,16 +92,19 @@ export async function GET(request: NextRequest) {
     const rows = id ? await sql`
       SELECT orders.*, users.first_name || ' ' || users.last_name AS customer_name, users.email AS customer_email, users.phone AS customer_phone,
         payment.status AS payment_status, payment.provider_reference, delivery.status AS delivery_status, delivery.tracking_code,
+        receipt.original_name AS payment_receipt_name, receipt.submitted_at AS payment_receipt_submitted_at,
         delivery.courier_name, delivery.courier_phone, delivery.scheduled_date, delivery.window_start, delivery.window_end,
         coalesce((SELECT json_agg(json_build_object('product', item.product_name, 'farm', item.farm_name, 'quantity', item.quantity, 'unit', item.unit, 'total_kobo', item.line_total_kobo) ORDER BY item.created_at) FROM order_items item WHERE item.order_id = orders.id), '[]') AS items,
         coalesce((SELECT json_agg(json_build_object('status', event.status, 'message', event.message, 'occurred_at', event.occurred_at) ORDER BY event.occurred_at) FROM delivery_events event JOIN deliveries d ON d.id = event.delivery_id WHERE d.order_id = orders.id), '[]') AS delivery_events
       FROM orders JOIN users ON users.id = orders.customer_id
       LEFT JOIN LATERAL (SELECT * FROM payments WHERE order_id = orders.id ORDER BY created_at DESC LIMIT 1) payment ON true
+      LEFT JOIN manual_payment_receipts receipt ON receipt.order_id = orders.id
       LEFT JOIN deliveries delivery ON delivery.order_id = orders.id WHERE orders.id = ${id} LIMIT 1
     ` : await sql`
       SELECT orders.id, orders.order_number, orders.status, orders.subtotal_kobo, orders.delivery_fee_kobo, orders.total_kobo, orders.fulfilment_method, orders.placed_at,
         users.first_name || ' ' || users.last_name AS customer_name, users.email AS customer_email,
         delivery.status AS delivery_status, delivery.tracking_code,
+        EXISTS (SELECT 1 FROM manual_payment_receipts receipt WHERE receipt.order_id = orders.id) AS receipt_submitted,
         (SELECT count(*)::int FROM order_items WHERE order_id = orders.id) AS item_count,
         (SELECT string_agg(DISTINCT item.farm_name, ', ' ORDER BY item.farm_name) FROM order_items item WHERE item.order_id = orders.id) AS farm_names,
         coalesce((SELECT json_agg(json_build_object('id', item.id, 'product', item.product_name, 'farm', item.farm_name, 'quantity', item.quantity, 'unit', item.unit, 'unit_price_kobo', item.unit_price_kobo, 'line_total_kobo', item.line_total_kobo) ORDER BY item.created_at) FROM order_items item WHERE item.order_id = orders.id), '[]') AS items
@@ -247,6 +250,8 @@ export async function PATCH(request: NextRequest) {
     if (type === "orders") {
       const allowed = ["paid","confirmed","preparing","ready","dispatched","delivered","collected","cancelled","refunded"];
       if (!allowed.includes(body.status)) return NextResponse.json({ error: "Invalid order status" }, { status: 400 });
+      const [currentOrder] = await sql`SELECT status FROM orders WHERE id = ${id}`;
+      if (currentOrder?.status === "pending_payment" && body.status !== "cancelled") return NextResponse.json({ error: "Confirm the submitted payment receipt before advancing this order" }, { status: 409 });
       const [entity] = await sql`UPDATE orders SET status = ${body.status}::order_status, delivered_at = CASE WHEN ${body.status} IN ('delivered','collected') THEN coalesce(delivered_at, now()) ELSE delivered_at END, updated_at = now() WHERE id = ${id} RETURNING id, customer_id, order_number, status`;
       if (!entity) return NextResponse.json({ error: "Order not found" }, { status: 404 });
       await sql`UPDATE farm_orders SET status = ${body.status}::order_status, updated_at = now() WHERE order_id = ${id}`;

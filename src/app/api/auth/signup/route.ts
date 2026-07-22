@@ -3,10 +3,12 @@ import { randomUUID } from "node:crypto";
 
 import { createSession } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
+import { checkRateLimit, validText } from "@/lib/security";
 
 type SignupBody = { firstName?: string; lastName?: string; phone?: string; email?: string; password?: string; role?: string; farmName?: string; farmLocation?: string; latitude?: string; longitude?: string };
 
 export async function POST(request: Request) {
+  if (!await checkRateLimit(request, "auth.signup", 5, 60 * 60)) return NextResponse.json({ error: "Too many account creation attempts. Try again later." }, { status: 429 });
   const body = await request.json().catch(() => null) as SignupBody | null;
   const role = body?.role === "farmer" ? "farmer" : body?.role === "consumer" ? "consumer" : null;
   const email = body?.email?.trim().toLowerCase();
@@ -14,10 +16,12 @@ export async function POST(request: Request) {
   if (!body?.firstName?.trim() || !body.lastName?.trim() || !email || !phone || !body.password || !role) {
     return NextResponse.json({ error: "Complete all required account fields" }, { status: 400 });
   }
-  if (body.password.length < 8) return NextResponse.json({ error: "Password must contain at least 8 characters" }, { status: 400 });
+  if (!validText(body.firstName, 80) || !validText(body.lastName, 80) || !validText(email, 254) || !validText(phone, 30)) return NextResponse.json({ error: "One or more account fields are too long" }, { status: 400 });
+  if (body.password.length < 8 || body.password.length > 128) return NextResponse.json({ error: "Password must contain between 8 and 128 characters" }, { status: 400 });
   if (role === "farmer" && (!body.farmName?.trim() || !body.farmLocation?.trim())) {
     return NextResponse.json({ error: "Farm name and location are required for farmer accounts" }, { status: 400 });
   }
+  if (role === "farmer" && (!validText(body.farmName, 140) || !validText(body.farmLocation, 300))) return NextResponse.json({ error: "Farm details are too long" }, { status: 400 });
   const latitude = Number(body?.latitude);
   const longitude = Number(body?.longitude);
   if (role === "farmer" && (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180)) {

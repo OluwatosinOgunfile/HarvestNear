@@ -2,10 +2,12 @@ import { NextResponse } from "next/server";
 
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
+import { canMutateAs, checkRateLimit } from "@/lib/security";
 
 export async function POST(request: Request) {
   const user = await getSessionUser();
-  if (!user || !["consumer", "farmer"].includes(user.role)) return NextResponse.json({ error: "Sign in to rate a farm" }, { status: 401 });
+  if (!user || !["consumer", "farmer"].includes(user.role) || !canMutateAs(user)) return NextResponse.json({ error: "Sign in with a non-impersonated account to rate a farm" }, { status: 401 });
+  if (!await checkRateLimit(request, "reviews.write", 20, 60 * 60, user.id)) return NextResponse.json({ error: "Review limit reached. Try again later." }, { status: 429 });
   const body = await request.json().catch(() => null) as { orderId?: string; farmId?: string; rating?: number; comment?: string } | null;
   const rating = Number(body?.rating);
   if (!body?.orderId || !body.farmId || !Number.isInteger(rating) || rating < 1 || rating > 5) return NextResponse.json({ error: "Choose a rating from 1 to 5" }, { status: 400 });
