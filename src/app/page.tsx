@@ -121,6 +121,15 @@ function money(value: number) {
   return new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 }).format(value);
 }
 
+function walkingTime(distanceKm: number) {
+  const minutes = Math.max(5, Math.round((Number(distanceKm) * 12) / 5) * 5);
+  if (minutes <= 5) return "Under 5 min walk";
+  if (minutes < 60) return `About ${minutes} min walk`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return `About ${hours} hr${hours === 1 ? "" : "s"}${remainder ? ` ${remainder} min` : ""} walk`;
+}
+
 function roleLabel(role: CurrentUser["role"]) {
   return `${role.charAt(0).toUpperCase()}${role.slice(1)} account`;
 }
@@ -480,7 +489,10 @@ export default function Home() {
     setSignupError("");
     const form = new FormData(event.currentTarget);
     try {
-      const response = await fetch("/api/auth/signup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ firstName: form.get("firstName"), lastName: form.get("lastName"), phone: form.get("phone"), email: form.get("email"), password: form.get("password"), role: signupRole, farmName: form.get("farmName"), farmLocation: form.get("farmLocation"), latitude: form.get("latitude"), longitude: form.get("longitude") }) });
+      const password = String(form.get("password") || "");
+      const confirmPassword = String(form.get("confirmPassword") || "");
+      if (password !== confirmPassword) throw new Error("Passwords do not match");
+      const response = await fetch("/api/auth/signup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ firstName: form.get("firstName"), lastName: form.get("lastName"), phone: form.get("phone"), email: form.get("email"), password, confirmPassword, role: signupRole, farmName: form.get("farmName"), farmLocation: form.get("farmLocation"), latitude: form.get("latitude"), longitude: form.get("longitude") }) });
       const data = await response.json() as { user?: CurrentUser; error?: string };
       if (!response.ok || !data.user) throw new Error(data.error || "Account creation failed");
       setCurrentUser(data.user);
@@ -673,11 +685,11 @@ export default function Home() {
 
           <section className="discovery-bar">
             <label className="search-box"><Search size={20} /><input value={query} onChange={(e) => { setQuery(e.target.value); setCurrentPage(1); }} placeholder="Search tomatoes, yam, farmer..." /></label>
-            <div className="location-picker"><button className={`location-button ${locationOpen ? "active" : ""}`} onClick={() => { setLocationOpen((open) => !open); setFiltersOpen(false); }} aria-expanded={locationOpen} aria-haspopup="listbox"><span className="loc-icon"><LocateFixed size={18}/></span><span><small>DELIVERING TO</small><strong>{deliveryLocation.name}</strong></span><ChevronDown className={locationOpen ? "open" : ""} size={17}/></button>{locationOpen && <><button className="location-backdrop" aria-label="Close delivery locations" onClick={() => setLocationOpen(false)}/><div className="location-menu" role="listbox" aria-label="Delivery location"><header><strong>Choose your area</strong><small>Distances update automatically</small></header><button className="device-location" onClick={useDeviceLocation}><LocateFixed size={16}/><span><strong>Use current location</strong><small>Allow location access in your browser</small></span></button>{deliveryLocations.map((location) => <button role="option" aria-selected={deliveryLocation.name === location.name} className={deliveryLocation.name === location.name ? "selected" : ""} key={location.name} onClick={() => { setDeliveryLocation(location); setLocationOpen(false); setCurrentPage(1); }}><MapPin size={15}/><span>{location.name}</span>{deliveryLocation.name === location.name && <Check size={14}/>}</button>)}</div></>}</div>
+            <div className="location-picker"><button className={`location-button ${locationOpen ? "active" : ""}`} onClick={() => { setLocationOpen((open) => !open); setFiltersOpen(false); }} aria-expanded={locationOpen} aria-haspopup="listbox"><span className="loc-icon"><LocateFixed size={18}/></span><span><small>DELIVERING TO</small><strong>{deliveryLocation.name}</strong></span><ChevronDown className={locationOpen ? "open" : ""} size={17}/></button>{locationOpen && <><button className="location-backdrop" aria-label="Close delivery locations" onClick={() => setLocationOpen(false)}/><div className="location-menu" role="listbox" aria-label="Delivery location"><header><strong>Choose your area</strong><small>Travel times update automatically</small></header><button className="device-location" onClick={useDeviceLocation}><LocateFixed size={16}/><span><strong>Use current location</strong><small>Allow location access in your browser</small></span></button>{deliveryLocations.map((location) => <button role="option" aria-selected={deliveryLocation.name === location.name} className={deliveryLocation.name === location.name ? "selected" : ""} key={location.name} onClick={() => { setDeliveryLocation(location); setLocationOpen(false); setCurrentPage(1); }}><MapPin size={15}/><span>{location.name}</span>{deliveryLocation.name === location.name && <Check size={14}/>}</button>)}</div></>}</div>
             <button className={`filter-button ${activeFilterCount ? "active" : ""}`} onClick={() => setFiltersOpen((open) => !open)}><SlidersHorizontal size={18} /> Filters {activeFilterCount > 0 && <b>{activeFilterCount}</b>}</button>
             {filtersOpen && <div className="filter-popover">
               <div className="filter-head"><div><strong>Filter harvests</strong><span>Refine what is shown near you</span></div><button onClick={() => setFiltersOpen(false)}><X size={17}/></button></div>
-              <label className="range-filter"><span><strong>Maximum distance</strong><b>{distanceFilterActive ? `${maxDistance} km` : "Any distance"}</b></span><input type="number" min="1" step="1" value={distanceFilterActive ? maxDistance : ""} placeholder="Enter distance in km" onChange={(event) => { const value = event.target.value; setDistanceFilterActive(value !== ""); if (value) setMaxDistance(Number(value)); setCurrentPage(1); }}/></label>
+              <label className="range-filter"><span><strong>Maximum distance</strong><b>{distanceFilterActive ? `${maxDistance} km · ${walkingTime(maxDistance)}` : "Any distance"}</b></span><input type="number" min="1" step="1" value={distanceFilterActive ? maxDistance : ""} placeholder="Enter distance in km" onChange={(event) => { const value = event.target.value; setDistanceFilterActive(value !== ""); if (value) setMaxDistance(Number(value)); setCurrentPage(1); }}/></label>
               <label className="range-filter"><span><strong>Maximum unit price</strong><b>{priceFilterActive ? money(maxPrice) : "Any price"}</b></span><input type="number" min="1" step="100" value={priceFilterActive ? maxPrice : ""} placeholder="Enter maximum price" onChange={(event) => { const value = event.target.value; setPriceFilterActive(value !== ""); if (value) setMaxPrice(Number(value)); setCurrentPage(1); }}/></label>
               <div className="quick-filters"><label><span><strong>Available today</strong><small>Only produce ready now</small></span><input type="checkbox" checked={todayOnly} onChange={(event) => { setTodayOnly(event.target.checked); setCurrentPage(1); }}/></label><label><span><strong>Hide low stock</strong><small>More than 15 units left</small></span><input type="checkbox" checked={hideLowStock} onChange={(event) => { setHideLowStock(event.target.checked); setCurrentPage(1); }}/></label></div>
               <div className="filter-actions"><button onClick={() => { setMaxDistance(20); setMaxPrice(50000); setDistanceFilterActive(false); setPriceFilterActive(false); setTodayOnly(false); setHideLowStock(false); setCurrentPage(1); }}>Reset all</button><button onClick={() => setFiltersOpen(false)}>Show {visible.length} harvests</button></div>
@@ -687,7 +699,7 @@ export default function Home() {
           <section className="catalog">
             <div className="catalog-head">
               <div><h2>Harvests near you</h2><p>{visible.length} available listings matched near Gudu</p></div>
-              <label className="sort"><span>Sort by</span><select value={sortBy} onChange={(event) => { setSortBy(event.target.value as typeof sortBy); setCurrentPage(1); }}><option value="nearest">Nearest first</option><option value="price-low">Price: low to high</option><option value="price-high">Price: high to low</option><option value="rating">Highest rated</option><option value="stock">Most available</option></select><ChevronDown size={15}/></label>
+              <label className="sort"><span>Sort by</span><select value={sortBy} onChange={(event) => { setSortBy(event.target.value as typeof sortBy); setCurrentPage(1); }}><option value="nearest">Shortest walk first</option><option value="price-low">Price: low to high</option><option value="price-high">Price: high to low</option><option value="rating">Highest rated</option><option value="stock">Most available</option></select><ChevronDown size={15}/></label>
             </div>
             <div className="category-row">
               {categories.map((item) => <button key={item} onClick={() => { setCategory(item); setCurrentPage(1); }} className={category === item ? "selected" : ""}>{item}</button>)}
@@ -698,7 +710,7 @@ export default function Home() {
                 <article className="product-card" key={product.id}>
                   <div className="product-image">
                     <img src={product.image} alt={product.name} />
-                    <span className="distance"><MapPin size={13} /> {product.distance} km</span>
+                    <span className="distance" title={`${product.distance} km straight-line distance`}><MapPin size={13} /> {walkingTime(product.distance)}</span>
                     <button className={`heart ${liked.includes(product.id) ? "liked" : ""}`} onClick={() => toggleFavourite(product.id)} aria-label={liked.includes(product.id) ? "Remove saved product" : "Save product"}><Heart size={18} fill={liked.includes(product.id) ? "currentColor" : "none"} /></button>
                     {product.badge && <span className="product-badge">{product.badge}</span>}
                   </div>
@@ -744,7 +756,7 @@ export default function Home() {
               <div><h4>{product.name}</h4><p>{product.farmer}</p><strong>{money(product.price * cart[product.id])}</strong></div>
               <div className="stepper"><button onClick={() => update(product.id, -1)}><Minus size={14} /></button><span>{cart[product.id]}</span><button onClick={() => update(product.id, 1)}><Plus size={14} /></button></div>
             </div>)}</div>
-            <div className="delivery-choice"><p>How would you like it?</p><button className={delivery === "door" ? "selected" : ""} onClick={() => setDelivery("door")}><Truck size={20} /><span><strong>Doorstep delivery</strong><small>Tomorrow, 9am–1pm</small></span><b>{money(1800)}</b></button><button className={delivery === "pickup" ? "selected" : ""} onClick={() => setDelivery("pickup")}><Store size={20} /><span><strong>Pickup from collection hub</strong><small>Gudu Market · 2.1 km</small></span><b>Free</b></button></div>
+            <div className="delivery-choice"><p>How would you like it?</p><button className={delivery === "door" ? "selected" : ""} onClick={() => setDelivery("door")}><Truck size={20} /><span><strong>Doorstep delivery</strong><small>Tomorrow, 9am–1pm</small></span><b>{money(1800)}</b></button><button className={delivery === "pickup" ? "selected" : ""} onClick={() => setDelivery("pickup")}><Store size={20} /><span><strong>Pickup from collection hub</strong><small title="2.1 km straight-line distance">Gudu Market · {walkingTime(2.1)}</small></span><b>Free</b></button></div>
             <div className="cart-total"><p><span>Subtotal</span><strong>{money(subtotal)}</strong></p><p><span>Delivery</span><strong>{deliveryFee ? money(deliveryFee) : "Free"}</strong></p><p className="total"><span>Total</span><strong>{money(subtotal + deliveryFee)}</strong></p><button className="checkout-button" onClick={beginCheckout}>Continue to payment <ArrowRight size={18} /></button><small>Secure payment powered by Paystack</small></div>
           </> : <div className="empty-cart"><ShoppingBag size={34} /><h3>Your basket is empty</h3><p>Add fresh produce from a farm near you.</p><button onClick={() => setCartOpen(false)}>Explore harvests</button></div>}
         </aside>
@@ -791,6 +803,7 @@ export default function Home() {
             <label>Email address<input name="email" required type="email" placeholder="you@example.com" /></label>
             {signupRole === "farmer" && <div className="farmer-fields"><label>Farm or business name<input name="farmName" required placeholder="Adebayo Family Farm" /></label><label>Farm address or area<input name="farmLocation" required placeholder="Kuje, Abuja" /></label><FarmCoordinateFields/></div>}
             <label>Password<div className="password-field"><input name="password" required type={showSignupPassword ? "text" : "password"} autoComplete="new-password" minLength={8} placeholder="At least 8 characters"/><button type="button" onClick={() => setShowSignupPassword((value) => !value)} aria-label={showSignupPassword ? "Hide password" : "Show password"} aria-pressed={showSignupPassword} title={showSignupPassword ? "Hide password" : "Show password"}>{showSignupPassword ? <EyeOff size={17}/> : <Eye size={17}/>}</button></div></label>
+            <label>Confirm password<div className="password-field"><input name="confirmPassword" required type={showSignupPassword ? "text" : "password"} autoComplete="new-password" minLength={8} placeholder="Enter the password again"/><button type="button" onClick={() => setShowSignupPassword((value) => !value)} aria-label={showSignupPassword ? "Hide passwords" : "Show passwords"} aria-pressed={showSignupPassword} title={showSignupPassword ? "Hide passwords" : "Show passwords"}>{showSignupPassword ? <EyeOff size={17}/> : <Eye size={17}/>}</button></div></label>
             <label className="terms"><input required type="checkbox" /> <span>I agree to the Terms of Service and Privacy Policy.</span></label>
             {signupError && <p className="auth-error" role="alert">{signupError}</p>}
             <button className="create-account" type="submit" disabled={signupBusy}>{signupBusy ? "Creating account..." : `Create ${signupRole} account`} {!signupBusy && <ArrowRight size={17} />}</button>
@@ -846,7 +859,7 @@ function LandingPage({ stats, onShop, onFarmer }: { stats: MarketplaceStats | nu
     <section className="how-it-works">
       <div className="landing-section-head"><div><p>HOW HARVESTNEARU WORKS</p><h2>From farm gate to your plate.</h2></div><span>A shorter, clearer journey for local food.</span></div>
       <div className="steps-line">
-        <article><span>1</span><div><LocateFixed size={21}/></div><h3>Discover nearby</h3><p>Share your area and see available produce ranked by distance.</p></article>
+        <article><span>1</span><div><LocateFixed size={21}/></div><h3>Discover nearby</h3><p>Share your area and see available produce ranked by estimated walking time.</p></article>
         <article><span>2</span><div><ShoppingBag size={21}/></div><h3>Order what you need</h3><p>Buy practical quantities while live farmer inventory lasts.</p></article>
         <article><span>3</span><div><Truck size={21}/></div><h3>Choose fulfilment</h3><p>Select doorstep delivery, farmer delivery, or local pickup.</p></article>
         <article><span>4</span><div><Check size={21}/></div><h3>Pay securely</h3><p>Complete payment in naira and follow the order to delivery.</p></article>
@@ -854,8 +867,8 @@ function LandingPage({ stats, onShop, onFarmer }: { stats: MarketplaceStats | nu
     </section>
 
     <section className="audience-band consumer-band">
-      <div className="audience-image"><img src="/produce/creamy-avocados.webp" alt="Fresh avocados from a local farm"/><span><strong>2.4 km</strong> from your location</span></div>
-      <div className="audience-copy"><p>FOR CONSUMERS</p><h2>Freshness you can<br/>actually locate.</h2><p>See what farmers have ready on a particular date, compare distance and prices, and order in smaller quantities without the uncertainty of a long supply chain.</p><ul><li><Check size={14}/> Availability you can see before ordering</li><li><Check size={14}/> Produce ranked by proximity</li><li><Check size={14}/> Pickup and delivery choices</li></ul><button onClick={onShop}>Start shopping <ArrowRight size={16}/></button></div>
+      <div className="audience-image"><img src="/produce/creamy-avocados.webp" alt="Fresh avocados from a local farm"/><span title="2.4 km straight-line distance"><strong>{walkingTime(2.4)}</strong> from your location</span></div>
+      <div className="audience-copy"><p>FOR CONSUMERS</p><h2>Freshness you can<br/>actually locate.</h2><p>See what farmers have ready on a particular date, compare estimated travel times and prices, and order in smaller quantities without the uncertainty of a long supply chain.</p><ul><li><Check size={14}/> Availability you can see before ordering</li><li><Check size={14}/> Produce ranked by proximity</li><li><Check size={14}/> Pickup and delivery choices</li></ul><button onClick={onShop}>Start shopping <ArrowRight size={16}/></button></div>
     </section>
 
     <section className="audience-band farmer-band">
@@ -1381,14 +1394,14 @@ function ProfilePage({ products, role }: { products: Product[]; role: "consumer"
         <div className="profile-main-column">
           <section className="profile-stats"><div><ShoppingBag size={18}/><strong>10</strong><span>Total orders</span></div><div><Leaf size={18}/><strong>4</strong><span>Farms supported</span></div><div><Star size={18}/><strong>8</strong><span>Reviews shared</span></div><div><PackageCheck size={18}/><strong>98%</strong><span>Delivery success</span></div></section>
           <section className="address-section"><div className="profile-panel-head"><div><h3>Delivery addresses</h3><p>Used to rank nearby produce and calculate delivery.</p></div><button><Plus size={14}/> Add address</button></div><div className="address-list"><article><span><MapPin size={18}/></span><div><strong>Home</strong><p>14 Bakori Street, Gudu, Abuja</p><small>Primary · Delivery instructions added</small></div><button>Manage</button></article><article><span><Store size={18}/></span><div><strong>Office</strong><p>Plot 18, Adetokunbo Crescent, Wuse 2</p><small>Available weekdays</small></div><button>Manage</button></article></div></section>
-          <section className="preference-section"><div className="profile-panel-head"><div><h3>Shopping preferences</h3><p>These improve recommendations without hiding other produce.</p></div><button>Edit</button></div><div className="preference-tags"><span>Vegetables</span><span>Fruits</span><span>Under 10 km</span><span>Available today</span><span>Farmer delivery</span></div></section>
-          <section className="saved-preview"><div className="profile-panel-head"><div><h3>Saved harvests</h3><p>Produce you want to find again.</p></div><button>View all <ArrowRight size={14}/></button></div><div>{products.slice(0,3).map(product=><article key={product.id}><img src={product.image} alt={product.name}/><span>{product.distance} km</span><strong>{product.name}</strong><small>{money(product.price)} / {product.unit}</small></article>)}</div></section>
+          <section className="preference-section"><div className="profile-panel-head"><div><h3>Shopping preferences</h3><p>These improve recommendations without hiding other produce.</p></div><button>Edit</button></div><div className="preference-tags"><span>Vegetables</span><span>Fruits</span><span>Within about 2 hours&apos; walk</span><span>Available today</span><span>Farmer delivery</span></div></section>
+          <section className="saved-preview"><div className="profile-panel-head"><div><h3>Saved harvests</h3><p>Produce you want to find again.</p></div><button>View all <ArrowRight size={14}/></button></div><div>{products.slice(0,3).map(product=><article key={product.id}><img src={product.image} alt={product.name}/><span title={`${product.distance} km straight-line distance`}>{walkingTime(product.distance)}</span><strong>{product.name}</strong><small>{money(product.price)} / {product.unit}</small></article>)}</div></section>
         </div>
       </div>
     </div> : <div className="farmer-profile">
       <section className="farm-identity">
         <div className="farm-cover"><img src="/produce/fresh-sweet-corn.webp" alt="Adebayo Family Farm produce"/><div/></div>
-        <div className="farm-identity-row"><span className="farm-avatar"><img src="/brand/harvestnearu-approved-mark.png" alt="Farm profile"/></span><div><span className="verified-label"><Check size={11}/> Verified farmer</span><h2>Adebayo Family Farm</h2><p><MapPin size={13}/> Kuje, Abuja · 2.4 km from Gudu</p></div><button onClick={() => setEditing((value) => !value)}>{editing ? "Save farm profile" : "Edit farm profile"}</button></div>
+        <div className="farm-identity-row"><span className="farm-avatar"><img src="/brand/harvestnearu-approved-mark.png" alt="Farm profile"/></span><div><span className="verified-label"><Check size={11}/> Verified farmer</span><h2>Adebayo Family Farm</h2><p title="2.4 km straight-line distance"><MapPin size={13}/> Kuje, Abuja · {walkingTime(2.4)} from Gudu</p></div><button onClick={() => setEditing((value) => !value)}>{editing ? "Save farm profile" : "Edit farm profile"}</button></div>
       </section>
 
       <section className="farm-summary"><div><span>FARM TYPE</span><strong>Family-owned mixed farm</strong></div><div><span>FARM SIZE</span><strong>6.5 hectares</strong></div><div><span>FARMING SINCE</span><strong>2014</strong></div><div><span>DELIVERY RADIUS</span><strong>15 km</strong></div><div><span>FARM RATING</span><strong><Star size={14} fill="currentColor"/> 4.9</strong></div></section>

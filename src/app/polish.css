@@ -36,8 +36,25 @@ textarea {
   .account-menu-heading strong,.account-menu>button strong { font-size:12px; }
   .account-menu-heading small,.account-menu>button small { font-size:10px!important; }
   .account-menu-auth button { font-size:11px; }
-  .notification-drawer :is(button,p,span) { line-height:1.45; }
+.notification-drawer :is(button,p,span) { line-height:1.45; }
   .site-footer :is(p,a,button,small) { font-size:11px; line-height:1.55; }
+}
+
+/* Compound fields use the wrapper as their single, coherent focus surface. */
+:is(.search-box,.support-search,.password-field,.phone-field,.footer-newsletter form) :is(input,select):focus,
+:is(.search-box,.support-search,.password-field,.phone-field,.footer-newsletter form) :is(input,select):focus-visible {
+  outline:0!important;
+  box-shadow:none!important;
+}
+
+:is(.support-search,.phone-field,.footer-newsletter form):focus-within {
+  border-color:var(--green-2);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--green-2) 18%,transparent);
+}
+
+.app-shell[data-theme="dark"] :is(.support-search,.phone-field,.footer-newsletter form):focus-within {
+  border-color:#78b889;
+  box-shadow:0 0 0 3px rgba(120,184,137,.14);
 }
 
 button:focus-visible,
