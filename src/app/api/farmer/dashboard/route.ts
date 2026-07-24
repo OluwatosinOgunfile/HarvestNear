@@ -27,7 +27,7 @@ export async function GET(request: Request) {
   const farm = farms.find((item) => String(item.id) === requestedFarmId) || farms[0];
   if (!farm) return NextResponse.json({ error: "No farm is linked to this account" }, { status: 404 });
 
-  const [metricRows, orders, listings, categories] = await Promise.all([
+  const [metricRows, orders, listings, categories, reviews] = await Promise.all([
     sql`SELECT
       coalesce((SELECT sum(farmer_net_kobo) FROM farm_orders fo JOIN orders o ON o.id = fo.order_id WHERE fo.farm_id = ${farm.id} AND o.paid_at::date = current_date AND fo.status NOT IN ('cancelled','refunded')), 0) AS today_sales_kobo,
       (SELECT count(*)::int FROM farm_orders WHERE farm_id = ${farm.id} AND status IN ('paid','confirmed','preparing','ready','dispatched')) AS open_orders,
@@ -58,11 +58,16 @@ export async function GET(request: Request) {
       LEFT JOIN LATERAL (SELECT url FROM listing_images WHERE listing_id = listing.id ORDER BY sort_order LIMIT 1) image ON true
       WHERE listing.farm_id = ${farm.id} ORDER BY listing.created_at DESC LIMIT 50`,
     sql`SELECT id, name FROM produce_categories WHERE is_active ORDER BY name`,
+    sql`SELECT review.id, review.rating, review.comment, review.farmer_reply, review.created_at,
+      users.first_name || ' ' || users.last_name AS customer_name, orders.order_number
+      FROM reviews review JOIN users ON users.id = review.customer_id JOIN orders ON orders.id = review.order_id
+      WHERE review.farm_id = ${farm.id} AND review.is_visible
+      ORDER BY review.created_at DESC LIMIT 50`,
   ]);
   return NextResponse.json({ user, farm, farms, metrics: metricRows[0], orders: orders.map((order) => {
     const itemTracking = order.items as Array<{ id: string; name: string; quantity: number; unit: string; status: string; preparing_at: string | null; ready_at: string | null; dispatched_at: string | null; received_at: string | null; updated_at: string }>;
     return { ...order, items: itemTracking.map((item) => `${item.quantity} ${item.unit} · ${item.name} (${item.status.replaceAll("_", " ")})`).join(", "), itemTracking, customer_avatar: order.customer_avatar ? profileImageUrl(String(order.customer_id), order.customer_avatar) : null };
-  }), listings: listings.map((listing) => ({ ...listing, stored_image_url: listing.image_url, image_url: listing.image_url ? listingImageUrl(String(listing.id), listing.image_url) : null })), categories });
+  }), listings: listings.map((listing) => ({ ...listing, stored_image_url: listing.image_url, image_url: listing.image_url ? listingImageUrl(String(listing.id), listing.image_url) : null })), categories, reviews });
 }
 
 export async function POST(request: Request) {

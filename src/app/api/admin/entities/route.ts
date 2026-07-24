@@ -261,8 +261,38 @@ export async function PATCH(request: NextRequest) {
     if (type === "orders") {
       const allowed = ["paid","confirmed","preparing","ready","dispatched","delivered","collected","cancelled","refunded"];
       if (!allowed.includes(body.status)) return NextResponse.json({ error: "Invalid order status" }, { status: 400 });
-      const [currentOrder] = await sql`SELECT status FROM orders WHERE id = ${id}`;
+      const [currentOrder] = await sql`
+        SELECT orders.status, orders.discount_kobo, orders.total_kobo, orders.customer_id,
+          payment.id AS payment_id, payment.status AS payment_status,
+          (SELECT blob_url FROM manual_payment_receipts WHERE order_id = orders.id) AS receipt_blob_url
+        FROM orders LEFT JOIN LATERAL (SELECT id, status FROM payments WHERE order_id = orders.id ORDER BY created_at DESC LIMIT 1) payment ON true
+        WHERE orders.id = ${id}
+      `;
       if (currentOrder?.status === "pending_payment" && body.status !== "cancelled") return NextResponse.json({ error: "Confirm the submitted payment receipt before advancing this order" }, { status: 409 });
+      if (body.status === "cancelled" && currentOrder && !["cancelled","refunded"].includes(String(currentOrder.status))) {
+        const cancellationQueries = [];
+        if (!["delivered","collected"].includes(String(currentOrder.status))) cancellationQueries.push(sql`
+          UPDATE produce_listings listing SET quantity_available = listing.quantity_available + restored.quantity,
+            quantity_sold = greatest(0, listing.quantity_sold - restored.quantity),
+            status = CASE WHEN listing.status = 'sold_out' THEN 'active'::listing_status ELSE listing.status END,
+            version = version + 1, updated_at = now()
+          FROM (SELECT listing_id, sum(quantity) AS quantity FROM order_items WHERE order_id = ${id} AND listing_id IS NOT NULL GROUP BY listing_id) restored
+          WHERE listing.id = restored.listing_id
+        `);
+        if (Number(currentOrder.discount_kobo) > 0) {
+          cancellationQueries.push(sql`INSERT INTO store_credit_accounts (user_id, balance_kobo) VALUES (${currentOrder.customer_id}, ${currentOrder.discount_kobo}) ON CONFLICT (user_id) DO UPDATE SET balance_kobo = store_credit_accounts.balance_kobo + excluded.balance_kobo, updated_at = now()`);
+          cancellationQueries.push(sql`INSERT INTO store_credit_transactions (user_id, amount_kobo, transaction_type, reference_type, reference_id, description) VALUES (${currentOrder.customer_id}, ${currentOrder.discount_kobo}, 'adjustment', 'order', ${id}, 'Account credit restored after administrator cancellation') ON CONFLICT DO NOTHING`);
+        }
+        if (currentOrder.payment_status === "successful") cancellationQueries.push(sql`
+          INSERT INTO refunds (id, order_id, payment_id, requested_by, status, reason, amount_kobo, resolution_method, cancellation_fee_kobo)
+          SELECT gen_random_uuid(), ${id}, ${currentOrder.payment_id}, ${currentOrder.customer_id}, 'requested', 'Administrator cancelled order', ${currentOrder.total_kobo}, 'bank_refund', 0
+          WHERE NOT EXISTS (SELECT 1 FROM refunds WHERE order_id = ${id} AND status NOT IN ('rejected','failed'))
+        `);
+        cancellationQueries.push(sql`UPDATE payments SET status = 'failed', updated_at = now() WHERE order_id = ${id} AND status IN ('initialized','pending')`);
+        cancellationQueries.push(sql`DELETE FROM manual_payment_receipts WHERE order_id = ${id}`);
+        await sql.transaction(cancellationQueries);
+        if (currentOrder.receipt_blob_url) await del(String(currentOrder.receipt_blob_url)).catch((error) => console.error("Cancelled receipt Blob cleanup failed", error));
+      }
       const [entity] = await sql`UPDATE orders SET status = ${body.status}::order_status, delivered_at = CASE WHEN ${body.status} IN ('delivered','collected') THEN coalesce(delivered_at, now()) ELSE delivered_at END, updated_at = now() WHERE id = ${id} RETURNING id, customer_id, order_number, status`;
       if (!entity) return NextResponse.json({ error: "Order not found" }, { status: 404 });
       await sql`UPDATE farm_orders SET status = ${body.status}::order_status, updated_at = now() WHERE order_id = ${id}`;
@@ -277,6 +307,9 @@ export async function PATCH(request: NextRequest) {
       if (body.status === "cancelled") await sql`UPDATE deliveries SET status = 'cancelled', updated_at = now() WHERE order_id = ${id}`;
       if (["dispatched","delivered","cancelled"].includes(body.status)) await sql`INSERT INTO delivery_events (delivery_id, status, message) SELECT id, ${body.status === "dispatched" ? "in_transit" : body.status}, ${`Administrator updated fulfilment to ${body.status}.`} FROM deliveries WHERE order_id = ${id}`;
       await sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) VALUES (${entity.customer_id}, 'order', 'Order status updated', ${`An administrator updated order ${entity.order_number} to ${body.status.replaceAll("_", " ")}.`}, '/orders', ${JSON.stringify({ orderId: id, status: body.status })}::jsonb)`;
+      if (body.status === "cancelled") await sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata)
+        SELECT DISTINCT farm.owner_id, 'order', 'Order cancelled', ${`Order ${entity.order_number} was cancelled by an administrator.`}, '/farmer', ${JSON.stringify({ orderId: id, status: "cancelled" })}::jsonb
+        FROM farm_orders JOIN farms farm ON farm.id = farm_orders.farm_id WHERE farm_orders.order_id = ${id}`;
       await sql`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES (${administrator.id}, 'order.status_updated', 'order', ${id}, ${JSON.stringify({ status: body.status })}::jsonb)`;
       return NextResponse.json({ entity });
     }

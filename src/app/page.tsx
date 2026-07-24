@@ -1279,6 +1279,27 @@ function AdminPage({ readOnly, onImpersonated }: { readOnly: boolean; onImperson
       await Promise.all([loadEntities("orders"), loadOverview()]);
     } catch (reason) { setError((reason as Error).message); setBusy(false); }
   }
+
+  async function cancelAdminOrder() {
+    if (!selected || section !== "orders") return;
+    if (!window.confirm(`Cancel order #${String(selected.order_number)}? The customer and affected farms will be notified.`)) return;
+    setBusy(true); setError("");
+    try {
+      const response = await fetch(`/api/admin/entities?type=orders&id=${selected.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "cancelled" }),
+      });
+      const result = await readJsonResponse<{ error?: string }>(response);
+      if (!response.ok) throw new Error(result.error || "Could not cancel the order");
+      setSelected(null);
+      await Promise.all([loadEntities("orders"), loadOverview()]);
+    } catch (reason) {
+      setError((reason as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   async function savePaymentSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError("");
     try {
@@ -1324,6 +1345,7 @@ function AdminPage({ readOnly, onImpersonated }: { readOnly: boolean; onImperson
         {!readOnly && section !== "activity" && <footer className="admin-detail-actions">
           {section === "users" && <button className="impersonate-user" onClick={impersonateUser} disabled={busy}><Eye size={16}/> View as this user</button>}
           {section === "orders" && selected.status === "pending_payment" && Boolean(selected.payment_receipt_name) && <button className="confirm-manual-payment" onClick={confirmManualPayment} disabled={busy}><Check size={16}/> {busy ? "Confirming..." : "Confirm payment"}</button>}
+          {section === "orders" && selected.status !== "cancelled" && <button className="cancel-admin-order" onClick={cancelAdminOrder} disabled={busy}><X size={16}/> {busy ? "Working..." : "Cancel order"}</button>}
           {!(section === "orders" && selected.status === "pending_payment") && <button className="edit-entity" onClick={() => { setError(""); setEditOpen(true); }} disabled={busy}>{["orders","refunds","reviews"].includes(section) ? "Manage record" : "Edit details"}</button>}
           {section === "farms" && selected.verification_status !== "verified" && <button className="verify-farm" onClick={() => updateFarmVerification("verified")} disabled={busy}><Check size={16}/> Verify farm</button>}
           {section === "farms" && selected.verification_status !== "rejected" && <button className="reject-farm" onClick={() => updateFarmVerification("rejected")} disabled={busy}><X size={16}/> Reject</button>}
@@ -1764,7 +1786,12 @@ type FarmerWorkspaceData = {
   orders: Array<{ id: string; order_number: string; status: string; placed_at: string; subtotal_kobo: number; farmer_net_kobo: number; customer: string; customer_email: string; customer_phone: string | null; customer_avatar: string | null; items: string; itemTracking: Array<{ id: string; name: string; quantity: number; unit: string; status: string; preparing_at: string | null; ready_at: string | null; dispatched_at: string | null; received_at: string | null; updated_at: string }>; fulfilment_method: string; delivery_address_snapshot: { line1?: string; city?: string; state?: string; landmark?: string } | null; customer_note: string | null; tracking_code: string | null; delivery_status: string | null; window_start: string | null; window_end: string | null }>;
   listings: Array<{ id: string; title: string; unit: string; unit_price_kobo: number; quantity_available: number; quantity_reserved: number; quantity_sold: number; status: string; harvest_date: string; category_id: string; image_url: string | null; stored_image_url: string | null; badge?: string | null }>;
   categories: Array<{ id: string; name: string }>;
+  reviews: Array<{ id: string; rating: number; comment: string | null; farmer_reply: string | null; created_at: string; customer_name: string; order_number: string }>;
 };
+
+function FarmReviews({ farmName, reviews }: { farmName: string; reviews: FarmerWorkspaceData["reviews"] }) {
+  return <section className="farm-reviews-panel"><div className="panel-head"><div><h2>Customer ratings</h2><p>Reviews for {farmName}</p></div><span><Star size={14} fill="currentColor"/> {reviews.length} review{reviews.length === 1 ? "" : "s"}</span></div>{reviews.length ? <div className="farm-review-list">{reviews.map((review) => <article key={review.id}><header><div><strong>{review.customer_name}</strong><small>Order #{review.order_number} · {new Date(review.created_at).toLocaleDateString("en-NG", { dateStyle: "medium" })}</small></div><span aria-label={`${review.rating} out of 5 stars`}>{[1,2,3,4,5].map((value) => <Star key={value} size={15} fill={value <= Number(review.rating) ? "currentColor" : "none"}/>)}</span></header><p>{review.comment || "The customer submitted a rating without a written comment."}</p>{review.farmer_reply && <blockquote><strong>Your reply</strong>{review.farmer_reply}</blockquote>}</article>)}</div> : <div className="farm-reviews-empty"><Star size={24}/><strong>No customer reviews yet</strong><p>Ratings and feedback for this farm will appear after fulfilled orders.</p></div>}</section>;
+}
 
 function ExpandedFarmerOrders({ orders, busy, readOnly, onAdvance }: { orders: FarmerWorkspaceData["orders"]; busy: boolean; readOnly: boolean; onAdvance: (order: FarmerWorkspaceData["orders"][number]) => void }) {
   return <section className="farmer-orders-expanded"><div className="panel-head"><div><h2>Orders to fulfil</h2><p>Customer and delivery information</p></div><span>{orders.length} open</span></div>{orders.length ? orders.map((order) => {
@@ -1887,6 +1914,7 @@ function FarmerWorkspace({ onShop }: { onShop: () => void }) {
     <section className="cumulative-sales-card"><div className="cumulative-sales-heading"><span><AtSign size={19}/></span><div><small>CUMULATIVE EARNINGS</small><h2>Lifetime net sales</h2><p>Completed farm orders since joining HarvestNearU.</p></div></div><strong>{money(Number(data.metrics.cumulative_net_kobo) / 100)}</strong><div className="cumulative-sales-breakdown"><span><small>Gross sales processed</small><b>{money(Number(data.metrics.cumulative_gross_kobo) / 100)}</b></span><span className="fees"><small>Processing fees</small><b>-{money(Number(data.metrics.cumulative_fee_kobo) / 100)}</b></span><span className="net"><small>Net sales earned</small><b>{money(Number(data.metrics.cumulative_net_kobo) / 100)}</b></span></div></section>
     <div className="farmer-columns">
       <ExpandedFarmerOrders orders={fulfilmentOrders} busy={busy} readOnly={Boolean(data.user.impersonating)} onAdvance={advanceOrder}/>
+      <FarmReviews farmName={data.farm.name} reviews={data.reviews}/>
       <section className="orders-panel closed-orders-panel"><div className="panel-head"><div><h2>Closed orders</h2><p>Completed, cancelled, and refunded orders</p></div><span>{closedOrders.length} total</span>{closedOrders.length > 3 && <button onClick={() => setShowAllOrders((value) => !value)}>{showAllOrders ? "Show recent" : "View all"} <ArrowRight className={showAllOrders ? "back" : ""} size={15}/></button>}</div>{shownClosedOrders.length ? shownClosedOrders.map((order) => <div className="order-row closed-order-row" key={order.id}><span className="order-icon"><PackageCheck size={18}/></span><div><strong>{order.customer}</strong><p>#{order.order_number} · {order.items}</p></div><small>{new Date(order.placed_at).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })}</small><span className={`status-badge ${order.status}`}>{order.status.replaceAll("_", " ")}</span><b>{["delivered","collected"].includes(order.status) ? `${money(Number(order.farmer_net_kobo) / 100)} net` : money(Number(order.subtotal_kobo) / 100)}</b></div>) : <div className="panel-empty">No closed orders yet.</div>}</section>
       <section className="inventory-panel"><div className="panel-head"><div><h2>Inventory pulse</h2><p>Your produce listings</p></div>{data.listings.length > 3 && <button onClick={() => setShowAllListings((value) => !value)}>{showAllListings ? "Show recent" : "View all"} <ArrowRight className={showAllListings ? "back" : ""} size={15}/></button>}</div>{listings.length ? listings.map((listing) => { const available = Number(listing.quantity_available) - Number(listing.quantity_reserved); const total = Number(listing.quantity_available) + Number(listing.quantity_sold); const percent = total ? Math.round(available / total * 100) : 0; return <button className="inventory-row farmer-inventory-row" key={listing.id} onClick={() => { setError(""); setManageListing(listing); }}><span className="inventory-image">{listing.image_url ? <img src={listing.image_url} alt=""/> : <Leaf size={18}/>}</span><div><strong>{listing.title}</strong><p>{available} {listing.unit}s available · {listing.status}</p><span><i style={{ width: `${Math.max(0, percent)}%` }}/></span></div><b>{percent}%</b></button>}) : <div className="panel-empty">No listings yet.</div>}</section>
     </div>
