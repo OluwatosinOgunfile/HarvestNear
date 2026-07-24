@@ -43,7 +43,11 @@ export async function GET(request: Request) {
       o.delivery_address_snapshot, o.customer_note, users.id AS customer_id, users.email AS customer_email, users.phone AS customer_phone, users.avatar_url AS customer_avatar,
       delivery.tracking_code, delivery.status AS delivery_status, delivery.window_start, delivery.window_end,
       users.first_name || ' ' || users.last_name AS customer,
-      string_agg(items.quantity::text || ' ' || items.unit || ' · ' || items.product_name, ', ' ORDER BY items.created_at) AS items
+      json_agg(json_build_object(
+        'id', items.id, 'name', items.product_name, 'quantity', items.quantity, 'unit', items.unit,
+        'status', items.status, 'preparing_at', items.preparing_at, 'ready_at', items.ready_at,
+        'dispatched_at', items.dispatched_at, 'received_at', items.received_at, 'updated_at', items.updated_at
+      ) ORDER BY items.created_at) AS items
       FROM farm_orders fo JOIN orders o ON o.id = fo.order_id JOIN users ON users.id = o.customer_id
       JOIN order_items items ON items.farm_order_id = fo.id LEFT JOIN deliveries delivery ON delivery.order_id = o.id WHERE fo.farm_id = ${farm.id} AND fo.status <> 'pending_payment'
       GROUP BY fo.id, o.order_number, o.fulfilment_method, o.placed_at, o.delivery_address_snapshot, o.customer_note, users.id, users.email, users.phone, users.avatar_url, users.first_name, users.last_name, delivery.tracking_code, delivery.status, delivery.window_start, delivery.window_end
@@ -55,7 +59,10 @@ export async function GET(request: Request) {
       WHERE listing.farm_id = ${farm.id} ORDER BY listing.created_at DESC LIMIT 50`,
     sql`SELECT id, name FROM produce_categories WHERE is_active ORDER BY name`,
   ]);
-  return NextResponse.json({ user, farm, farms, metrics: metricRows[0], orders: orders.map((order) => ({ ...order, customer_avatar: order.customer_avatar ? profileImageUrl(String(order.customer_id), order.customer_avatar) : null })), listings: listings.map((listing) => ({ ...listing, stored_image_url: listing.image_url, image_url: listing.image_url ? listingImageUrl(String(listing.id), listing.image_url) : null })), categories });
+  return NextResponse.json({ user, farm, farms, metrics: metricRows[0], orders: orders.map((order) => {
+    const itemTracking = order.items as Array<{ id: string; name: string; quantity: number; unit: string; status: string; preparing_at: string | null; ready_at: string | null; dispatched_at: string | null; received_at: string | null; updated_at: string }>;
+    return { ...order, items: itemTracking.map((item) => `${item.quantity} ${item.unit} · ${item.name} (${item.status.replaceAll("_", " ")})`).join(", "), itemTracking, customer_avatar: order.customer_avatar ? profileImageUrl(String(order.customer_id), order.customer_avatar) : null };
+  }), listings: listings.map((listing) => ({ ...listing, stored_image_url: listing.image_url, image_url: listing.image_url ? listingImageUrl(String(listing.id), listing.image_url) : null })), categories });
 }
 
 export async function POST(request: Request) {
@@ -108,6 +115,58 @@ export async function PATCH(request: Request) {
   if (!await checkRateLimit(request, "farmer.write", 60, 60 * 60, user.id)) return NextResponse.json({ error: "Update limit reached. Try again later." }, { status: 429 });
   const body = await request.json().catch(() => null) as Record<string, string> | null;
   const sql = getDatabase();
+  if (body?.type === "item" && body.id && ["preparing", "ready", "dispatched"].includes(body.status)) {
+    const [item] = await sql`
+      SELECT item.id, item.product_name, item.status, item.farm_order_id, item.order_id,
+        customer_order.order_number, customer_order.customer_id, customer_order.fulfilment_method
+      FROM order_items item
+      JOIN farm_orders farm_order ON farm_order.id = item.farm_order_id
+      JOIN orders customer_order ON customer_order.id = item.order_id
+      WHERE item.id = ${body.id}
+        AND farm_order.farm_id IN (SELECT id FROM farms WHERE owner_id = ${user.id})
+    `;
+    if (!item) return NextResponse.json({ error: "Order item not found" }, { status: 404 });
+    const expected = ["confirmed", "paid"].includes(String(item.status)) ? "preparing" : item.status === "preparing" ? "ready" : item.status === "ready" && item.fulfilment_method === "doorstep" ? "dispatched" : null;
+    if (body.status !== expected) return NextResponse.json({ error: "This product cannot move to that tracking stage" }, { status: 409 });
+
+    await sql.transaction([
+      sql`UPDATE order_items SET status = ${body.status}::order_status,
+        preparing_at = CASE WHEN ${body.status} = 'preparing' THEN now() ELSE preparing_at END,
+        ready_at = CASE WHEN ${body.status} = 'ready' THEN now() ELSE ready_at END,
+        dispatched_at = CASE WHEN ${body.status} = 'dispatched' THEN now() ELSE dispatched_at END,
+        updated_at = now() WHERE id = ${item.id}`,
+      sql`UPDATE farm_orders farm_order SET status = CASE
+        WHEN ${item.fulfilment_method} = 'doorstep' AND NOT EXISTS (SELECT 1 FROM order_items child WHERE child.farm_order_id = farm_order.id AND child.status NOT IN ('dispatched','delivered')) THEN 'dispatched'::order_status
+        WHEN NOT EXISTS (SELECT 1 FROM order_items child WHERE child.farm_order_id = farm_order.id AND child.status NOT IN ('ready','dispatched','delivered','collected')) THEN 'ready'::order_status
+        WHEN EXISTS (SELECT 1 FROM order_items child WHERE child.farm_order_id = farm_order.id AND child.status IN ('preparing','ready','dispatched')) THEN 'preparing'::order_status
+        ELSE 'confirmed'::order_status END,
+        confirmed_at = coalesce(confirmed_at, now()),
+        ready_at = CASE WHEN NOT EXISTS (SELECT 1 FROM order_items child WHERE child.farm_order_id = farm_order.id AND child.status NOT IN ('ready','dispatched','delivered','collected')) THEN coalesce(ready_at, now()) ELSE ready_at END,
+        updated_at = now()
+        WHERE farm_order.id = ${item.farm_order_id}`,
+      sql`UPDATE orders customer_order SET status = CASE
+        WHEN ${item.fulfilment_method} = 'doorstep' AND NOT EXISTS (SELECT 1 FROM farm_orders child WHERE child.order_id = customer_order.id AND child.status NOT IN ('dispatched','delivered')) THEN 'dispatched'::order_status
+        WHEN NOT EXISTS (SELECT 1 FROM farm_orders child WHERE child.order_id = customer_order.id AND child.status NOT IN ('ready','dispatched','delivered','collected')) THEN 'ready'::order_status
+        WHEN EXISTS (SELECT 1 FROM farm_orders child WHERE child.order_id = customer_order.id AND child.status IN ('preparing','ready','dispatched')) THEN 'preparing'::order_status
+        ELSE 'confirmed'::order_status END,
+        updated_at = now() WHERE customer_order.id = ${item.order_id}`,
+    ]);
+
+    const [updatedOrder] = await sql`SELECT status FROM orders WHERE id = ${item.order_id}`;
+    if (updatedOrder?.status === "ready") {
+      await sql`UPDATE deliveries SET status = 'assigned', updated_at = now(), notes = 'All products are packed and awaiting courier pickup' WHERE order_id = ${item.order_id}`;
+      await sql`INSERT INTO delivery_events (delivery_id, status, message) SELECT id, 'assigned', 'All products are packed and ready for dispatch' FROM deliveries WHERE order_id = ${item.order_id}`;
+    } else if (updatedOrder?.status === "dispatched") {
+      await sql`UPDATE deliveries SET status = 'in_transit', picked_up_at = coalesce(picked_up_at, now()), updated_at = now() WHERE order_id = ${item.order_id}`;
+      await sql`INSERT INTO delivery_events (delivery_id, status, message) SELECT id, 'in_transit', 'All products have left their farms and are on the way' FROM deliveries WHERE order_id = ${item.order_id}`;
+    }
+    const itemCopy = body.status === "preparing" ? "is now being prepared" : body.status === "ready" ? "is packed and ready" : "has left the farm and is on the way";
+    await sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata)
+      VALUES (${item.customer_id}, ${body.status === "dispatched" ? "delivery" : "order"}, 'Product tracking updated',
+        ${`${item.product_name} in order ${item.order_number} ${itemCopy}.`}, '/orders',
+        ${JSON.stringify({ orderId: String(item.order_id), itemId: String(item.id), orderNumber: String(item.order_number), status: body.status })}::jsonb)`;
+    return NextResponse.json({ updated: true, orderStatus: updatedOrder?.status });
+  }
   if (body?.type === "order" && body.id && ["preparing", "ready", "dispatched"].includes(body.status)) {
     const [order] = await sql`SELECT farm_order.id, farm_order.order_id, customer_order.fulfilment_method FROM farm_orders farm_order JOIN orders customer_order ON customer_order.id = farm_order.order_id WHERE farm_order.id = ${body.id} AND farm_order.farm_id IN (SELECT id FROM farms WHERE owner_id = ${user.id})`;
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });

@@ -266,6 +266,12 @@ export async function PATCH(request: NextRequest) {
       const [entity] = await sql`UPDATE orders SET status = ${body.status}::order_status, delivered_at = CASE WHEN ${body.status} IN ('delivered','collected') THEN coalesce(delivered_at, now()) ELSE delivered_at END, updated_at = now() WHERE id = ${id} RETURNING id, customer_id, order_number, status`;
       if (!entity) return NextResponse.json({ error: "Order not found" }, { status: 404 });
       await sql`UPDATE farm_orders SET status = ${body.status}::order_status, updated_at = now() WHERE order_id = ${id}`;
+      await sql`UPDATE order_items SET status = ${body.status}::order_status,
+        preparing_at = CASE WHEN ${body.status} = 'preparing' THEN coalesce(preparing_at, now()) ELSE preparing_at END,
+        ready_at = CASE WHEN ${body.status} = 'ready' THEN coalesce(ready_at, now()) ELSE ready_at END,
+        dispatched_at = CASE WHEN ${body.status} = 'dispatched' THEN coalesce(dispatched_at, now()) ELSE dispatched_at END,
+        received_at = CASE WHEN ${body.status} IN ('delivered','collected') THEN coalesce(received_at, now()) ELSE received_at END,
+        updated_at = now() WHERE order_id = ${id}`;
       if (body.status === "dispatched") await sql`UPDATE deliveries SET status = 'in_transit', picked_up_at = coalesce(picked_up_at, now()), updated_at = now() WHERE order_id = ${id}`;
       if (body.status === "delivered") await sql`UPDATE deliveries SET status = 'delivered', delivered_at = coalesce(delivered_at, now()), updated_at = now() WHERE order_id = ${id}`;
       if (body.status === "cancelled") await sql`UPDATE deliveries SET status = 'cancelled', updated_at = now() WHERE order_id = ${id}`;
@@ -285,6 +291,7 @@ export async function PATCH(request: NextRequest) {
       if (body.status === "completed") {
         await sql`UPDATE orders SET status = 'refunded', updated_at = now() WHERE id = ${entity.order_id}`;
         await sql`UPDATE farm_orders SET status = 'refunded', updated_at = now() WHERE order_id = ${entity.order_id}`;
+        await sql`UPDATE order_items SET status = 'refunded', updated_at = now() WHERE order_id = ${entity.order_id}`;
         await sql`UPDATE payments SET status = 'refunded', updated_at = now() WHERE order_id = ${entity.order_id} AND status <> 'refunded'`;
         if (refundBefore.resolution_method === "store_credit") {
           const [existingCredit] = await sql`SELECT id FROM store_credit_transactions WHERE user_id = ${refundBefore.requested_by} AND transaction_type = 'refund_credit' AND reference_type = 'refund' AND reference_id = ${id}`;

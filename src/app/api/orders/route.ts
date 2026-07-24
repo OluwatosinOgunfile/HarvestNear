@@ -33,7 +33,9 @@ export async function GET() {
         WHERE fo.order_id = orders.id), '[]') AS farms,
       coalesce(json_agg(json_build_object(
         'id', item.id, 'listing_id', item.listing_id, 'name', item.product_name, 'farm', item.farm_name, 'unit', item.unit,
-        'quantity', item.quantity, 'unit_price_kobo', item.unit_price_kobo, 'image', item.image_url
+        'quantity', item.quantity, 'unit_price_kobo', item.unit_price_kobo, 'image', item.image_url, 'status', item.status,
+        'preparing_at', item.preparing_at, 'ready_at', item.ready_at, 'dispatched_at', item.dispatched_at,
+        'received_at', item.received_at, 'updated_at', item.updated_at
       ) ORDER BY item.created_at) FILTER (WHERE item.id IS NOT NULL), '[]') AS items
     FROM orders LEFT JOIN order_items item ON item.order_id = orders.id
     WHERE orders.customer_id = ${user.id}
@@ -94,7 +96,7 @@ export async function POST(request: Request) {
     queries.push(sql`INSERT INTO farm_orders (id, order_id, farm_id, status, subtotal_kobo, platform_fee_kobo, farmer_net_kobo, confirmed_at) VALUES (${farmOrderId}, ${orderId}, ${farmId}, ${paidWithCredit ? "confirmed" : "pending_payment"}::order_status, ${farmSubtotal}, ${Math.round(farmSubtotal * .1)}, ${Math.round(farmSubtotal * .9)}, ${paidWithCredit ? new Date() : null})`);
     for (const listing of farmListings) {
       const quantity = Number(requested.get(String(listing.id)));
-      queries.push(sql`INSERT INTO order_items (order_id, farm_order_id, listing_id, product_name, farm_name, unit, quantity, unit_price_kobo, line_total_kobo, image_url) VALUES (${orderId}, ${farmOrderId}, ${listing.id}, ${listing.title}, ${listing.farm_name}, ${listing.unit}, ${quantity}, ${listing.unit_price_kobo}, ${Number(listing.unit_price_kobo) * quantity}, ${listing.image_url})`);
+      queries.push(sql`INSERT INTO order_items (order_id, farm_order_id, listing_id, product_name, farm_name, unit, quantity, unit_price_kobo, line_total_kobo, image_url, status) VALUES (${orderId}, ${farmOrderId}, ${listing.id}, ${listing.title}, ${listing.farm_name}, ${listing.unit}, ${quantity}, ${listing.unit_price_kobo}, ${Number(listing.unit_price_kobo) * quantity}, ${listing.image_url}, ${paidWithCredit ? "confirmed" : "pending_payment"}::order_status)`);
       queries.push(sql`UPDATE produce_listings SET quantity_available = quantity_available - ${quantity}, quantity_sold = quantity_sold + ${quantity}, status = CASE WHEN quantity_available - ${quantity} <= quantity_reserved THEN 'sold_out'::listing_status ELSE status END, updated_at = now(), version = version + 1 WHERE id = ${listing.id} AND quantity_available - quantity_reserved >= ${quantity}`);
     }
   }
@@ -122,26 +124,54 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   const user = await getSessionUser();
   if (!user || !["consumer", "farmer"].includes(user.role) || !canMutateAs(user)) return NextResponse.json({ error: "Impersonation is read-only" }, { status: 403 });
-  const body = await request.json().catch(() => null) as { orderId?: string; action?: string } | null;
-  if (!body?.orderId || body.action !== "confirm_receipt") return NextResponse.json({ error: "Invalid order update" }, { status: 400 });
+  const body = await request.json().catch(() => null) as { orderId?: string; itemId?: string; action?: string } | null;
+  if (!body?.orderId || !body.itemId || body.action !== "confirm_item_receipt") return NextResponse.json({ error: "Select the product you received" }, { status: 400 });
   const sql = getDatabase();
-  const [order] = await sql`SELECT id, fulfilment_method, status FROM orders WHERE id = ${body.orderId} AND customer_id = ${user.id}`;
-  if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
-  const pickup = ["farm_pickup", "collection_hub"].includes(String(order.fulfilment_method));
+  const [item] = await sql`
+    SELECT item.id, item.product_name, item.status, item.farm_order_id, item.order_id,
+      orders.order_number, orders.fulfilment_method, farm.owner_id AS farmer_id
+    FROM order_items item
+    JOIN orders ON orders.id = item.order_id
+    JOIN farm_orders farm_order ON farm_order.id = item.farm_order_id
+    JOIN farms farm ON farm.id = farm_order.farm_id
+    WHERE item.id = ${body.itemId} AND item.order_id = ${body.orderId} AND orders.customer_id = ${user.id}
+  `;
+  if (!item) return NextResponse.json({ error: "Order product not found" }, { status: 404 });
+  const pickup = ["farm_pickup", "collection_hub"].includes(String(item.fulfilment_method));
   const allowed = pickup ? ["ready", "dispatched"] : ["dispatched"];
-  if (!allowed.includes(String(order.status))) return NextResponse.json({ error: pickup ? "This order is not ready for collection" : "This order has not been dispatched yet" }, { status: 409 });
+  if (!allowed.includes(String(item.status))) return NextResponse.json({ error: pickup ? "This product is not ready for collection" : "This product has not been dispatched yet" }, { status: 409 });
   const finalStatus = pickup ? "collected" : "delivered";
-  const queries = [
-    sql`UPDATE orders SET status = ${finalStatus}::order_status, delivered_at = now(), updated_at = now() WHERE id = ${order.id}`,
-    sql`UPDATE farm_orders SET status = ${finalStatus}::order_status, updated_at = now() WHERE order_id = ${order.id}`,
-  ];
-  if (!pickup) {
-    queries.push(sql`UPDATE deliveries SET status = 'delivered', delivered_at = now(), recipient_name = ${`${user.firstName} ${user.lastName}`}, updated_at = now() WHERE order_id = ${order.id}`);
-    queries.push(sql`INSERT INTO delivery_events (delivery_id, status, message) SELECT id, 'delivered', 'Customer acknowledged receipt of produce' FROM deliveries WHERE order_id = ${order.id}`);
+  await sql.transaction([
+    sql`UPDATE order_items SET status = ${finalStatus}::order_status, received_at = now(), updated_at = now() WHERE id = ${item.id}`,
+    sql`UPDATE farm_orders farm_order SET status = CASE
+      WHEN NOT EXISTS (SELECT 1 FROM order_items child WHERE child.farm_order_id = farm_order.id AND child.status NOT IN ('delivered','collected')) THEN ${finalStatus}::order_status
+      WHEN ${item.fulfilment_method} = 'doorstep' AND NOT EXISTS (SELECT 1 FROM order_items child WHERE child.farm_order_id = farm_order.id AND child.status NOT IN ('dispatched','delivered')) THEN 'dispatched'::order_status
+      WHEN NOT EXISTS (SELECT 1 FROM order_items child WHERE child.farm_order_id = farm_order.id AND child.status NOT IN ('ready','dispatched','delivered','collected')) THEN 'ready'::order_status
+      ELSE 'preparing'::order_status END,
+      updated_at = now() WHERE farm_order.id = ${item.farm_order_id}`,
+    sql`UPDATE orders customer_order SET status = CASE
+      WHEN NOT EXISTS (SELECT 1 FROM order_items child WHERE child.order_id = customer_order.id AND child.status NOT IN ('delivered','collected')) THEN ${finalStatus}::order_status
+      WHEN ${item.fulfilment_method} = 'doorstep' AND NOT EXISTS (SELECT 1 FROM farm_orders child WHERE child.order_id = customer_order.id AND child.status NOT IN ('dispatched','delivered')) THEN 'dispatched'::order_status
+      WHEN NOT EXISTS (SELECT 1 FROM farm_orders child WHERE child.order_id = customer_order.id AND child.status NOT IN ('ready','dispatched','delivered','collected')) THEN 'ready'::order_status
+      ELSE 'preparing'::order_status END,
+      delivered_at = CASE WHEN NOT EXISTS (SELECT 1 FROM order_items child WHERE child.order_id = customer_order.id AND child.status NOT IN ('delivered','collected')) THEN now() ELSE delivered_at END,
+      updated_at = now() WHERE customer_order.id = ${item.order_id}`,
+  ]);
+  const [updatedOrder] = await sql`SELECT status FROM orders WHERE id = ${item.order_id}`;
+  const completed = ["delivered", "collected"].includes(String(updatedOrder?.status));
+  await sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata)
+    VALUES (${item.farmer_id}, 'order', 'Product received by customer',
+      ${`The buyer confirmed receipt of ${item.product_name} in order ${item.order_number}.`}, '/farmer',
+      ${JSON.stringify({ orderId: String(item.order_id), itemId: String(item.id), status: finalStatus })}::jsonb)`;
+  if (completed) {
+    if (!pickup) {
+      await sql`UPDATE deliveries SET status = 'delivered', delivered_at = now(), recipient_name = ${`${user.firstName} ${user.lastName}`}, updated_at = now() WHERE order_id = ${item.order_id}`;
+      await sql`INSERT INTO delivery_events (delivery_id, status, message) SELECT id, 'delivered', 'Customer acknowledged receipt of every product' FROM deliveries WHERE order_id = ${item.order_id}`;
+    }
+    await sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata)
+      VALUES (${user.id}, 'order', 'Tell us about your order', 'Every product has been received. Rate the farms and share feedback about your experience.', '/orders',
+        ${JSON.stringify({ orderId: String(item.order_id), completed: true })}::jsonb)`;
   }
-  queries.push(sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) SELECT farm.owner_id, 'order', 'Order received by customer', ${`The customer confirmed receipt of their produce. This order is now ${finalStatus}.`}, '/farmer', ${JSON.stringify({ orderId: String(order.id), status: finalStatus })}::jsonb FROM farm_orders farm_order JOIN farms farm ON farm.id = farm_order.farm_id WHERE farm_order.order_id = ${order.id}`);
-  queries.push(sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) VALUES (${user.id}, 'order', 'Rate your farm experience', 'Your produce has been received. Share a rating to help nearby shoppers choose confidently.', '/orders', ${JSON.stringify({ orderId: String(order.id) })}::jsonb)`);
-  await sql.transaction(queries);
-  const farms = await sql`SELECT farm.id, farm.name FROM farm_orders fo JOIN farms farm ON farm.id = fo.farm_id WHERE fo.order_id = ${order.id} ORDER BY farm.name`;
-  return NextResponse.json({ status: finalStatus, farms });
+  const farms = completed ? await sql`SELECT farm.id, farm.name FROM farm_orders fo JOIN farms farm ON farm.id = fo.farm_id WHERE fo.order_id = ${item.order_id} ORDER BY farm.name` : [];
+  return NextResponse.json({ status: finalStatus, orderStatus: updatedOrder?.status, completed, farms });
 }

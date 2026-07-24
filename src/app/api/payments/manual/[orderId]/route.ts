@@ -96,6 +96,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ order
   const queries = [
     sql`UPDATE orders SET status = 'confirmed', paid_at = now(), updated_at = now() WHERE id = ${orderId} AND status = 'pending_payment'`,
     sql`UPDATE farm_orders SET status = 'confirmed', confirmed_at = now(), updated_at = now() WHERE order_id = ${orderId}`,
+    sql`UPDATE order_items SET status = 'confirmed', updated_at = now() WHERE order_id = ${orderId}`,
     sql`UPDATE payments SET status = 'successful', paid_at = now(), provider_response = ${JSON.stringify({ mode: "manual", confirmedBy: administrator.id })}::jsonb, updated_at = now() WHERE order_id = ${orderId}`,
     sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) VALUES (${record.customer_id}, 'order', 'Payment confirmed', ${`Your payment for order ${record.order_number} has been confirmed.`}, '/orders', ${JSON.stringify({ orderId, orderNumber: record.order_number })}::jsonb)`,
     sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) SELECT DISTINCT farm.owner_id, 'order', 'New order to fulfil', ${`Order ${record.order_number} is paid and ready for fulfilment.`}, '/farmer', ${JSON.stringify({ orderId, orderNumber: record.order_number })}::jsonb FROM farm_orders farm_order JOIN farms farm ON farm.id = farm_order.farm_id WHERE farm_order.order_id = ${orderId}`,
