@@ -130,6 +130,12 @@ function money(value: number) {
   return new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 }).format(value);
 }
 
+async function readJsonResponse<T extends object>(response: Response): Promise<T> {
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) return response.json() as Promise<T>;
+  return {} as T;
+}
+
 function walkingTime(distanceKm: number) {
   const minutes = Math.max(5, Math.round((Number(distanceKm) * 12) / 5) * 5);
   if (minutes <= 5) return "Under 5 min walk";
@@ -486,18 +492,23 @@ export default function Home() {
       const requiresReceipt = storeCreditKobo < Math.round((subtotal + deliveryFee) * 100);
       if (requiresReceipt && !paymentReceipt) throw new Error("Select your payment receipt");
       const response = await fetch("/api/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: items.map((item) => ({ listingId: item.id, quantity: cart[item.id] })), fulfilmentMethod: delivery }) });
-      const result = await response.json() as { orderId?: string; orderNumber?: string; requiresReceipt?: boolean; error?: string };
+      const result = await readJsonResponse<{ orderId?: string; orderNumber?: string; requiresReceipt?: boolean; error?: string }>(response);
       if (!response.ok || !result.orderId || !result.orderNumber) throw new Error(result.error || "Could not create order");
       if (result.requiresReceipt !== false) {
         const receipt = new FormData(); receipt.set("receipt", paymentReceipt!);
         const receiptResponse = await fetch(`/api/payments/manual/${result.orderId}`, { method: "POST", body: receipt });
-        const receiptResult = await receiptResponse.json() as { error?: string };
+        const receiptResult = await readJsonResponse<{ error?: string }>(receiptResponse);
         if (!receiptResponse.ok) throw new Error(receiptResult.error || `Order ${result.orderNumber} was created, but the receipt could not be submitted. Upload it from My orders.`);
       }
       setOrderAwaitingReview(result.requiresReceipt !== false);
       setConfirmedOrderNumber(result.orderNumber); setPaid(true);
       setProducts((current) => current.map((product) => cart[product.id] ? { ...product, stock: Math.max(0, product.stock - cart[product.id]), sold: product.sold + cart[product.id] } : product));
-    } catch (error) { setCheckoutError((error as Error).message); } finally { setCheckoutBusy(false); }
+    } catch (error) {
+      const message = (error as Error).message;
+      setCheckoutError(message.includes("expected pattern")
+        ? "The order could not submit the receipt. Please try again, or upload it from My orders."
+        : message);
+    } finally { setCheckoutBusy(false); }
   }
 
   function toggleTheme() {
@@ -1262,7 +1273,7 @@ function AdminPage({ readOnly, onImpersonated }: { readOnly: boolean; onImperson
     setBusy(true); setError("");
     try {
       const response = await fetch(`/api/payments/manual/${selected.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "confirm" }) });
-      const result = await response.json() as { error?: string };
+      const result = await readJsonResponse<{ error?: string }>(response);
       if (!response.ok) throw new Error(result.error || "Could not confirm payment");
       setSelected(null);
       await Promise.all([loadEntities("orders"), loadOverview()]);
@@ -1647,7 +1658,7 @@ function DatabaseOrdersPage({ onShop, onHelp }: { onShop: () => void; onHelp: ()
     try {
       const form = new FormData(); form.set("receipt", file);
       const response = await fetch(`/api/payments/manual/${orderId}`, { method: "POST", body: form });
-      const result = await response.json() as { error?: string };
+      const result = await readJsonResponse<{ error?: string }>(response);
       if (!response.ok) throw new Error(result.error || "Could not submit payment receipt");
       await refreshOrders();
     } catch (reason) { setError((reason as Error).message); } finally { setReceiptBusy(null); }

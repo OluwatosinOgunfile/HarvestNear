@@ -54,7 +54,16 @@ export async function POST(request: Request, context: { params: Promise<{ orderI
   if (file.size > MAX_RECEIPT_SIZE) return NextResponse.json({ error: "Payment receipts must be 5 MB or smaller" }, { status: 413 });
   if (!ALLOWED_TYPES.has(file.type) || !await validReceipt(file)) return NextResponse.json({ error: "Upload a valid JPG, PNG, WebP, or PDF receipt" }, { status: 400 });
   const extension = file.type === "application/pdf" ? "pdf" : file.type === "image/jpeg" ? "jpg" : file.type.split("/")[1];
-  const blob = await put(`payment-receipts/${user.id}/${orderId}/${randomUUID()}.${extension}`, file, { access: "private", addRandomSuffix: false });
+  let blob: Awaited<ReturnType<typeof put>>;
+  try {
+    blob = await put(`payment-receipts/${user.id}/${orderId}/${randomUUID()}.${extension}`, file, { access: "private", addRandomSuffix: false });
+  } catch (error) {
+    console.error("Payment receipt Blob upload failed", error);
+    return NextResponse.json(
+      { error: "The order was created, but the receipt could not be uploaded. Open My orders and try the upload again." },
+      { status: 503 },
+    );
+  }
   try {
     const [previous] = await sql`SELECT blob_url FROM manual_payment_receipts WHERE order_id = ${orderId}`;
     await sql`
