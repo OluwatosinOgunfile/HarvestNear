@@ -16,6 +16,34 @@ async function validReceipt(file: File) {
   return String.fromCharCode(...bytes) === "%PDF-";
 }
 
+async function rollbackInitialOrder(sql: ReturnType<typeof getDatabase>, userId: string, orderId: string) {
+  const [order] = await sql`
+    SELECT discount_kobo FROM orders
+    WHERE id = ${orderId} AND customer_id = ${userId} AND status = 'pending_payment'
+  `;
+  if (!order) return;
+  const creditKobo = Number(order.discount_kobo || 0);
+  const queries = [
+    sql`UPDATE produce_listings listing SET
+      quantity_available = listing.quantity_available + restored.quantity,
+      quantity_sold = greatest(0, listing.quantity_sold - restored.quantity),
+      status = CASE WHEN listing.status = 'sold_out' THEN 'active'::listing_status ELSE listing.status END,
+      version = version + 1, updated_at = now()
+      FROM (SELECT listing_id, sum(quantity) AS quantity FROM order_items WHERE order_id = ${orderId} AND listing_id IS NOT NULL GROUP BY listing_id) restored
+      WHERE listing.id = restored.listing_id`,
+    sql`DELETE FROM store_credit_transactions WHERE user_id = ${userId} AND transaction_type = 'order_debit' AND reference_type = 'order' AND reference_id = ${orderId}`,
+    sql`DELETE FROM manual_payment_receipts WHERE order_id = ${orderId}`,
+    sql`DELETE FROM payments WHERE order_id = ${orderId}`,
+    sql`DELETE FROM notifications WHERE user_id = ${userId} AND metadata->>'orderId' = ${orderId}`,
+    sql`DELETE FROM orders WHERE id = ${orderId} AND customer_id = ${userId} AND status = 'pending_payment'`,
+  ];
+  if (creditKobo > 0) queries.splice(1, 0,
+    sql`INSERT INTO store_credit_accounts (user_id, balance_kobo) VALUES (${userId}, ${creditKobo})
+      ON CONFLICT (user_id) DO UPDATE SET balance_kobo = store_credit_accounts.balance_kobo + excluded.balance_kobo, updated_at = now()`,
+  );
+  await sql.transaction(queries);
+}
+
 export async function GET(_: Request, context: { params: Promise<{ orderId: string }> }) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -42,11 +70,17 @@ export async function POST(request: Request, context: { params: Promise<{ orderI
   if (!user || !["consumer", "farmer"].includes(user.role) || !canMutateAs(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   if (!await checkRateLimit(request, "payment.receipt", 12, 60 * 60, user.id)) return NextResponse.json({ error: "Receipt upload limit reached. Try again later." }, { status: 429 });
   const { orderId } = await context.params;
+  const initialCheckout = new URL(request.url).searchParams.get("initial") === "1";
   if (!/^[0-9a-f-]{36}$/i.test(orderId)) return NextResponse.json({ error: "Invalid order" }, { status: 400 });
   const sql = getDatabase();
-  const [order] = await sql`SELECT id, order_number, status FROM orders WHERE id = ${orderId} AND customer_id = ${user.id}`;
+  const [order] = await sql`
+    SELECT id, order_number, status, created_at,
+      EXISTS (SELECT 1 FROM manual_payment_receipts WHERE order_id = orders.id) AS receipt_submitted
+    FROM orders WHERE id = ${orderId} AND customer_id = ${user.id}
+  `;
   if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
   if (order.status !== "pending_payment") return NextResponse.json({ error: "This order is no longer awaiting payment" }, { status: 409 });
+  const rollbackOnFailure = initialCheckout && !order.receipt_submitted && Date.now() - new Date(String(order.created_at)).getTime() < 10 * 60 * 1000;
 
   const form = await request.formData().catch(() => null);
   const file = form?.get("receipt");
@@ -59,8 +93,9 @@ export async function POST(request: Request, context: { params: Promise<{ orderI
     blob = await put(`payment-receipts/${user.id}/${orderId}/${randomUUID()}.${extension}`, file, { access: "private", addRandomSuffix: false });
   } catch (error) {
     console.error("Payment receipt Blob upload failed", error);
+    if (rollbackOnFailure) await rollbackInitialOrder(sql, user.id, orderId).catch((rollbackError) => console.error("Initial order rollback failed", rollbackError));
     return NextResponse.json(
-      { error: "The order was created, but the receipt could not be uploaded. Open My orders and try the upload again." },
+      { error: rollbackOnFailure ? "The receipt could not be uploaded, so the order was not placed. Please try again." : "The receipt could not be uploaded. Please try again." },
       { status: 503 },
     );
   }
@@ -81,8 +116,9 @@ export async function POST(request: Request, context: { params: Promise<{ orderI
     return NextResponse.json({ submitted: true });
   } catch (error) {
     await del(blob.url).catch(() => undefined);
+    if (rollbackOnFailure) await rollbackInitialOrder(sql, user.id, orderId).catch((rollbackError) => console.error("Initial order rollback failed", rollbackError));
     console.error("Payment receipt submission failed", error);
-    return NextResponse.json({ error: "Could not save the payment receipt" }, { status: 500 });
+    return NextResponse.json({ error: rollbackOnFailure ? "The receipt could not be saved, so the order was not placed. Please try again." : "Could not save the payment receipt" }, { status: 500 });
   }
 }
 

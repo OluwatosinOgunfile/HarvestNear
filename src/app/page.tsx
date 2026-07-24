@@ -496,7 +496,7 @@ export default function Home() {
       if (!response.ok || !result.orderId || !result.orderNumber) throw new Error(result.error || "Could not create order");
       if (result.requiresReceipt !== false) {
         const receipt = new FormData(); receipt.set("receipt", paymentReceipt!);
-        const receiptResponse = await fetch(`/api/payments/manual/${result.orderId}`, { method: "POST", body: receipt });
+        const receiptResponse = await fetch(`/api/payments/manual/${result.orderId}?initial=1`, { method: "POST", body: receipt });
         const receiptResult = await readJsonResponse<{ error?: string }>(receiptResponse);
         if (!receiptResponse.ok) throw new Error(receiptResult.error || `Order ${result.orderNumber} was created, but the receipt could not be submitted. Upload it from My orders.`);
       }
