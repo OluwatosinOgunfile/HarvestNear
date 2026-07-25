@@ -22,7 +22,7 @@ export async function GET(request: Request) {
   const user = await farmerSession();
   if (!user) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const sql = getDatabase();
-  const farms = await sql`SELECT id, name, verification_status, city, state FROM farms WHERE owner_id = ${user.id} ORDER BY created_at`;
+  const farms = await sql`SELECT id, name, verification_status, city, state, average_rating, review_count FROM farms WHERE owner_id = ${user.id} ORDER BY created_at`;
   const requestedFarmId = new URL(request.url).searchParams.get("farmId");
   const farm = farms.find((item) => String(item.id) === requestedFarmId) || farms[0];
   if (!farm) return NextResponse.json({ error: "No farm is linked to this account" }, { status: 404 });
