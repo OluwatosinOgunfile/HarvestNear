@@ -54,6 +54,7 @@ type Product = {
   category: string;
   available: string;
   rating: number;
+  reviewCount: number;
   image: string;
   badge?: string;
 };
@@ -130,6 +131,15 @@ function money(value: number) {
   return new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 }).format(value);
 }
 
+function quantityUnit(unit: string, quantity: number) {
+  if (Number(quantity) === 1) return unit;
+  const normalized = unit.trim().toLowerCase();
+  if (["kg", "g", "litre", "litres"].includes(normalized) || normalized.endsWith("s")) return unit;
+  if (normalized.endsWith("ch") || normalized.endsWith("sh") || normalized.endsWith("x")) return `${unit}es`;
+  if (normalized.endsWith("y") && !/[aeiou]y$/.test(normalized)) return `${unit.slice(0, -1)}ies`;
+  return `${unit}s`;
+}
+
 async function readJsonResponse<T extends object>(response: Response): Promise<T> {
   const contentType = response.headers.get("content-type") || "";
   if (contentType.includes("application/json")) return response.json() as Promise<T>;
@@ -198,6 +208,7 @@ export default function Home() {
   const [category, setCategory] = useState("All produce");
   const [query, setQuery] = useState("");
   const [cart, setCart] = useState<Record<string, number>>({});
+  const [basketToast, setBasketToast] = useState<{ id: number; product: string } | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
   const [checkout, setCheckout] = useState(false);
   const [paid, setPaid] = useState(false);
@@ -629,7 +640,14 @@ export default function Home() {
 
   function add(product: Product) {
     setCart((current) => { const next = { ...current, [product.id]: Math.min((current[product.id] || 0) + 1, product.stock) }; persistCart(next); return next; });
+    setBasketToast({ id: Date.now(), product: product.name });
   }
+
+  useEffect(() => {
+    if (!basketToast) return;
+    const timer = window.setTimeout(() => setBasketToast(null), 3200);
+    return () => window.clearTimeout(timer);
+  }, [basketToast]);
 
   function update(id: string, delta: number) {
     setCart((current) => {
@@ -693,6 +711,7 @@ export default function Home() {
         </div>
       </header>
 
+      {basketToast && <div className="basket-toast" role="status" aria-live="polite" key={basketToast.id}><span><Check size={16}/></span><div><strong>Added to your basket</strong><small>{basketToast.product} is ready for checkout.</small></div><button onClick={() => { setBasketToast(null); setCartOpen(true); }}>View basket</button></div>}
       {!sessionLoading && <nav className="mobile-nav" aria-label="Mobile navigation">
         {!isAdmin && <button className={view === "landing" ? "active" : ""} onClick={() => navigate("landing")}><House size={17} /><span>Home</span></button>}
         {!isAdmin && <button className={view === "market" ? "active" : ""} onClick={() => navigate("market")}><ShoppingBag size={17} /><span>Shop</span></button>}
@@ -752,9 +771,9 @@ export default function Home() {
                     <div className="availability"><span /> {product.available}</div>
                     <h3>{product.name}</h3>
                     <p className="farmer"><Store size={14} /> {product.farmer} <Check size={12} /></p>
-                    <div className="rating"><Star size={14} fill="currentColor" /> {product.rating} <span>({Math.round(product.sold / 2 + 12)})</span></div>
+                    <div className="rating"><Star size={14} fill="currentColor" /> {product.rating} <span>({product.reviewCount})</span></div>
                     <div className="stock-track"><span style={{ width: `${Math.max(12, product.stock / (product.stock + product.sold) * 100)}%` }} /></div>
-                    <p className="stock-copy">{product.stock} {product.unit}s left</p>
+                    <p className="stock-copy">{product.stock} {quantityUnit(product.unit, product.stock)} left</p>
                     <div className="price-row">
                       <div><strong>{money(product.price)}</strong><span> / {product.unit}</span></div>
                       {cart[product.id] ? (
@@ -777,7 +796,7 @@ export default function Home() {
             <div><Truck size={23} /><span><strong>Flexible fulfilment</strong>Doorstep delivery or farm pickup</span></div>
           </section>
         </main>
-      ) : view === "orders" && canPurchase ? <DatabaseOrdersPage onShop={() => navigate("market")} onHelp={() => navigate("help")} /> : view === "profile" && (isConsumer || isFarmer) ? <DatabaseProfilePage role={isFarmer ? "farmer" : "consumer"} onShop={() => navigate("market")} onFarmer={() => navigate("farmer")} onUpgraded={(user) => { setCurrentUser(user); window.history.pushState({}, "", viewPaths.farmer); setView("farmer"); }} /> : view === "admin" && isAdmin ? <AdminPage readOnly={role === "support" || Boolean(currentUser?.impersonating)} onImpersonated={enterImpersonatedView} /> : view === "help" || view === "delivery" || view === "returns" ? <SupportPage page={view} onNavigate={navigate} user={currentUser} onSignIn={() => openSignIn(false)} /> : view === "farmer" && isFarmer ? <FarmerWorkspace onShop={() => navigate("market")} /> : <LandingPage stats={marketplaceStats} signedOut={!currentUser} onShop={() => navigate("market")} onFarmer={() => navigate("farmer")} onSignup={openSignup} />}
+      ) : view === "orders" && canPurchase ? <DatabaseOrdersPage onShop={() => navigate("market")} onHelp={() => navigate("help")} /> : view === "profile" && (isConsumer || isFarmer) ? <DatabaseProfilePage role={isFarmer ? "farmer" : "consumer"} onShop={() => navigate("market")} onFarmer={() => navigate("farmer")} onUpgraded={(user) => { setCurrentUser(user); window.history.pushState({}, "", viewPaths.farmer); setView("farmer"); }} /> : view === "admin" && isAdmin ? <AdminPage readOnly={role === "support" || Boolean(currentUser?.impersonating)} supportAccess={role === "support"} onImpersonated={enterImpersonatedView} /> : view === "help" || view === "delivery" || view === "returns" ? <SupportPage page={view} onNavigate={navigate} user={currentUser} onSignIn={() => openSignIn(false)} /> : view === "farmer" && isFarmer ? <FarmerWorkspace onShop={() => navigate("market")} /> : <LandingPage stats={marketplaceStats} signedOut={!currentUser} onShop={() => navigate("market")} onFarmer={() => navigate("farmer")} onSignup={openSignup} />}
 
       {!sessionLoading && <SiteFooter view={view} user={currentUser} onNavigate={navigate} />}
 
@@ -1096,7 +1115,7 @@ function adminEntityFilterValue(section: AdminEntityType, entity: AdminEntity) {
   return String(entity.entity_type || "system");
 }
 
-function AdminPage({ readOnly, onImpersonated }: { readOnly: boolean; onImpersonated: (user: CurrentUser) => void }) {
+function AdminPage({ readOnly, supportAccess, onImpersonated }: { readOnly: boolean; supportAccess: boolean; onImpersonated: (user: CurrentUser) => void }) {
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [section, setSection] = useState<"overview" | AdminEntityType>("overview");
   const [entities, setEntities] = useState<AdminEntity[]>([]);
@@ -1114,7 +1133,16 @@ function AdminPage({ readOnly, onImpersonated }: { readOnly: boolean; onImperson
   const [balanceOnly, setBalanceOnly] = useState(false);
   const [joinedDateFilter, setJoinedDateFilter] = useState("all");
   const [joinedDateSort, setJoinedDateSort] = useState("newest");
+  const [activityAction, setActivityAction] = useState("all");
+  const [activityActor, setActivityActor] = useState("all");
+  const [activityDate, setActivityDate] = useState("all");
   const [filterReferenceTime] = useState(() => Date.now());
+  const [userTimeZone, setUserTimeZone] = useState("UTC");
+
+  useEffect(() => {
+    const detectedTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (detectedTimeZone) setUserTimeZone(detectedTimeZone);
+  }, []);
 
   async function loadOverview() {
     const response = await fetch("/api/admin/overview");
@@ -1125,7 +1153,7 @@ function AdminPage({ readOnly, onImpersonated }: { readOnly: boolean; onImperson
   async function loadEntities(type: AdminEntityType) {
     setBusy(true);
     const response = await fetch(`/api/admin/entities?type=${type}`);
-    const data = await response.json() as { entities?: AdminEntity[]; error?: string };
+    const data = await readJsonResponse<{ entities?: AdminEntity[]; error?: string }>(response);
     if (!response.ok) throw new Error(data.error || "Could not load records");
     setEntities(data.entities || []);
     setBusy(false);
@@ -1143,7 +1171,7 @@ function AdminPage({ readOnly, onImpersonated }: { readOnly: boolean; onImperson
     if (section === "overview") return;
     let cancelled = false;
     fetch(`/api/admin/entities?type=${section}`).then(async (response) => {
-      const data = await response.json() as { entities?: AdminEntity[]; error?: string };
+      const data = await readJsonResponse<{ entities?: AdminEntity[]; error?: string }>(response);
       if (!response.ok) throw new Error(data.error || "Could not load records");
       if (!cancelled) { setEntities(data.entities || []); setBusy(false); }
     }).catch((reason: Error) => { if (!cancelled) { setError(reason.message); setBusy(false); } });
@@ -1156,6 +1184,8 @@ function AdminPage({ readOnly, onImpersonated }: { readOnly: boolean; onImperson
     return [...values].sort((left, right) => left.localeCompare(right));
   }, [entities, section]);
   const effectiveEntityFilter = filterOptions.includes(entityFilter) ? entityFilter : "all";
+  const activityActions = useMemo(() => [...new Set(entities.map((entity) => String(entity.action || "")).filter(Boolean))].sort(), [entities]);
+  const activityActors = useMemo(() => [...new Set(entities.map((entity) => String(entity.actor_name || "")).filter(Boolean))].sort(), [entities]);
   const visibleEntities = useMemo(() => {
     if (section === "overview") return entities;
     const query = entitySearch.trim().toLowerCase();
@@ -1167,6 +1197,18 @@ function AdminPage({ readOnly, onImpersonated }: { readOnly: boolean; onImperson
         const days = Number(joinedDateFilter);
         if (!Number.isFinite(joinedAt) || joinedAt < filterReferenceTime - days * 24 * 60 * 60 * 1000) return false;
       }
+      if (section === "activity") {
+        if (activityAction !== "all" && String(entity.action) !== activityAction) return false;
+        if (activityActor !== "all" && String(entity.actor_name) !== activityActor) return false;
+        if (activityDate !== "all") {
+          const occurredAt = new Date(String(entity.created_at)).getTime();
+          if (!Number.isFinite(occurredAt)) return false;
+          if (activityDate === "today") {
+            const dateKey = (value: number) => new Intl.DateTimeFormat("en-CA", { timeZone: userTimeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
+            if (dateKey(occurredAt) !== dateKey(filterReferenceTime)) return false;
+          } else if (occurredAt < filterReferenceTime - Number(activityDate) * 24 * 60 * 60 * 1000) return false;
+        }
+      }
       if (!query) return true;
       return Object.entries(entity).some(([key, value]) => !["password_hash", "items"].includes(key) && value !== null && String(value).toLowerCase().includes(query));
     });
@@ -1175,7 +1217,7 @@ function AdminPage({ readOnly, onImpersonated }: { readOnly: boolean; onImperson
       const difference = new Date(String(right.created_at)).getTime() - new Date(String(left.created_at)).getTime();
       return joinedDateSort === "oldest" ? -difference : difference;
     });
-  }, [balanceOnly, effectiveEntityFilter, entities, entitySearch, filterReferenceTime, joinedDateFilter, joinedDateSort, section]);
+  }, [activityAction, activityActor, activityDate, balanceOnly, effectiveEntityFilter, entities, entitySearch, filterReferenceTime, joinedDateFilter, joinedDateSort, section, userTimeZone]);
 
   async function openDetails(type: AdminEntityType, id: string) {
     setError("");
@@ -1316,7 +1358,7 @@ function AdminPage({ readOnly, onImpersonated }: { readOnly: boolean; onImperson
   const metrics = overview.metrics;
   return <main className="admin-page">
     <header className="admin-heading"><div><p className="eyebrow"><span/> MARKETPLACE OPERATIONS</p><h1>Administration</h1><p>Monitor people, farms, listings, orders, and customer resolutions.</p></div><div className="admin-heading-tools">{!readOnly && <button onClick={() => { setError(""); setPaymentSettingsOpen(true); }}><AtSign size={15}/> Bank payment details</button>}<span className="admin-live"><i/> {readOnly ? "Read-only support access" : "Live database"}</span></div></header>
-    <nav className="admin-tabs" aria-label="Administration sections">{(["overview", "users", "farms", "produce", "orders", "refunds", "reviews", "activity"] as const).map((item) => <button key={item} className={section === item ? "active" : ""} onClick={() => { setSection(item); setSelected(null); setError(""); setBusy(item !== "overview"); }}>{item === "overview" ? <House size={15}/> : item === "users" ? <UserRound size={15}/> : item === "farms" ? <Store size={15}/> : item === "produce" ? <Leaf size={15}/> : item === "orders" ? <PackageCheck size={15}/> : item === "refunds" ? <RotateCcw size={15}/> : item === "reviews" ? <Star size={15}/> : <Clock3 size={15}/>}<span>{item}</span>{item === "refunds" && metrics.open_refunds > 0 && <b className="admin-tab-count">{metrics.open_refunds}</b>}</button>)}</nav>
+    <nav className="admin-tabs" aria-label="Administration sections">{(["overview", "users", "farms", "produce", "orders", "refunds", "reviews", "activity"] as const).filter((item) => !(supportAccess && item === "activity")).map((item) => <button key={item} className={section === item ? "active" : ""} onClick={() => { setSection(item); setSelected(null); setError(""); setBusy(item !== "overview"); }}>{item === "overview" ? <House size={15}/> : item === "users" ? <UserRound size={15}/> : item === "farms" ? <Store size={15}/> : item === "produce" ? <Leaf size={15}/> : item === "orders" ? <PackageCheck size={15}/> : item === "refunds" ? <RotateCcw size={15}/> : item === "reviews" ? <Star size={15}/> : <Clock3 size={15}/>}<span>{item}</span>{item === "refunds" && metrics.open_refunds > 0 && <b className="admin-tab-count">{metrics.open_refunds}</b>}</button>)}</nav>
 
     {section === "overview" ? <>
       <section className="admin-metrics"><article><span><UserRound size={19}/></span><small>ACTIVE USERS</small><strong>{metrics.users}</strong><p>{metrics.active_carts} active shopping carts</p></article><article><span><Store size={19}/></span><small>VERIFIED FARMS</small><strong>{metrics.verified_farms}</strong><p>{metrics.pending_farms} awaiting review</p></article><article><span><Leaf size={19}/></span><small>ACTIVE LISTINGS</small><strong>{metrics.listings}</strong><p>Available marketplace harvests</p></article><article><span><PackageCheck size={19}/></span><small>OPEN ORDERS</small><strong>{metrics.open_orders}</strong><p>{metrics.orders} orders recorded</p></article><article><span><RotateCcw size={19}/></span><small>OPEN REFUNDS</small><strong>{metrics.open_refunds}</strong><p>Awaiting a resolution</p></article><article><span><AtSign size={19}/></span><small>CUMULATIVE GROSS SALES</small><strong>{money(Number(metrics.cumulative_gross_kobo) / 100)}</strong><p>Completed produce sales</p></article><article><span><Minus size={19}/></span><small>PROCESSING FEES</small><strong>{money(Number(metrics.cumulative_fee_kobo) / 100)}</strong><p>Cumulative platform revenue</p></article><article><span><Check size={19}/></span><small>FARMER NET SALES</small><strong>{money(Number(metrics.cumulative_net_kobo) / 100)}</strong><p>Earned after processing fees</p></article><article><span><Truck size={19}/></span><small>DELIVERY ISSUES</small><strong>{metrics.failed_deliveries}</strong><p>Failed deliveries</p></article><article><span><Bell size={19}/></span><small>UNREAD UPDATES</small><strong>{metrics.unread_notifications}</strong><p>{metrics.hidden_reviews} hidden reviews</p></article></section>
@@ -1327,11 +1369,12 @@ function AdminPage({ readOnly, onImpersonated }: { readOnly: boolean; onImperson
       <div className="entity-list-controls">
         <div className="entity-search"><Search size={16}/><input type="search" aria-label={`Search ${section}`} value={entitySearch} onChange={(event) => setEntitySearch(event.target.value)} placeholder={`Search ${section === "produce" ? "produce listings" : section}...`}/>{entitySearch && <button type="button" onClick={() => setEntitySearch("")} aria-label="Clear search"><X size={14}/></button>}</div>
         <label className="entity-filter"><SlidersHorizontal size={16}/><span className="sr-only">Filter {section}</span><select value={effectiveEntityFilter} onChange={(event) => setEntityFilter(event.target.value)}><option value="all">All {section === "users" ? "roles" : section === "reviews" ? "visibility" : section === "activity" ? "entity types" : "statuses"}</option>{filterOptions.map((option) => <option key={option} value={option}>{option.replaceAll("_", " ")}</option>)}</select></label>
+        {section === "activity" && <><label className="entity-filter"><Clock3 size={16}/><select aria-label="Filter activity action" value={activityAction} onChange={(event) => setActivityAction(event.target.value)}><option value="all">All activity types</option>{activityActions.map((action) => <option key={action} value={action}>{action.replaceAll("_", " ").replaceAll(".", " ")}</option>)}</select></label><label className="entity-filter"><UserRound size={16}/><select aria-label="Filter activity actor" value={activityActor} onChange={(event) => setActivityActor(event.target.value)}><option value="all">All team members</option>{activityActors.map((actor) => <option key={actor} value={actor}>{actor}</option>)}</select></label><label className="entity-filter"><Clock3 size={16}/><select aria-label="Filter activity date" value={activityDate} onChange={(event) => setActivityDate(event.target.value)}><option value="all">Any date</option><option value="today">Today</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option></select></label></>}
         {section === "users" && <label className="entity-filter entity-date-filter"><Clock3 size={16}/><span className="sr-only">Filter by joined date</span><select value={joinedDateFilter} onChange={(event) => setJoinedDateFilter(event.target.value)}><option value="all">Joined anytime</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last 12 months</option></select></label>}
         {section === "users" && <label className="entity-filter entity-date-sort"><span className="sr-only">Sort by joined date</span><select value={joinedDateSort} onChange={(event) => setJoinedDateSort(event.target.value)}><option value="newest">Newest joined</option><option value="oldest">Oldest joined</option></select></label>}
         {section === "users" && <button className={`entity-balance-filter ${balanceOnly ? "active" : ""}`} type="button" aria-pressed={balanceOnly} onClick={() => setBalanceOnly((current) => !current)}><AtSign size={15}/> Has balance <b>{entities.filter((entity) => Number(entity.account_credit_kobo || 0) > 0).length}</b></button>}
         <span className="entity-result-count">Showing <strong>{visibleEntities.length}</strong> of {entities.length}</span>
-        {(entitySearch || effectiveEntityFilter !== "all" || (section === "users" && (balanceOnly || joinedDateFilter !== "all" || joinedDateSort !== "newest"))) && <button className="entity-clear-filters" type="button" onClick={() => { setEntitySearch(""); setEntityFilter("all"); setBalanceOnly(false); setJoinedDateFilter("all"); setJoinedDateSort("newest"); }}><X size={14}/> Clear</button>}
+        {(entitySearch || effectiveEntityFilter !== "all" || (section === "activity" && (activityAction !== "all" || activityActor !== "all" || activityDate !== "all")) || (section === "users" && (balanceOnly || joinedDateFilter !== "all" || joinedDateSort !== "newest"))) && <button className="entity-clear-filters" type="button" onClick={() => { setEntitySearch(""); setEntityFilter("all"); setBalanceOnly(false); setJoinedDateFilter("all"); setJoinedDateSort("newest"); setActivityAction("all"); setActivityActor("all"); setActivityDate("all"); }}><X size={14}/> Clear</button>}
       </div>
       {error && <p className="admin-error" role="alert">{error}</p>}
       {busy && !addOpen ? <div className="entity-loading"><Clock3 size={20}/> Updating records...</div> : visibleEntities.length ? <div className="entity-table">{visibleEntities.map((entity) => <AdminEntityRow key={entity.id} section={section} entity={entity} onOpen={() => openDetails(section, entity.id)} onReviewRefund={(refundId) => { setSection("refunds"); setSelected(null); setBusy(true); void openDetails("refunds", refundId).finally(() => setBusy(false)); }}/>)}</div> : <div className="entity-empty"><Search size={22}/><strong>No matching records</strong><p>Try a different search term or filter.</p><button type="button" onClick={() => { setEntitySearch(""); setEntityFilter("all"); setBalanceOnly(false); setJoinedDateFilter("all"); setJoinedDateSort("newest"); }}>Clear search and filter</button></div>}
@@ -1341,7 +1384,7 @@ function AdminPage({ readOnly, onImpersonated }: { readOnly: boolean; onImperson
       <aside className="admin-detail" onMouseDown={(event) => event.stopPropagation()}>
         <header><div><small>{section === "produce" ? "PRODUCE LISTING" : section === "activity" ? "AUDIT EVENT" : section.slice(0, -1).toUpperCase()}</small><h2>{entityTitle(section, selected)}</h2></div><button onClick={() => setSelected(null)} aria-label="Close details"><X size={19}/></button></header>
         {["orders", "refunds"].includes(section) && Boolean(selected.payment_receipt_name) && <section className="admin-payment-review"><span><PackageCheck size={19}/></span><div><strong>Manual payment receipt</strong><small>Submitted {formatEntityValue("submitted_at", selected.payment_receipt_submitted_at)}</small></div><a href={`/api/payments/manual/${section === "orders" ? selected.id : selected.order_id}`} target="_blank" rel="noreferrer">Open receipt</a></section>}
-        <div className="entity-details">{Object.entries(selected).filter(([key, value]) => value !== null && value !== "" && !["id", "password_hash", "payment_receipt_name", "payment_receipt_submitted_at"].includes(key)).map(([key, value]) => <div key={key}><span>{key.replaceAll("_", " ")}</span><strong>{formatEntityValue(key, value)}</strong></div>)}</div>
+        <div className="entity-details">{Object.entries(selected).filter(([key, value]) => showAdminDetailField(key, value)).map(([key, value]) => <div key={key}><span>{key.replaceAll("_", " ")}</span><strong>{formatEntityValue(key, value)}</strong></div>)}</div>
         {!readOnly && section !== "activity" && <footer className="admin-detail-actions">
           {section === "users" && <button className="impersonate-user" onClick={impersonateUser} disabled={busy}><Eye size={16}/> View as this user</button>}
           {section === "orders" && selected.status === "pending_payment" && Boolean(selected.payment_receipt_name) && <button className="confirm-manual-payment" onClick={confirmManualPayment} disabled={busy}><Check size={16}/> {busy ? "Confirming..." : "Confirm payment"}</button>}
@@ -1374,7 +1417,7 @@ function AdminOrderRow({ entity, onOpen, onReviewRefund }: { entity: AdminEntity
     <div className="admin-order-summary">
       <button className="admin-order-toggle" onClick={() => transitionUpdate(() => setExpanded((value) => !value))} aria-expanded={expanded} aria-label={`${expanded ? "Collapse" : "Expand"} order ${String(entity.order_number)}`}><ChevronDown size={17}/></button>
       <span className="entity-icon"><PackageCheck size={17}/></span>
-      <span><strong>Order #{String(entity.order_number)}</strong><small>{String(entity.customer_name)} · {String(entity.item_count)} items</small><span className="entity-farms"><Store size={11}/>{String(entity.farm_names || "Farm not assigned")}</span>{Boolean(entity.refund_id) ? <span className={`entity-refund-alert ${entity.refund_status}`}><RotateCcw size={11}/> Refund {String(entity.refund_status).replaceAll("_", " ")} · {String(entity.refund_method).replaceAll("_", " ")}</span> : Boolean(entity.receipt_submitted) && <span className="entity-payment-receipt"><Check size={11}/> Receipt ready for review</span>}<AdminEntityDate label="Placed" value={entity.placed_at}/></span>
+      <span><strong>Order #{String(entity.order_number)}</strong><small>{String(entity.customer_name)} · {String(entity.item_count)} items</small><span className="entity-farms"><Store size={11}/>{String(entity.farm_names || "Farm not assigned")}</span><span className="entity-farmers"><UserRound size={11}/>{String(entity.farmer_names || "Farmer not assigned")}</span>{Boolean(entity.refund_id) ? <span className={`entity-refund-alert ${entity.refund_status}`}><RotateCcw size={11}/> Refund {String(entity.refund_status).replaceAll("_", " ")} · {String(entity.refund_method).replaceAll("_", " ")}</span> : Boolean(entity.receipt_submitted) && <span className="entity-payment-receipt"><Check size={11}/> Receipt ready for review</span>}<AdminEntityDate label="Placed" value={entity.placed_at}/></span>
       <b className={`status-badge ${entity.status}`}>{String(entity.status).replaceAll("_", " ")}</b>
       <i>{money(Number(entity.total_kobo) / 100)}</i>
       <button className="admin-order-details" onClick={onOpen}>Full details</button>
@@ -1394,7 +1437,7 @@ function AdminEntityRow({ section, entity, onOpen, onReviewRefund }: { section: 
   if (section === "orders") return <AdminOrderRow entity={entity} onOpen={onOpen} onReviewRefund={onReviewRefund}/>;
   if (section === "refunds") return <button onClick={onOpen}><span className="entity-icon"><RotateCcw size={17}/></span><span><strong>Order #{String(entity.order_number)}</strong><small>{String(entity.customer_name)} · {String(entity.resolution_method || "bank_refund").replaceAll("_", " ")}{Number(entity.cancellation_fee_kobo) ? ` · ${money(Number(entity.cancellation_fee_kobo) / 100)} fee` : " · no fee"}</small><AdminEntityDate label="Requested" value={entity.requested_at}/></span><b className={`status-badge ${entity.status}`}>{String(entity.status).replaceAll("_", " ")}</b><i>{money(Number(entity.amount_kobo) / 100)}</i></button>;
   if (section === "reviews") return <button onClick={onOpen}><span className="entity-icon"><Star size={17}/></span><span><strong>{String(entity.farm_name)}</strong><small>{String(entity.customer_name)} · Order #{String(entity.order_number)}</small><AdminEntityDate label="Reviewed" value={entity.created_at}/></span><b className={`status-badge ${entity.is_visible ? "verified" : "suspended"}`}>{entity.is_visible ? "Visible" : "Hidden"}</b><i>{String(entity.rating)}/5</i></button>;
-  return <button onClick={onOpen}><span className="entity-icon"><Clock3 size={17}/></span><span><strong>{String(entity.action).replaceAll("_", " ")}</strong><small>{String(entity.actor_name)} · {String(entity.entity_type)} {String(entity.entity_id).slice(0,8)}</small><AdminEntityDate label="Logged" value={entity.created_at}/></span><b className="status-badge verified">Logged</b><i>{new Date(String(entity.created_at)).toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" })}</i></button>;
+  return <button onClick={onOpen}><span className="entity-icon"><Clock3 size={17}/></span><span><strong>{String(entity.action).replaceAll("_", " ").replaceAll(".", " ")}</strong><small>{String(entity.actor_name)} · {String(entity.entity_label || entity.entity_type).replaceAll("_", " ")}</small><AdminEntityDate label="Logged" value={entity.created_at}/></span><b className="status-badge verified">{String(entity.entity_type).replaceAll("_", " ")}</b><i>{new Date(String(entity.created_at)).toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" })}</i></button>;
 }
 
 function entityTitle(type: AdminEntityType, entity: AdminEntity) {
@@ -1406,11 +1449,25 @@ function entityTitle(type: AdminEntityType, entity: AdminEntity) {
   return String(entity.action).replaceAll("_", " ");
 }
 
+function showAdminDetailField(key: string, value: unknown) {
+  if (value === null || value === "") return false;
+  if (key === "id" || key.endsWith("_id")) return false;
+  return ![
+    "order_number",
+    "items",
+    "delivery_events",
+    "password_hash",
+    "payment_receipt_name",
+    "payment_receipt_submitted_at",
+  ].includes(key);
+}
+
 function formatEntityValue(key: string, value: unknown) {
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (key.endsWith("_kobo")) return money(Number(value) / 100);
   if (key.endsWith("_at") || key.endsWith("_date")) return new Date(String(value)).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: key.endsWith("_at") ? "short" : undefined });
-  if (typeof value === "object") return JSON.stringify(value);
+  if (typeof value === "object" && value) return Object.entries(value as Record<string, unknown>).map(([field, detail]) => `${field.replaceAll("_", " ")}: ${typeof detail === "object" ? "Updated information" : String(detail).replaceAll("_", " ")}`).join(" · ");
+  if (/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(String(value))) return "Internal record";
   return String(value);
 }
 
@@ -1573,7 +1630,7 @@ type CustomerOrder = {
   placed_at: string; delivered_at: string | null;
   receipt_submitted: boolean; payment_status: string | null;
   refund: null | { status: string; resolution_method: "bank_refund" | "store_credit"; amount_kobo: number; cancellation_fee_kobo: number; requested_at: string };
-  tracking: null | { id: string; status: string; tracking_code: string; courier_name: string | null; courier_phone: string | null; scheduled_date: string | null; window_start: string | null; window_end: string | null; events: Array<{ id: string; status: string; message: string; occurred_at: string }> };
+  tracking: null | { id: string; status: string; tracking_code: string; courier_name: string | null; courier_phone: string | null; events: Array<{ id: string; status: string; message: string; occurred_at: string }> };
   farms: Array<{ id: string; name: string; rating: number | null; comment: string | null }>;
   items: Array<{ id: string; name: string; farm: string; unit: string; quantity: number; unit_price_kobo: number; image: string | null; status: string; preparing_at: string | null; ready_at: string | null; dispatched_at: string | null; received_at: string | null; updated_at: string }>;
 };
@@ -1783,7 +1840,7 @@ type FarmerWorkspaceData = {
   farm: { id: string; name: string; verification_status: string };
   farms: Array<{ id: string; name: string; verification_status: string; city: string; state: string }>;
   metrics: { today_sales_kobo: number; open_orders: number; available_stock: number; active_listings: number; payout_gross_kobo: number; payout_fee_kobo: number; next_payout_kobo: number; cumulative_gross_kobo: number; cumulative_fee_kobo: number; cumulative_net_kobo: number };
-  orders: Array<{ id: string; order_number: string; status: string; placed_at: string; subtotal_kobo: number; farmer_net_kobo: number; customer: string; customer_email: string; customer_phone: string | null; customer_avatar: string | null; items: string; itemTracking: Array<{ id: string; name: string; quantity: number; unit: string; status: string; preparing_at: string | null; ready_at: string | null; dispatched_at: string | null; received_at: string | null; updated_at: string }>; fulfilment_method: string; delivery_address_snapshot: { line1?: string; city?: string; state?: string; landmark?: string } | null; customer_note: string | null; tracking_code: string | null; delivery_status: string | null; window_start: string | null; window_end: string | null }>;
+  orders: Array<{ id: string; order_number: string; status: string; placed_at: string; subtotal_kobo: number; farmer_net_kobo: number; customer: string; customer_email: string; customer_phone: string | null; customer_avatar: string | null; items: string; itemTracking: Array<{ id: string; name: string; quantity: number; unit: string; status: string; preparing_at: string | null; ready_at: string | null; dispatched_at: string | null; received_at: string | null; updated_at: string }>; fulfilment_method: string; delivery_address_snapshot: { line1?: string; city?: string; state?: string; landmark?: string } | null; customer_note: string | null; tracking_code: string | null; delivery_status: string | null }>;
   listings: Array<{ id: string; title: string; unit: string; unit_price_kobo: number; quantity_available: number; quantity_reserved: number; quantity_sold: number; status: string; harvest_date: string; category_id: string; image_url: string | null; stored_image_url: string | null; badge?: string | null }>;
   categories: Array<{ id: string; name: string }>;
   reviews: Array<{ id: string; rating: number; comment: string | null; farmer_reply: string | null; created_at: string; customer_name: string; order_number: string }>;
@@ -1800,7 +1857,7 @@ function ExpandedFarmerOrders({ orders, busy, readOnly, onAdvance }: { orders: F
     const nextItem = order.itemTracking.find((item) => ["confirmed","paid","preparing"].includes(item.status) || (item.status === "ready" && !pickup));
     const action = !nextItem ? "Awaiting customer receipt" : ["confirmed","paid"].includes(nextItem.status) ? `Prepare ${nextItem.name}` : nextItem.status === "preparing" ? `Mark ${nextItem.name} ready` : `Dispatch ${nextItem.name}`;
     const actionable = Boolean(nextItem);
-    return <article className="fulfilment-card" key={order.id}><header><span className={`fulfilment-avatar ${order.customer_avatar ? "has-photo" : ""}`}>{order.customer_avatar ? <img src={order.customer_avatar} alt=""/> : order.customer.split(" ").map((part) => part[0]).slice(0,2).join("")}</span><div><small>ORDER #{order.order_number}</small><h3>{order.customer}</h3><p>{new Date(order.placed_at).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" })}</p></div><b className={`status-badge ${order.status}`}>{order.status.replaceAll("_", " ")}</b></header><div className="fulfilment-info"><section><strong><UserRound size={14}/> Customer contact</strong><a href={`mailto:${order.customer_email}`}>{order.customer_email}</a><a href={order.customer_phone ? `tel:${order.customer_phone}` : undefined}>{order.customer_phone || "No phone number provided"}</a></section><section><strong><MapPin size={14}/> {order.fulfilment_method === "doorstep" ? "Delivery address" : "Collection method"}</strong>{address ? <><span>{[address.line1, address.city, address.state].filter(Boolean).join(", ")}</span>{address.landmark && <small>Landmark: {address.landmark}</small>}</> : <span>{order.fulfilment_method.replaceAll("_", " ")}</span>}<small>{order.window_start ? `Window: ${String(order.window_start).slice(0,5)}–${String(order.window_end).slice(0,5)}` : "Coordinate with the customer before handover"}</small></section><section><strong><ShoppingBag size={14}/> Produce</strong><span>{order.items}</span>{order.customer_note && <small>Note: {order.customer_note}</small>}</section><section><strong><Truck size={14}/> Tracking</strong><span>{order.tracking_code || "Pickup order"}</span><small>{order.delivery_status ? order.delivery_status.replaceAll("_", " ") : "Awaiting fulfilment update"}</small></section></div><footer><span>{readOnly ? "Administrator impersonation is read-only. Sign in as this farmer to update fulfilment." : "Customer confirmation is required before this order is completed and added to your payout."}</span><button disabled={readOnly || busy || !actionable} onClick={() => onAdvance(order)}>{readOnly ? "Read-only view" : actionable ? action : <><Clock3 size={14}/> {action}</>}</button></footer></article>;
+    return <article className="fulfilment-card" key={order.id}><header><span className={`fulfilment-avatar ${order.customer_avatar ? "has-photo" : ""}`}>{order.customer_avatar ? <img src={order.customer_avatar} alt=""/> : order.customer.split(" ").map((part) => part[0]).slice(0,2).join("")}</span><div><small>ORDER #{order.order_number}</small><h3>{order.customer}</h3><p>{new Date(order.placed_at).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" })}</p></div><b className={`status-badge ${order.status}`}>{order.status.replaceAll("_", " ")}</b></header><div className="fulfilment-info"><section><strong><UserRound size={14}/> Customer contact</strong><a href={`mailto:${order.customer_email}`}>{order.customer_email}</a><a href={order.customer_phone ? `tel:${order.customer_phone}` : undefined}>{order.customer_phone || "No phone number provided"}</a></section><section><strong><MapPin size={14}/> {order.fulfilment_method === "doorstep" ? "Delivery address" : "Collection method"}</strong>{address ? <><span>{[address.line1, address.city, address.state].filter(Boolean).join(", ")}</span>{address.landmark && <small>Landmark: {address.landmark}</small>}</> : <span>{order.fulfilment_method.replaceAll("_", " ")}</span>}<small>Coordinate the handover time with the customer</small></section><section><strong><ShoppingBag size={14}/> Produce</strong><span>{order.items}</span>{order.customer_note && <small>Note: {order.customer_note}</small>}</section><section><strong><Truck size={14}/> Tracking</strong><span>{order.tracking_code || "Pickup order"}</span><small>{order.delivery_status ? order.delivery_status.replaceAll("_", " ") : "Awaiting fulfilment update"}</small></section></div><footer><span>{readOnly ? "Administrator impersonation is read-only. Sign in as this farmer to update fulfilment." : "Customer confirmation is required before this order is completed and added to your payout."}</span><button disabled={readOnly || busy || !actionable} onClick={() => onAdvance(order)}>{readOnly ? "Read-only view" : actionable ? action : <><Clock3 size={14}/> {action}</>}</button></footer></article>;
   }) : <div className="panel-empty">No orders to fulfil.</div>}</section>;
 }
 
@@ -1914,10 +1971,10 @@ function FarmerWorkspace({ onShop }: { onShop: () => void }) {
     <section className="cumulative-sales-card"><div className="cumulative-sales-heading"><span><AtSign size={19}/></span><div><small>CUMULATIVE EARNINGS</small><h2>Lifetime net sales</h2><p>Completed farm orders since joining HarvestNearU.</p></div></div><strong>{money(Number(data.metrics.cumulative_net_kobo) / 100)}</strong><div className="cumulative-sales-breakdown"><span><small>Gross sales processed</small><b>{money(Number(data.metrics.cumulative_gross_kobo) / 100)}</b></span><span className="fees"><small>Processing fees</small><b>-{money(Number(data.metrics.cumulative_fee_kobo) / 100)}</b></span><span className="net"><small>Net sales earned</small><b>{money(Number(data.metrics.cumulative_net_kobo) / 100)}</b></span></div></section>
     <div className="farmer-columns">
       <ExpandedFarmerOrders orders={fulfilmentOrders} busy={busy} readOnly={Boolean(data.user.impersonating)} onAdvance={advanceOrder}/>
-      <FarmReviews farmName={data.farm.name} reviews={data.reviews}/>
       <section className="orders-panel closed-orders-panel"><div className="panel-head"><div><h2>Closed orders</h2><p>Completed, cancelled, and refunded orders</p></div><span>{closedOrders.length} total</span>{closedOrders.length > 3 && <button onClick={() => setShowAllOrders((value) => !value)}>{showAllOrders ? "Show recent" : "View all"} <ArrowRight className={showAllOrders ? "back" : ""} size={15}/></button>}</div>{shownClosedOrders.length ? shownClosedOrders.map((order) => <div className="order-row closed-order-row" key={order.id}><span className="order-icon"><PackageCheck size={18}/></span><div><strong>{order.customer}</strong><p>#{order.order_number} · {order.items}</p></div><small>{new Date(order.placed_at).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })}</small><span className={`status-badge ${order.status}`}>{order.status.replaceAll("_", " ")}</span><b>{["delivered","collected"].includes(order.status) ? `${money(Number(order.farmer_net_kobo) / 100)} net` : money(Number(order.subtotal_kobo) / 100)}</b></div>) : <div className="panel-empty">No closed orders yet.</div>}</section>
       <section className="inventory-panel"><div className="panel-head"><div><h2>Inventory pulse</h2><p>Your produce listings</p></div>{data.listings.length > 3 && <button onClick={() => setShowAllListings((value) => !value)}>{showAllListings ? "Show recent" : "View all"} <ArrowRight className={showAllListings ? "back" : ""} size={15}/></button>}</div>{listings.length ? listings.map((listing) => { const available = Number(listing.quantity_available) - Number(listing.quantity_reserved); const total = Number(listing.quantity_available) + Number(listing.quantity_sold); const percent = total ? Math.round(available / total * 100) : 0; return <button className="inventory-row farmer-inventory-row" key={listing.id} onClick={() => { setError(""); setManageListing(listing); }}><span className="inventory-image">{listing.image_url ? <img src={listing.image_url} alt=""/> : <Leaf size={18}/>}</span><div><strong>{listing.title}</strong><p>{available} {listing.unit}s available · {listing.status}</p><span><i style={{ width: `${Math.max(0, percent)}%` }}/></span></div><b>{percent}%</b></button>}) : <div className="panel-empty">No listings yet.</div>}</section>
     </div>
+    <FarmReviews farmName={data.farm.name} reviews={data.reviews}/>
     {listingOpen && <div className="modal-overlay" onMouseDown={() => setListingOpen(false)}><div className="admin-add-modal farmer-listing-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close-modal" onClick={() => setListingOpen(false)}><X size={19}/></button><p className="auth-kicker">NEW HARVEST</p><h2>Add a produce listing</h2><p>Publish available produce from {data.farm.name}.</p><form onSubmit={createListing}><label>Category<select name="categoryId" required><option value="">Select category</option>{data.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>Produce name<input name="name" required/></label><div className="form-row"><label>Unit<input name="unit" placeholder="basket" required/></label><label>Price (NGN)<input name="price" type="number" min="1" required/></label></div><div className="form-row"><label>Available quantity<input name="stock" type="number" min="1" required/></label><label>Harvest date<input name="harvestDate" type="date" required/></label></div><label>Produce picture<input name="image" type="file" accept="image/png,image/jpeg,image/webp" required/><small>Uploaded securely to Blob. JPG, PNG, or WebP up to 4 MB.</small></label><label>Badge<input name="badge" placeholder="Picked today"/></label>{error && <p className="admin-error">{error}</p>}<button className="admin-submit" disabled={busy}>{busy ? "Uploading and publishing..." : "Publish listing"} {!busy && <ArrowRight size={16}/>}</button></form></div></div>}
     {farmOpen && <div className="modal-overlay" onMouseDown={() => setFarmOpen(false)}><div className="admin-add-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close-modal" onClick={() => setFarmOpen(false)}><X size={19}/></button><p className="auth-kicker">NEW FARM</p><h2>Add another farm</h2><p>Each farm has separate verification, listings, orders, and earnings.</p><form onSubmit={createFarm}><label>Farm or business name<input name="name" required/></label><label>Farm address or area<input name="location" placeholder="Kuje, Abuja" required/></label><label>Farm phone<input name="phone" required/></label><FarmCoordinateFields/>{error && <p className="admin-error">{error}</p>}<button className="admin-submit" disabled={busy}>{busy ? "Adding farm..." : "Add farm for verification"}</button></form></div></div>}
     {manageListing && <div className="modal-overlay" onMouseDown={() => setManageListing(null)}><div className="admin-add-modal farmer-listing-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close-modal" onClick={() => setManageListing(null)}><X size={19}/></button><p className="auth-kicker">EDIT HARVEST</p><h2>{manageListing.title}</h2><p>Update the listing details shown to customers.</p><form onSubmit={updateInventory}><label>Category<select name="categoryId" defaultValue={manageListing.category_id} required>{data.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>Produce name<input name="name" defaultValue={manageListing.title} required/></label><div className="form-row"><label>Unit<input name="unit" defaultValue={manageListing.unit} required/></label><label>Price (NGN)<input name="price" type="number" min="1" defaultValue={Number(manageListing.unit_price_kobo) / 100} required/></label></div><div className="form-row"><label>Available quantity<input name="stock" type="number" min={Number(manageListing.quantity_reserved)} defaultValue={Number(manageListing.quantity_available)} required/></label><label>Harvest date<input name="harvestDate" type="date" defaultValue={String(manageListing.harvest_date).slice(0, 10)} required/></label></div>{manageListing.image_url && <div className="listing-image-preview"><img src={manageListing.image_url} alt={`Current ${manageListing.title}`}/><span>Current picture</span></div>}<label>Change picture<input name="image" type="file" accept="image/png,image/jpeg,image/webp"/><small>Leave empty to keep the current picture. Maximum 4 MB.</small></label><label>Badge<input name="badge" defaultValue={manageListing.badge || ""} placeholder="Picked today"/></label><label>Listing status<select name="status" defaultValue={manageListing.status === "paused" ? "paused" : "active"}><option value="active">Active</option><option value="paused">Paused</option></select></label>{error && <p className="admin-error">{error}</p>}<button className="admin-submit" disabled={busy}>{busy ? "Saving..." : "Save listing"} {!busy && <ArrowRight size={16}/>}</button></form></div></div>}

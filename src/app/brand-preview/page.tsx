@@ -1,6 +1,9 @@
 import { ArrowLeft, Check, Leaf } from "lucide-react";
+import type { Metadata } from "next";
 import Link from "next/link";
 import "./preview.css";
+
+export const metadata: Metadata = { title: "Brand Preview | HarvestNearU", robots: { index: false, follow: false } };
 
 const options = [
   { name: "Fraunces", className: "font-fraunces", note: "Organic · warm · distinctive", recommended: true },

@@ -32,6 +32,7 @@ export async function GET(request: NextRequest) {
         category.name AS category,
         listing.harvest_date,
         farm.average_rating AS rating,
+        (SELECT count(*)::int FROM reviews WHERE farm_id = farm.id AND is_visible) AS review_count,
         listing.badge,
         image.url AS image
       FROM produce_listings listing
@@ -79,6 +80,7 @@ export async function GET(request: NextRequest) {
         category: String(row.category),
         available: daysAway <= 0 ? "Today" : daysAway === 1 ? "Tomorrow" : harvestDate.toLocaleDateString("en-NG", { weekday: "short", day: "numeric", month: "short", timeZone: "Africa/Lagos" }),
         rating: Number(row.rating),
+        reviewCount: Number(row.review_count),
         badge: row.badge ? String(row.badge) : undefined,
         image: row.image ? listingImageUrl(String(row.id), row.image) : "/produce/vine-ripe-tomatoes.webp",
       };

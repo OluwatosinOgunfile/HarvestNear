@@ -47,7 +47,77 @@
 .app-shell[data-theme="dark"] .profile-farm-switcher button > span { background: #26382c; }
 .app-shell[data-theme="dark"] .farm-switch-loading { background: rgba(12, 24, 17, .78); }
 @media (prefers-reduced-motion: reduce) { .farm-switch-loading svg { animation: none; } }
-.farm-reviews-panel{grid-column:1/-1;background:#fff;border:1px solid var(--line);border-radius:7px;overflow:hidden}.farm-reviews-panel .panel-head>span{display:flex;align-items:center;gap:5px;color:#9b6a12}.farm-review-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:16px}.farm-review-list article{padding:15px;color:var(--ink);background:#f8faf7;border:1px solid var(--line);border-radius:7px}.farm-review-list article header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.farm-review-list article header strong,.farm-review-list article header small{display:block}.farm-review-list article header strong{font-size:10px}.farm-review-list article header small{margin-top:4px;color:var(--muted);font-size:8px}.farm-review-list article header>span{display:flex;gap:2px;color:#d59b22}.farm-review-list article>p{margin:13px 0 0;color:var(--ink);font-size:9px;line-height:1.6}.farm-review-list blockquote{margin:12px 0 0;padding:10px 12px;color:var(--muted);background:#fff;border-left:3px solid var(--green);font-size:8px;line-height:1.55}.farm-review-list blockquote strong{display:block;margin-bottom:3px;color:var(--green)}.farm-reviews-empty{min-height:170px;display:flex;align-items:center;justify-content:center;flex-direction:column;color:var(--muted);text-align:center}.farm-reviews-empty>svg{margin-bottom:9px;color:var(--green)}.farm-reviews-empty strong{color:var(--ink);font:500 17px Georgia,serif}.farm-reviews-empty p{margin:5px 0 0;font-size:9px}.app-shell[data-theme="dark"] .farm-reviews-panel{background:#19211c}.app-shell[data-theme="dark"] .farm-review-list article{background:#151d18}.app-shell[data-theme="dark"] .farm-review-list blockquote{background:#202a23}@media(max-width:700px){.farm-review-list{grid-template-columns:1fr;padding:12px}.farm-review-list article header{flex-direction:column}.farm-review-list article header>span{order:-1}}
+.farm-reviews-panel{grid-column:1/-1;background:#fff;border:1px solid var(--line);border-radius:7px;overflow:hidden}.farmer-page>.farm-reviews-panel{margin-top:20px}.farm-reviews-panel .panel-head>span{display:flex;align-items:center;gap:5px;color:#9b6a12}.farm-review-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:16px}.farm-review-list article{padding:15px;color:var(--ink);background:#f8faf7;border:1px solid var(--line);border-radius:7px}.farm-review-list article header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.farm-review-list article header strong,.farm-review-list article header small{display:block}.farm-review-list article header strong{font-size:10px}.farm-review-list article header small{margin-top:4px;color:var(--muted);font-size:8px}.farm-review-list article header>span{display:flex;gap:2px;color:#d59b22}.farm-review-list article>p{margin:13px 0 0;color:var(--ink);font-size:9px;line-height:1.6}.farm-review-list blockquote{margin:12px 0 0;padding:10px 12px;color:var(--muted);background:#fff;border-left:3px solid var(--green);font-size:8px;line-height:1.55}.farm-review-list blockquote strong{display:block;margin-bottom:3px;color:var(--green)}.farm-reviews-empty{min-height:170px;display:flex;align-items:center;justify-content:center;flex-direction:column;color:var(--muted);text-align:center}.farm-reviews-empty>svg{margin-bottom:9px;color:var(--green)}.farm-reviews-empty strong{color:var(--ink);font:500 17px Georgia,serif}.farm-reviews-empty p{margin:5px 0 0;font-size:9px}.app-shell[data-theme="dark"] .farm-reviews-panel{background:#19211c}.app-shell[data-theme="dark"] .farm-review-list article{background:#151d18}.app-shell[data-theme="dark"] .farm-review-list blockquote{background:#202a23}@media(max-width:700px){.farm-review-list{grid-template-columns:1fr;padding:12px}.farm-review-list article header{flex-direction:column}.farm-review-list article header>span{order:-1}}
+
+/* Farmer workspace empty states */
+.farmer-page .panel-empty,
+.farm-reviews-empty{
+  min-height:170px;
+  padding:28px 22px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex-direction:column;
+  color:var(--muted);
+  text-align:center;
+  background:linear-gradient(180deg,rgba(239,246,237,.48),rgba(255,255,255,0));
+}
+.farmer-page .panel-empty::before,
+.farm-reviews-empty>svg{
+  width:48px;
+  height:48px;
+  margin:0 0 16px;
+  display:grid;
+  place-items:center;
+  color:#fff;
+  background:#287348;
+  border:1px solid #438b60;
+  border-radius:9px;
+  box-shadow:0 6px 16px rgba(22,83,48,.18),inset 0 1px 0 rgba(255,255,255,.18);
+}
+.farmer-page .panel-empty::before{
+  content:"";
+  background-color:#287348;
+  background-repeat:no-repeat;
+  background-position:center;
+  background-size:24px;
+}
+.farmer-orders-expanded>.panel-empty::before{background-image:url("/icons/empty-open-orders.svg")}
+.closed-orders-panel>.panel-empty::before{background-image:url("/icons/empty-closed-orders.svg")}
+.inventory-panel>.panel-empty::before{background-image:url("/icons/empty-inventory.svg")}
+.farmer-page .panel-empty{
+  font-size:0;
+}
+.farmer-page .panel-empty::first-line{
+  color:var(--ink);
+  font-family:Georgia,serif;
+  font-size:17px;
+}
+.farmer-page .panel-empty::after{
+  max-width:330px;
+  margin-top:7px;
+  color:var(--muted);
+  font-size:10px;
+  line-height:1.55;
+}
+.farmer-orders-expanded>.panel-empty::after{content:"New paid orders will appear here with the customer and handover details you need."}
+.closed-orders-panel>.panel-empty::after{content:"Completed, cancelled, and refunded orders will be kept here."}
+.inventory-panel>.panel-empty::after{content:"Add a produce listing to make this farm visible to nearby customers."}
+.farm-reviews-empty>svg{padding:11px;box-sizing:border-box;stroke-width:1.9}
+.farm-reviews-empty strong{font-size:19px}
+.farm-reviews-empty p{max-width:360px;margin-top:7px;font-size:10px;line-height:1.55}
+.app-shell[data-theme="dark"] .farmer-page .panel-empty,
+.app-shell[data-theme="dark"] .farm-reviews-empty{
+  background:linear-gradient(180deg,rgba(41,63,48,.32),rgba(23,35,28,0));
+}
+.app-shell[data-theme="dark"] .farmer-page .panel-empty::before,
+.app-shell[data-theme="dark"] .farm-reviews-empty>svg{
+  color:#fff;
+  border-color:#65a97b;
+  box-shadow:0 7px 18px rgba(0,0,0,.24),inset 0 1px 0 rgba(255,255,255,.16);
+}
+.app-shell[data-theme="dark"] .farmer-page .panel-empty::before{background-color:#2d7e50}
+.app-shell[data-theme="dark"] .farm-reviews-empty>svg{background:#2d7e50}
 @media (max-width: 760px) {
   .farmer-heading-actions { margin-top: 18px; justify-content: flex-start; }
   .farmer-heading-actions > label { width: 100%; }

@@ -18,8 +18,10 @@ function slugify(value: string) {
 }
 
 export async function GET(request: NextRequest) {
-  if (!await authorize()) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const staff = await authorize();
+  if (!staff) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const type = request.nextUrl.searchParams.get("type") as EntityType;
+  if (staff.role === "support" && type === "activity") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const id = request.nextUrl.searchParams.get("id");
   const sql = getDatabase();
 
@@ -98,7 +100,8 @@ export async function GET(request: NextRequest) {
         receipt.original_name AS payment_receipt_name, receipt.submitted_at AS payment_receipt_submitted_at,
         refund.id AS refund_id, refund.status AS refund_status, refund.resolution_method AS refund_method,
         refund.amount_kobo AS refund_amount_kobo, refund.cancellation_fee_kobo AS refund_fee_kobo,
-        delivery.courier_name, delivery.courier_phone, delivery.scheduled_date, delivery.window_start, delivery.window_end,
+        delivery.courier_name, delivery.courier_phone,
+        (SELECT string_agg(DISTINCT owner.first_name || ' ' || owner.last_name, ', ' ORDER BY owner.first_name || ' ' || owner.last_name) FROM farm_orders farm_order JOIN farms farm ON farm.id = farm_order.farm_id JOIN users owner ON owner.id = farm.owner_id WHERE farm_order.order_id = orders.id) AS farmer_names,
         coalesce((SELECT json_agg(json_build_object('product', item.product_name, 'farm', item.farm_name, 'quantity', item.quantity, 'unit', item.unit, 'total_kobo', item.line_total_kobo) ORDER BY item.created_at) FROM order_items item WHERE item.order_id = orders.id), '[]') AS items,
         coalesce((SELECT json_agg(json_build_object('status', event.status, 'message', event.message, 'occurred_at', event.occurred_at) ORDER BY event.occurred_at) FROM delivery_events event JOIN deliveries d ON d.id = event.delivery_id WHERE d.order_id = orders.id), '[]') AS delivery_events
       FROM orders JOIN users ON users.id = orders.customer_id
@@ -115,6 +118,7 @@ export async function GET(request: NextRequest) {
         refund.amount_kobo AS refund_amount_kobo, refund.cancellation_fee_kobo AS refund_fee_kobo,
         (SELECT count(*)::int FROM order_items WHERE order_id = orders.id) AS item_count,
         (SELECT string_agg(DISTINCT item.farm_name, ', ' ORDER BY item.farm_name) FROM order_items item WHERE item.order_id = orders.id) AS farm_names,
+        (SELECT string_agg(DISTINCT owner.first_name || ' ' || owner.last_name, ', ' ORDER BY owner.first_name || ' ' || owner.last_name) FROM farm_orders farm_order JOIN farms farm ON farm.id = farm_order.farm_id JOIN users owner ON owner.id = farm.owner_id WHERE farm_order.order_id = orders.id) AS farmer_names,
         coalesce((SELECT json_agg(json_build_object('id', item.id, 'product', item.product_name, 'farm', item.farm_name, 'quantity', item.quantity, 'unit', item.unit, 'unit_price_kobo', item.unit_price_kobo, 'line_total_kobo', item.line_total_kobo) ORDER BY item.created_at) FROM order_items item WHERE item.order_id = orders.id), '[]') AS items
       FROM orders JOIN users ON users.id = orders.customer_id LEFT JOIN deliveries delivery ON delivery.order_id = orders.id
       LEFT JOIN LATERAL (SELECT * FROM refunds WHERE order_id = orders.id ORDER BY requested_at DESC LIMIT 1) refund ON true
@@ -157,11 +161,27 @@ export async function GET(request: NextRequest) {
 
   if (type === "activity") {
     const rows = id ? await sql`
-      SELECT log.*, coalesce(users.first_name || ' ' || users.last_name, 'System') AS actor_name, users.email AS actor_email
+      SELECT log.*, coalesce(users.first_name || ' ' || users.last_name, 'System') AS actor_name, users.email AS actor_email,
+        CASE log.entity_type
+          WHEN 'user' THEN (SELECT first_name || ' ' || last_name FROM users WHERE id::text = log.entity_id)
+          WHEN 'farm' THEN (SELECT name FROM farms WHERE id::text = log.entity_id)
+          WHEN 'order' THEN (SELECT 'Order #' || order_number FROM orders WHERE id::text = log.entity_id)
+          WHEN 'listing' THEN (SELECT title FROM produce_listings WHERE id::text = log.entity_id)
+          WHEN 'refund' THEN (SELECT 'Refund for order #' || orders.order_number FROM refunds JOIN orders ON orders.id = refunds.order_id WHERE refunds.id::text = log.entity_id)
+          WHEN 'review' THEN (SELECT farm.name || ' review' FROM reviews JOIN farms farm ON farm.id = reviews.farm_id WHERE reviews.id::text = log.entity_id)
+        END AS entity_label
       FROM audit_logs log LEFT JOIN users ON users.id = log.actor_id WHERE log.id::text = ${id} LIMIT 1
     ` : await sql`
       SELECT log.id::text AS id, log.action, log.entity_type, log.entity_id, log.created_at,
-        coalesce(users.first_name || ' ' || users.last_name, 'System') AS actor_name
+        coalesce(users.first_name || ' ' || users.last_name, 'System') AS actor_name,
+        CASE log.entity_type
+          WHEN 'user' THEN (SELECT first_name || ' ' || last_name FROM users WHERE id::text = log.entity_id)
+          WHEN 'farm' THEN (SELECT name FROM farms WHERE id::text = log.entity_id)
+          WHEN 'order' THEN (SELECT 'Order #' || order_number FROM orders WHERE id::text = log.entity_id)
+          WHEN 'listing' THEN (SELECT title FROM produce_listings WHERE id::text = log.entity_id)
+          WHEN 'refund' THEN (SELECT 'Refund for order #' || orders.order_number FROM refunds JOIN orders ON orders.id = refunds.order_id WHERE refunds.id::text = log.entity_id)
+          WHEN 'review' THEN (SELECT farm.name || ' review' FROM reviews JOIN farms farm ON farm.id = reviews.farm_id WHERE reviews.id::text = log.entity_id)
+        END AS entity_label
       FROM audit_logs log LEFT JOIN users ON users.id = log.actor_id ORDER BY log.created_at DESC LIMIT 150
     `;
     return NextResponse.json(id ? { entity: rows[0] ?? null } : { entities: rows });

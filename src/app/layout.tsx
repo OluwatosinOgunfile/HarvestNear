@@ -17,10 +17,60 @@ import "./polish.css";
 import "./modern.css";
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://www.harvestnearu.com"),
+  applicationName: "HarvestNearU",
   title: "HarvestNearU | Fresh Local Produce, Found Here",
   description: "Shop fresh produce from trusted farmers near you, with local pickup and doorstep delivery.",
+  keywords: ["fresh produce Nigeria", "farmers market Nigeria", "local farmers", "farm produce delivery", "fresh food Abuja", "HarvestNearU"],
+  category: "marketplace",
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    locale: "en_NG",
+    url: "/",
+    siteName: "HarvestNearU",
+    title: "HarvestNearU | Fresh Local Produce, Found Here",
+    description: "Shop fresh produce from trusted farmers near you, with local pickup and doorstep delivery.",
+    images: [{ url: "/og-harvestnearu.jpg", width: 1200, height: 630, alt: "HarvestNearU fresh local produce marketplace" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "HarvestNearU | Fresh Local Produce, Found Here",
+    description: "Shop fresh produce from trusted farmers near you, with local pickup and doorstep delivery.",
+    images: ["/og-harvestnearu.jpg"],
+  },
+  icons: {
+    icon: [
+      { url: "/favicon-48.png", type: "image/png", sizes: "48x48" },
+      { url: "/favicon-192.png", type: "image/png", sizes: "192x192" },
+    ],
+    apple: [{ url: "/favicon-192.png", type: "image/png", sizes: "192x192" }],
+  },
+  manifest: "/manifest.webmanifest",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body>{children}</body></html>;
+  const structuredData = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://www.harvestnearu.com/#organization",
+        name: "HarvestNearU",
+        url: "https://www.harvestnearu.com/",
+        logo: "https://www.harvestnearu.com/favicon-192.png",
+        description: "A Nigerian marketplace connecting consumers with fresh produce from trusted nearby farmers.",
+        email: "hello@harvestnearu.com",
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://www.harvestnearu.com/#website",
+        url: "https://www.harvestnearu.com/",
+        name: "HarvestNearU",
+        publisher: { "@id": "https://www.harvestnearu.com/#organization" },
+        inLanguage: "en-NG",
+      },
+    ],
+  };
+  return <html lang="en-NG"><body>{children}<script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}/></body></html>;
 }

@@ -151,7 +151,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ order
   if (record.fulfilment_method === "doorstep") {
     const deliveryId = randomUUID();
     const trackingCode = `TRK-${String(record.order_number).replace(/^HN-/, "")}`;
-    queries.push(sql`INSERT INTO deliveries (id, order_id, status, tracking_code, scheduled_date, window_start, window_end, notes) VALUES (${deliveryId}, ${orderId}, 'scheduled', ${trackingCode}, current_date + 1, '09:00', '13:00', 'Awaiting farm preparation') ON CONFLICT (order_id) DO NOTHING`);
+    queries.push(sql`INSERT INTO deliveries (id, order_id, status, tracking_code, notes) VALUES (${deliveryId}, ${orderId}, 'scheduled', ${trackingCode}, 'Awaiting farm preparation') ON CONFLICT (order_id) DO NOTHING`);
     queries.push(sql`INSERT INTO delivery_events (delivery_id, status, message) SELECT id, 'scheduled', 'Payment confirmed; delivery scheduled' FROM deliveries WHERE order_id = ${orderId}`);
   }
   await sql.transaction(queries);

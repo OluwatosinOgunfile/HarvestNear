@@ -23,8 +23,7 @@ export async function GET() {
       (SELECT payment.status FROM payments payment WHERE payment.order_id = orders.id ORDER BY payment.created_at DESC LIMIT 1) AS payment_status,
       (SELECT json_build_object('status', refund.status, 'resolution_method', refund.resolution_method, 'amount_kobo', refund.amount_kobo, 'cancellation_fee_kobo', refund.cancellation_fee_kobo, 'requested_at', refund.requested_at) FROM refunds refund WHERE refund.order_id = orders.id ORDER BY refund.requested_at DESC LIMIT 1) AS refund,
       (SELECT json_build_object('id', delivery.id, 'status', delivery.status, 'tracking_code', delivery.tracking_code,
-        'courier_name', delivery.courier_name, 'courier_phone', delivery.courier_phone, 'scheduled_date', delivery.scheduled_date,
-        'window_start', delivery.window_start, 'window_end', delivery.window_end,
+        'courier_name', delivery.courier_name, 'courier_phone', delivery.courier_phone,
         'events', coalesce((SELECT json_agg(json_build_object('id', event.id, 'status', event.status, 'message', event.message, 'occurred_at', event.occurred_at) ORDER BY event.occurred_at) FROM delivery_events event WHERE event.delivery_id = delivery.id), '[]'))
         FROM deliveries delivery WHERE delivery.order_id = orders.id) AS tracking,
       coalesce((SELECT json_agg(json_build_object('id', farm.id, 'name', farm.name, 'rating', review.rating, 'comment', review.comment) ORDER BY farm.name)
@@ -108,7 +107,7 @@ export async function POST(request: Request) {
   if (paidWithCredit) queries.push(sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) SELECT DISTINCT farm.owner_id, 'order', 'New order to fulfil', ${`Order ${orderNumber} is paid and ready for fulfilment.`}, '/farmer', ${JSON.stringify({ orderId, orderNumber })}::jsonb FROM farm_orders farm_order JOIN farms farm ON farm.id = farm_order.farm_id WHERE farm_order.order_id = ${orderId}`);
   if (paidWithCredit && fulfilmentMethod === "doorstep") {
     const deliveryId = randomUUID(); const trackingCode = `TRK-${orderNumber.slice(3)}`;
-    queries.push(sql`INSERT INTO deliveries (id, order_id, status, tracking_code, scheduled_date, window_start, window_end, notes) VALUES (${deliveryId}, ${orderId}, 'scheduled', ${trackingCode}, current_date + 1, '09:00', '13:00', 'Paid with account credit; awaiting farm preparation')`);
+    queries.push(sql`INSERT INTO deliveries (id, order_id, status, tracking_code, notes) VALUES (${deliveryId}, ${orderId}, 'scheduled', ${trackingCode}, 'Paid with account credit; awaiting farm preparation')`);
     queries.push(sql`INSERT INTO delivery_events (delivery_id, status, message) VALUES (${deliveryId}, 'scheduled', 'Payment completed with account credit')`);
   }
 

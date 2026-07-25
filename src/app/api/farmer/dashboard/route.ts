@@ -41,7 +41,7 @@ export async function GET(request: Request) {
       coalesce((SELECT sum(farmer_net_kobo) FROM farm_orders WHERE farm_id = ${farm.id} AND status IN ('delivered','collected')), 0) AS cumulative_net_kobo`,
     sql`SELECT fo.id, o.order_number, fo.status, fo.subtotal_kobo, fo.farmer_net_kobo, o.fulfilment_method, o.placed_at,
       o.delivery_address_snapshot, o.customer_note, users.id AS customer_id, users.email AS customer_email, users.phone AS customer_phone, users.avatar_url AS customer_avatar,
-      delivery.tracking_code, delivery.status AS delivery_status, delivery.window_start, delivery.window_end,
+      delivery.tracking_code, delivery.status AS delivery_status,
       users.first_name || ' ' || users.last_name AS customer,
       json_agg(json_build_object(
         'id', items.id, 'name', items.product_name, 'quantity', items.quantity, 'unit', items.unit,
@@ -50,7 +50,7 @@ export async function GET(request: Request) {
       ) ORDER BY items.created_at) AS items
       FROM farm_orders fo JOIN orders o ON o.id = fo.order_id JOIN users ON users.id = o.customer_id
       JOIN order_items items ON items.farm_order_id = fo.id LEFT JOIN deliveries delivery ON delivery.order_id = o.id WHERE fo.farm_id = ${farm.id} AND fo.status <> 'pending_payment'
-      GROUP BY fo.id, o.order_number, o.fulfilment_method, o.placed_at, o.delivery_address_snapshot, o.customer_note, users.id, users.email, users.phone, users.avatar_url, users.first_name, users.last_name, delivery.tracking_code, delivery.status, delivery.window_start, delivery.window_end
+      GROUP BY fo.id, o.order_number, o.fulfilment_method, o.placed_at, o.delivery_address_snapshot, o.customer_note, users.id, users.email, users.phone, users.avatar_url, users.first_name, users.last_name, delivery.tracking_code, delivery.status
       ORDER BY o.placed_at DESC LIMIT 50`,
     sql`SELECT listing.id, listing.title, listing.unit, listing.unit_price_kobo, listing.quantity_available,
       listing.quantity_reserved, listing.quantity_sold, listing.status, listing.harvest_date, listing.badge, product.category_id, image.url AS image_url
