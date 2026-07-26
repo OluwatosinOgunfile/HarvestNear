@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
 import { listingImageUrl } from "@/lib/images";
 
@@ -9,15 +10,34 @@ const DEFAULT_LATITUDE = 9.0019;
 const DEFAULT_LONGITUDE = 7.4534;
 
 export async function GET(request: NextRequest) {
-  const latitude = Number(request.nextUrl.searchParams.get("lat") ?? DEFAULT_LATITUDE);
-  const longitude = Number(request.nextUrl.searchParams.get("lng") ?? DEFAULT_LONGITUDE);
-
-  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
-    return NextResponse.json({ error: "Invalid coordinates" }, { status: 400 });
-  }
-
   try {
     const sql = getDatabase();
+    const session = await getSessionUser();
+    let latitude = Number(request.nextUrl.searchParams.get("lat") ?? DEFAULT_LATITUDE);
+    let longitude = Number(request.nextUrl.searchParams.get("lng") ?? DEFAULT_LONGITUDE);
+    let proximitySource: "saved_address" | "selected_location" = "selected_location";
+
+    if (session && ["consumer", "farmer"].includes(session.role)) {
+      const [address] = await sql`
+        SELECT latitude, longitude
+        FROM addresses
+        WHERE user_id = ${session.id}
+        ORDER BY is_default DESC, updated_at DESC
+        LIMIT 1
+      `;
+      const savedLatitude = Number(address?.latitude);
+      const savedLongitude = Number(address?.longitude);
+      if (Number.isFinite(savedLatitude) && Number.isFinite(savedLongitude)) {
+        latitude = savedLatitude;
+        longitude = savedLongitude;
+        proximitySource = "saved_address";
+      }
+    }
+
+    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+      return NextResponse.json({ error: "Invalid coordinates" }, { status: 400 });
+    }
+
     const [rows, statsRows] = await Promise.all([sql`
       SELECT
         listing.id,
@@ -89,6 +109,7 @@ export async function GET(request: NextRequest) {
     const stats = statsRows[0];
     return NextResponse.json({
       produce,
+      proximity: { source: proximitySource },
       stats: {
         farms: Number(stats.farms),
         listings: Number(stats.listings),
