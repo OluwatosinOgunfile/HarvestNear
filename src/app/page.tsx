@@ -1,11 +1,11 @@
-"use client";
+﻿"use client";
 /* eslint-disable @next/next/no-img-element */
 
 import {
   ArrowLeft,
   ArrowRight,
-  Bell,
   BadgeCheck,
+  Bell,
   Check,
   ChevronLeft,
   ChevronDown,
@@ -40,6 +40,7 @@ import {
   X,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { readJsonResponse } from "@/lib/client-api";
 
 type Product = {
   id: string;
@@ -63,6 +64,10 @@ function ModalBrand() {
   return <div className="modal-brand" aria-hidden="true"><img src="/brand/harvestnearu-header-lockup.png" alt=""/></div>;
 }
 
+function VerificationSeal({ label = "Verified" }: { label?: string }) {
+  return <span className="verification-seal" title={label} aria-label={label}><BadgeCheck size={16} strokeWidth={2.4}/></span>;
+}
+
 type ManualPaymentSettings = { bank_name: string; account_name: string; account_number: string; instructions: string | null; is_enabled: boolean };
 
 type MarketplaceStats = {
@@ -73,7 +78,6 @@ type MarketplaceStats = {
   farmers: number;
 };
 
-const categories = ["All produce", "Vegetables", "Fruits", "Tubers", "Grains", "Eggs"];
 const deliveryLocations = [
   { name: "Gudu, Abuja", latitude: 9.0019, longitude: 7.4534 },
   { name: "Wuse 2, Abuja", latitude: 9.0765, longitude: 7.4651 },
@@ -131,6 +135,14 @@ function money(value: number) {
   return new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 }).format(value);
 }
 
+function quantityLabel(quantity: number, unit: string) {
+  const normalized = unit.trim();
+  if (quantity === 1 || !normalized || /\s/.test(normalized) || normalized.endsWith("s")) return `${quantity} ${normalized}`;
+  if (/(ch|sh|x|z)$/i.test(normalized)) return `${quantity} ${normalized}es`;
+  if (/[^aeiou]y$/i.test(normalized)) return `${quantity} ${normalized.slice(0, -1)}ies`;
+  return `${quantity} ${normalized}s`;
+}
+
 function quantityUnit(unit: string, quantity: number) {
   if (Number(quantity) === 1) return unit;
   const normalized = unit.trim().toLowerCase();
@@ -138,12 +150,6 @@ function quantityUnit(unit: string, quantity: number) {
   if (normalized.endsWith("ch") || normalized.endsWith("sh") || normalized.endsWith("x")) return `${unit}es`;
   if (normalized.endsWith("y") && !/[aeiou]y$/.test(normalized)) return `${unit.slice(0, -1)}ies`;
   return `${unit}s`;
-}
-
-async function readJsonResponse<T extends object>(response: Response): Promise<T> {
-  const contentType = response.headers.get("content-type") || "";
-  if (contentType.includes("application/json")) return response.json() as Promise<T>;
-  return {} as T;
 }
 
 function walkingTime(distanceKm: number) {
@@ -178,7 +184,7 @@ async function uploadListingImage(file: File) {
   if (file.size > 4 * 1024 * 1024) throw new Error("Listing images must be 4 MB or smaller");
   const form = new FormData(); form.set("file", file);
   const response = await fetch("/api/uploads/listing-image", { method: "POST", body: form });
-  const result = await response.json() as { url?: string; error?: string };
+  const result = await readJsonResponse(response) as { url?: string; error?: string };
   if (!response.ok || !result.url) throw new Error(result.error || "Could not upload the listing image");
   return result.url;
 }
@@ -248,6 +254,8 @@ export default function Home() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [locationOpen, setLocationOpen] = useState(false);
   const [deliveryLocation, setDeliveryLocation] = useState(deliveryLocations[0]);
+  const [locationOverride, setLocationOverride] = useState(false);
+  const [savedLocationLabel, setSavedLocationLabel] = useState("");
   const [maxDistance, setMaxDistance] = useState(20);
   const [maxPrice, setMaxPrice] = useState(50000);
   const [distanceFilterActive, setDistanceFilterActive] = useState(false);
@@ -271,11 +279,15 @@ export default function Home() {
     const controller = new AbortController();
     async function loadProduce() {
       try {
-        const response = await fetch(`/api/produce?lat=${deliveryLocation.latitude}&lng=${deliveryLocation.longitude}`, { signal: controller.signal, cache: "no-store" });
+        const produceUrl = locationOverride
+          ? `/api/produce?origin=selected&lat=${deliveryLocation.latitude}&lng=${deliveryLocation.longitude}`
+          : "/api/produce";
+        const response = await fetch(produceUrl, { signal: controller.signal, cache: "no-store" });
         if (!response.ok) throw new Error("Could not load produce");
-        const data = await response.json() as { produce: Product[]; stats: MarketplaceStats };
+        const data = await readJsonResponse(response) as { produce: Product[]; stats: MarketplaceStats; proximity?: { source: string; label: string | null } };
         setProducts(data.produce);
         setMarketplaceStats(data.stats);
+        if (data.proximity?.source === "saved_address") setSavedLocationLabel(data.proximity.label || "Saved address");
         setProductsError(false);
       } catch (error) {
         if ((error as Error).name !== "AbortError") setProductsError(true);
@@ -285,11 +297,11 @@ export default function Home() {
     }
     loadProduce();
     return () => controller.abort();
-  }, [view, deliveryLocation.latitude, deliveryLocation.longitude]);
+  }, [view, deliveryLocation.latitude, deliveryLocation.longitude, locationOverride, currentUser?.id]);
 
   useEffect(() => {
     fetch("/api/auth/session")
-      .then((response) => response.json())
+      .then((response) => readJsonResponse<{ user: CurrentUser | null }>(response))
       .then(async (data: { user: CurrentUser | null }) => {
         setCurrentUser(data.user);
         const localCart = JSON.parse(localStorage.getItem("harvestnearu-cart") || "{}") as Record<string, number>;
@@ -300,8 +312,8 @@ export default function Home() {
         const [cartResponse, favouriteResponse, notificationResponse] = await Promise.all([
           fetch("/api/cart", { cache: "no-store" }), fetch("/api/favourites", { cache: "no-store" }), fetch("/api/notifications", { cache: "no-store" }),
         ]);
-        const cartData = await cartResponse.json() as { cart?: Record<string, number> };
-        const favouriteData = await favouriteResponse.json() as { favourites?: string[] };
+        const cartData = await readJsonResponse(cartResponse) as { cart?: Record<string, number> };
+        const favouriteData = await readJsonResponse(favouriteResponse) as { favourites?: string[] };
         const mergedCart = { ...(cartData.cart || {}), ...localCart };
         const mergedFavourites = [...new Set([...(favouriteData.favourites || []), ...localFavourites])];
         setCart(mergedCart); setLiked(mergedFavourites);
@@ -309,7 +321,7 @@ export default function Home() {
         if (Object.keys(localCart).length) fetch("/api/cart", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: Object.entries(mergedCart).map(([listingId, quantity]) => ({ listingId, quantity })) }) });
         for (const listingId of localFavourites) fetch("/api/favourites", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ listingId, saved: true }) });
         if (notificationResponse.ok) {
-          const data = await notificationResponse.json() as { notifications: Array<{ id: string; type: NotificationItem["type"]; title: string; message: string; action_url: string | null; read_at: string | null; created_at: string }> };
+          const data = await readJsonResponse(notificationResponse) as { notifications: Array<{ id: string; type: NotificationItem["type"]; title: string; message: string; action_url: string | null; read_at: string | null; created_at: string }> };
           setNotifications(data.notifications.map((item) => ({ id: item.id, type: item.type, title: item.title, message: item.message, time: relativeTime(item.created_at), read: Boolean(item.read_at), target: notificationView(item.action_url) })));
         }
       })
@@ -317,7 +329,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const refreshAccount = () => fetch("/api/auth/session", { cache: "no-store" }).then((response) => response.json()).then((data: { user: CurrentUser | null }) => setCurrentUser(data.user));
+    const refreshAccount = () => fetch("/api/auth/session", { cache: "no-store" }).then((response) => readJsonResponse<{ user: CurrentUser | null }>(response)).then((data) => setCurrentUser(data.user));
     window.addEventListener("harvestnearu-profile-updated", refreshAccount);
     return () => window.removeEventListener("harvestnearu-profile-updated", refreshAccount);
   }, []);
@@ -334,7 +346,7 @@ export default function Home() {
     async function refreshNotifications() {
       const response = await fetch("/api/notifications", { cache: "no-store" });
       if (!response.ok || !active) return;
-      const data = await response.json() as { notifications: Array<{ id: string; type: NotificationItem["type"]; title: string; message: string; action_url: string | null; read_at: string | null; created_at: string }> };
+      const data = await readJsonResponse(response) as { notifications: Array<{ id: string; type: NotificationItem["type"]; title: string; message: string; action_url: string | null; read_at: string | null; created_at: string }> };
       if (active) setNotifications(data.notifications.map((item) => ({ id: item.id, type: item.type, title: item.title, message: item.message, time: relativeTime(item.created_at), read: Boolean(item.read_at), target: notificationView(item.action_url) })));
     }
     const interval = window.setInterval(refreshNotifications, 30_000);
@@ -352,7 +364,7 @@ export default function Home() {
     if (!accountMenuOpen || !canPurchase) return;
     let active = true;
     fetch("/api/store-credit", { cache: "no-store" }).then(async (response) => {
-      const result = await response.json() as { balanceKobo?: number };
+      const result = await readJsonResponse(response) as { balanceKobo?: number };
       if (active && response.ok) setAccountCreditKobo(Number(result.balanceKobo || 0));
     }).catch(() => undefined);
     return () => { active = false; };
@@ -416,7 +428,7 @@ export default function Home() {
       const response = await fetch("/api/auth/signin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ identifier: signinIdentifier, password: signinPassword }) });
       const contentType = response.headers.get("content-type") || "";
       const data = contentType.includes("application/json")
-        ? await response.json() as { user?: CurrentUser; error?: string }
+        ? await readJsonResponse(response) as { user?: CurrentUser; error?: string }
         : { error: response.status === 404 ? "Sign-in service is unavailable. Refresh the page and try again." : "The sign-in service returned an unexpected response. Try again shortly." };
       if (!response.ok || !data.user) throw new Error(data.error || "Sign in failed");
       setCurrentUser(data.user);
@@ -440,6 +452,7 @@ export default function Home() {
   async function signOut() {
     await fetch("/api/auth/signout", { method: "POST" });
     setCurrentUser(null);
+    setSavedLocationLabel(""); setLocationOverride(false);
     setCart({}); setLiked([]); setNotifications([]);
     setAccountMenuOpen(false);
     window.history.replaceState({}, "", "/");
@@ -461,11 +474,11 @@ export default function Home() {
     window.history.replaceState({}, "", viewPaths[targetView]);
     setView(targetView);
     if (["consumer", "farmer"].includes(user.role)) void Promise.all([fetch("/api/cart", { cache: "no-store" }), fetch("/api/favourites", { cache: "no-store" }), fetch("/api/notifications", { cache: "no-store" })]).then(async ([cartResponse, favouriteResponse, notificationResponse]) => {
-      const cartData = await cartResponse.json() as { cart?: Record<string, number> };
-      const favouriteData = await favouriteResponse.json() as { favourites?: string[] };
+      const cartData = await readJsonResponse(cartResponse) as { cart?: Record<string, number> };
+      const favouriteData = await readJsonResponse(favouriteResponse) as { favourites?: string[] };
       setCart(cartData.cart || {}); setLiked(favouriteData.favourites || []);
       if (notificationResponse.ok) {
-        const data = await notificationResponse.json() as { notifications: Array<{ id: string; type: NotificationItem["type"]; title: string; message: string; action_url: string | null; read_at: string | null; created_at: string }> };
+        const data = await readJsonResponse(notificationResponse) as { notifications: Array<{ id: string; type: NotificationItem["type"]; title: string; message: string; action_url: string | null; read_at: string | null; created_at: string }> };
         setNotifications(data.notifications.map((item) => ({ id: item.id, type: item.type, title: item.title, message: item.message, time: relativeTime(item.created_at), read: Boolean(item.read_at), target: notificationView(item.action_url) })));
       }
     });
@@ -474,7 +487,7 @@ export default function Home() {
   async function beginCheckout() {
     try {
       const response = await fetch("/api/auth/session", { cache: "no-store" });
-      const data = await response.json() as { user: CurrentUser | null };
+      const data = await readJsonResponse(response) as { user: CurrentUser | null };
       if (!response.ok || !data.user || !["consumer", "farmer"].includes(data.user.role)) {
         setCurrentUser(data.user || null);
         setCartOpen(false);
@@ -484,7 +497,7 @@ export default function Home() {
       setCurrentUser(data.user);
       await hydrateShoppingState(data.user);
       const settingsResponse = await fetch("/api/payments/manual/settings", { cache: "no-store" });
-      const settingsResult = await settingsResponse.json() as { settings?: ManualPaymentSettings; storeCreditKobo?: number; error?: string };
+      const settingsResult = await readJsonResponse(settingsResponse) as { settings?: ManualPaymentSettings; storeCreditKobo?: number; error?: string };
       setManualPaymentSettings(settingsResponse.ok && settingsResult.settings ? settingsResult.settings : null);
       setStoreCreditKobo(settingsResponse.ok ? Number(settingsResult.storeCreditKobo || 0) : 0);
       const creditCoversOrder = Number(settingsResult.storeCreditKobo || 0) >= Math.round((subtotal + deliveryFee) * 100);
@@ -538,7 +551,7 @@ export default function Home() {
       const confirmPassword = String(form.get("confirmPassword") || "");
       if (password !== confirmPassword) throw new Error("Passwords do not match");
       const response = await fetch("/api/auth/signup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ firstName: form.get("firstName"), lastName: form.get("lastName"), phone: form.get("phone"), email: form.get("email"), password, confirmPassword, role: signupRole, farmName: form.get("farmName"), farmLocation: form.get("farmLocation"), latitude: form.get("latitude"), longitude: form.get("longitude") }) });
-      const data = await response.json() as { user?: CurrentUser; error?: string };
+      const data = await readJsonResponse(response) as { user?: CurrentUser; error?: string };
       if (!response.ok || !data.user) throw new Error(data.error || "Account creation failed");
       setCurrentUser(data.user);
       if (pendingCheckout && ["consumer", "farmer"].includes(data.user.role)) {
@@ -556,9 +569,15 @@ export default function Home() {
     }
   }
 
+  const availableCategories = useMemo(() => [
+    "All produce",
+    ...new Set(products.map((product) => product.category).filter(Boolean).sort((left, right) => left.localeCompare(right))),
+  ], [products]);
+  const effectiveCategory = availableCategories.includes(category) ? category : "All produce";
+
   const visible = useMemo(() => {
     const filtered = products.filter((product) =>
-      (category === "All produce" || product.category === category) &&
+      (effectiveCategory === "All produce" || product.category === effectiveCategory) &&
       (product.name.toLowerCase().includes(query.toLowerCase()) || product.farmer.toLowerCase().includes(query.toLowerCase())) &&
       (!distanceFilterActive || product.distance <= maxDistance) &&
       (!priceFilterActive || product.price <= maxPrice) &&
@@ -571,7 +590,7 @@ export default function Home() {
       if (sortBy === "stock") return b.stock - a.stock;
       return a.distance - b.distance;
     });
-  }, [products, category, query, distanceFilterActive, maxDistance, priceFilterActive, maxPrice, todayOnly, hideLowStock, sortBy]);
+  }, [products, effectiveCategory, query, distanceFilterActive, maxDistance, priceFilterActive, maxPrice, todayOnly, hideLowStock, sortBy]);
 
   const activeFilterCount = Number(distanceFilterActive) + Number(priceFilterActive) + Number(todayOnly) + Number(hideLowStock);
   const pageSize = 8;
@@ -591,15 +610,15 @@ export default function Home() {
   async function hydrateShoppingState(user: CurrentUser) {
     if (!["consumer", "farmer"].includes(user.role)) return;
     const [cartResponse, favouriteResponse, notificationResponse] = await Promise.all([fetch("/api/cart", { cache: "no-store" }), fetch("/api/favourites", { cache: "no-store" }), fetch("/api/notifications", { cache: "no-store" })]);
-    const cartData = await cartResponse.json() as { cart?: Record<string, number> };
-    const favouriteData = await favouriteResponse.json() as { favourites?: string[] };
+    const cartData = await readJsonResponse(cartResponse) as { cart?: Record<string, number> };
+    const favouriteData = await readJsonResponse(favouriteResponse) as { favourites?: string[] };
     const mergedCart = { ...(cartData.cart || {}), ...cart };
     const mergedFavourites = [...new Set([...(favouriteData.favourites || []), ...liked])];
     setCart(mergedCart); setLiked(mergedFavourites);
     if (Object.keys(cart).length) persistCartForUser(mergedCart);
     for (const listingId of liked) fetch("/api/favourites", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ listingId, saved: true }) });
     if (notificationResponse.ok) {
-      const data = await notificationResponse.json() as { notifications: Array<{ id: string; type: NotificationItem["type"]; title: string; message: string; action_url: string | null; read_at: string | null; created_at: string }> };
+      const data = await readJsonResponse(notificationResponse) as { notifications: Array<{ id: string; type: NotificationItem["type"]; title: string; message: string; action_url: string | null; read_at: string | null; created_at: string }> };
       setNotifications(data.notifications.map((item) => ({ id: item.id, type: item.type, title: item.title, message: item.message, time: relativeTime(item.created_at), read: Boolean(item.read_at), target: notificationView(item.action_url) })));
     }
   }
@@ -663,6 +682,7 @@ export default function Home() {
     if (!navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition((position) => {
       setDeliveryLocation({ name: "Current location", latitude: position.coords.latitude, longitude: position.coords.longitude });
+      setLocationOverride(true);
       setLocationOpen(false);
       setCurrentPage(1);
     });
@@ -738,7 +758,7 @@ export default function Home() {
 
           <section className="discovery-bar">
             <label className="search-box"><Search size={20} /><input value={query} onChange={(e) => { setQuery(e.target.value); setCurrentPage(1); }} placeholder="Search tomatoes, yam, farmer..." /></label>
-            <div className="location-picker"><button className={`location-button ${locationOpen ? "active" : ""}`} onClick={() => { setLocationOpen((open) => !open); setFiltersOpen(false); }} aria-expanded={locationOpen} aria-haspopup="listbox"><span className="loc-icon"><LocateFixed size={18}/></span><span><small>DELIVERING TO</small><strong>{deliveryLocation.name}</strong></span><ChevronDown className={locationOpen ? "open" : ""} size={17}/></button>{locationOpen && <><button className="location-backdrop" aria-label="Close delivery locations" onClick={() => setLocationOpen(false)}/><div className="location-menu" role="listbox" aria-label="Delivery location"><header><strong>Choose your area</strong><small>Travel times update automatically</small></header><button className="device-location" onClick={useDeviceLocation}><LocateFixed size={16}/><span><strong>Use current location</strong><small>Allow location access in your browser</small></span></button>{deliveryLocations.map((location) => <button role="option" aria-selected={deliveryLocation.name === location.name} className={deliveryLocation.name === location.name ? "selected" : ""} key={location.name} onClick={() => { setDeliveryLocation(location); setLocationOpen(false); setCurrentPage(1); }}><MapPin size={15}/><span>{location.name}</span>{deliveryLocation.name === location.name && <Check size={14}/>}</button>)}</div></>}</div>
+            <div className="location-picker"><button className={`location-button ${locationOpen ? "active" : ""}`} onClick={() => { setLocationOpen((open) => !open); setFiltersOpen(false); }} aria-expanded={locationOpen} aria-haspopup="listbox"><span className="loc-icon"><LocateFixed size={18}/></span><span><small>DELIVERING TO</small><strong>{locationOverride ? deliveryLocation.name : savedLocationLabel || deliveryLocation.name}</strong></span><ChevronDown className={locationOpen ? "open" : ""} size={17}/></button>{locationOpen && <><button className="location-backdrop" aria-label="Close delivery locations" onClick={() => setLocationOpen(false)}/><div className="location-menu" role="listbox" aria-label="Delivery location"><header><strong>Choose your area</strong><small>Travel times update automatically</small></header>{savedLocationLabel && <button role="option" aria-selected={!locationOverride} className={`device-location saved-location ${!locationOverride ? "selected" : ""}`} onClick={() => { setLocationOverride(false); setLocationOpen(false); setCurrentPage(1); }}><House size={16}/><span><strong>Home</strong><small>{savedLocationLabel}</small></span>{!locationOverride && <Check size={14}/>}</button>}<button className="device-location" onClick={useDeviceLocation}><LocateFixed size={16}/><span><strong>Use current location</strong><small>Allow location access in your browser</small></span></button>{deliveryLocations.map((location) => <button role="option" aria-selected={locationOverride && deliveryLocation.name === location.name} className={locationOverride && deliveryLocation.name === location.name ? "selected" : ""} key={location.name} onClick={() => { setDeliveryLocation(location); setLocationOverride(true); setLocationOpen(false); setCurrentPage(1); }}><MapPin size={15}/><span>{location.name}</span>{locationOverride && deliveryLocation.name === location.name && <Check size={14}/>}</button>)}</div></>}</div>
             <button className={`filter-button ${activeFilterCount ? "active" : ""}`} onClick={() => setFiltersOpen((open) => !open)}><SlidersHorizontal size={18} /> Filters {activeFilterCount > 0 && <b>{activeFilterCount}</b>}</button>
             {filtersOpen && <div className="filter-popover">
               <div className="filter-head"><div><strong>Filter harvests</strong><span>Refine what is shown near you</span></div><button onClick={() => setFiltersOpen(false)}><X size={17}/></button></div>
@@ -751,11 +771,11 @@ export default function Home() {
 
           <section className="catalog">
             <div className="catalog-head">
-              <div><h2>Harvests near you</h2><p>{visible.length} available listings matched near Gudu</p></div>
+              <div><h2>Harvests near you</h2><p>{visible.length} available listing{visible.length === 1 ? "" : "s"} near {locationOverride ? deliveryLocation.name : savedLocationLabel || deliveryLocation.name}</p></div>
               <label className="sort"><span>Sort by</span><select value={sortBy} onChange={(event) => { setSortBy(event.target.value as typeof sortBy); setCurrentPage(1); }}><option value="nearest">Shortest walk first</option><option value="price-low">Price: low to high</option><option value="price-high">Price: high to low</option><option value="rating">Highest rated</option><option value="stock">Most available</option></select><ChevronDown size={15}/></label>
             </div>
             <div className="category-row">
-              {categories.map((item) => <button key={item} onClick={() => { setCategory(item); setCurrentPage(1); }} className={category === item ? "selected" : ""}>{item}</button>)}
+              {availableCategories.map((item) => <button key={item} onClick={() => { setCategory(item); setCurrentPage(1); }} className={effectiveCategory === item ? "selected" : ""}>{item}</button>)}
             </div>
 
             {productsLoading ? <HarvestSpinner compact label="Loading nearby harvests"/> : productsError ? <div className="empty-state"><RotateCcw size={28} /><h3>Could not load harvests</h3><p>Please refresh the page to try again.</p></div> : visible.length ? <div className="product-grid">
@@ -770,7 +790,7 @@ export default function Home() {
                   <div className="product-body">
                     <div className="availability"><span /> {product.available}</div>
                     <h3>{product.name}</h3>
-                    <p className="farmer"><Store size={14} /> {product.farmer} <Check size={12} /></p>
+                    <p className="farmer"><Store size={14} /> {product.farmer} <VerificationSeal label="Verified farm"/></p>
                     <div className="rating"><Star size={14} fill="currentColor" /> {product.rating} <span>({product.reviewCount})</span></div>
                     <div className="stock-track"><span style={{ width: `${Math.max(12, product.stock / (product.stock + product.sold) * 100)}%` }} /></div>
                     <p className="stock-copy">{product.stock} {quantityUnit(product.unit, product.stock)} left</p>
@@ -948,7 +968,7 @@ function SupportTicketCentre({ user, onSignIn }: { user: CurrentUser | null; onS
   async function loadTickets() {
     if (!user) return;
     const response = await fetch("/api/support/tickets", { cache: "no-store" });
-    const data = await response.json() as { tickets?: SupportTicket[]; agents?: Array<{ id: string; name: string }>; staff?: boolean; error?: string };
+    const data = await readJsonResponse(response) as { tickets?: SupportTicket[]; agents?: Array<{ id: string; name: string }>; staff?: boolean; error?: string };
     if (!response.ok) throw new Error(data.error || "Could not load support tickets");
     setTickets(data.tickets || []); setAgents(data.agents || []); setStaff(Boolean(data.staff));
   }
@@ -956,7 +976,7 @@ function SupportTicketCentre({ user, onSignIn }: { user: CurrentUser | null; onS
     if (!user) return;
     let cancelled = false;
     fetch("/api/support/tickets", { cache: "no-store" }).then(async (response) => {
-      const data = await response.json() as { tickets?: SupportTicket[]; agents?: Array<{ id: string; name: string }>; staff?: boolean; error?: string };
+      const data = await readJsonResponse(response) as { tickets?: SupportTicket[]; agents?: Array<{ id: string; name: string }>; staff?: boolean; error?: string };
       if (!response.ok) throw new Error(data.error || "Could not load support tickets");
       if (!cancelled) { setTickets(data.tickets || []); setAgents(data.agents || []); setStaff(Boolean(data.staff)); }
     }).catch((reason: Error) => { if (!cancelled) setError(reason.message); });
@@ -967,7 +987,7 @@ function SupportTicketCentre({ user, onSignIn }: { user: CurrentUser | null; onS
     try {
       const values = Object.fromEntries(new FormData(event.currentTarget).entries());
       const response = await fetch("/api/support/tickets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(values) });
-      const data = await response.json() as { ticket?: { id: string }; error?: string };
+      const data = await readJsonResponse(response) as { ticket?: { id: string }; error?: string };
       if (!response.ok) throw new Error(data.error || "Could not create ticket");
       event.currentTarget.reset(); await loadTickets(); setSelectedId(data.ticket?.id || null);
     } catch (reason) { setError((reason as Error).message); } finally { setBusy(false); }
@@ -977,7 +997,7 @@ function SupportTicketCentre({ user, onSignIn }: { user: CurrentUser | null; onS
     try {
       const values = Object.fromEntries(new FormData(event.currentTarget).entries());
       const response = await fetch("/api/support/tickets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...values, ticketId: selected.id }) });
-      const data = await response.json() as { error?: string };
+      const data = await readJsonResponse(response) as { error?: string };
       if (!response.ok) throw new Error(data.error || "Could not send reply");
       event.currentTarget.reset(); await loadTickets();
     } catch (reason) { setError((reason as Error).message); } finally { setBusy(false); }
@@ -991,7 +1011,7 @@ function SupportTicketCentre({ user, onSignIn }: { user: CurrentUser | null; onS
       const comment = String(values.comment || "").trim();
       if (rating < 1 || rating > 5) throw new Error("Select an experience rating");
       const response = await fetch("/api/support/tickets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ category: "feedback", subject: `Website experience feedback: ${area}`, message: `Experience rating: ${rating}/5\nArea: ${area}\n\n${comment}` }) });
-      const data = await response.json() as { ticket?: { id: string }; error?: string };
+      const data = await readJsonResponse(response) as { ticket?: { id: string }; error?: string };
       if (!response.ok) throw new Error(data.error || "Could not submit feedback");
       event.currentTarget.reset(); setFeedbackRating(0); setFeedbackSent(true); await loadTickets(); setSelectedId(data.ticket?.id || null);
     } catch (reason) { setError((reason as Error).message); } finally { setBusy(false); }
@@ -1001,7 +1021,7 @@ function SupportTicketCentre({ user, onSignIn }: { user: CurrentUser | null; onS
     const payload = { ticketId: selected.id, status: selected.status, priority: selected.priority, assigneeId: selected.assigned_to, [field]: value || null };
     try {
       const response = await fetch("/api/support/tickets", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      const data = await response.json() as { error?: string };
+      const data = await readJsonResponse(response) as { error?: string };
       if (!response.ok) throw new Error(data.error || "Could not update ticket");
       await loadTickets();
     } catch (reason) { setError((reason as Error).message); } finally { setBusy(false); }
@@ -1140,14 +1160,17 @@ function AdminPage({ readOnly, supportAccess, onImpersonated }: { readOnly: bool
   const [userTimeZone, setUserTimeZone] = useState("UTC");
 
   useEffect(() => {
-    const detectedTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    if (detectedTimeZone) setUserTimeZone(detectedTimeZone);
+    const timer = window.setTimeout(() => {
+      const detectedTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (detectedTimeZone) setUserTimeZone(detectedTimeZone);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   async function loadOverview() {
     const response = await fetch("/api/admin/overview");
     if (!response.ok) throw new Error("Forbidden");
-    setOverview(await response.json());
+    setOverview(await readJsonResponse<AdminOverview>(response));
   }
 
   async function loadEntities(type: AdminEntityType) {
@@ -1161,10 +1184,14 @@ function AdminPage({ readOnly, supportAccess, onImpersonated }: { readOnly: bool
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/admin/overview").then((response) => { if (!response.ok) throw new Error("Forbidden"); return response.json(); }),
-      fetch("/api/admin/entities?type=options").then((response) => { if (!response.ok) throw new Error("Forbidden"); return response.json(); }),
-      fetch("/api/admin/payment-settings").then((response) => { if (!response.ok) throw new Error("Forbidden"); return response.json(); }),
-    ]).then(([overviewData, optionsData, settingsData]: [AdminOverview, AdminOptions, { settings: ManualPaymentSettings }]) => { setOverview(overviewData); setOptions(optionsData); setPaymentSettings(settingsData.settings); }).catch(() => setFailed(true));
+      fetch("/api/admin/overview").then((response) => { if (!response.ok) throw new Error("Forbidden"); return readJsonResponse<AdminOverview>(response); }),
+      fetch("/api/admin/entities?type=options").then((response) => { if (!response.ok) throw new Error("Forbidden"); return readJsonResponse<AdminOptions>(response); }),
+      fetch("/api/admin/payment-settings").then((response) => { if (!response.ok) throw new Error("Forbidden"); return readJsonResponse<{ settings?: ManualPaymentSettings }>(response); }),
+    ]).then(([overviewData, optionsData, settingsData]) => {
+      setOverview(overviewData);
+      setOptions(optionsData);
+      if (settingsData.settings) setPaymentSettings(settingsData.settings);
+    }).catch(() => setFailed(true));
   }, []);
 
   useEffect(() => {
@@ -1222,7 +1249,7 @@ function AdminPage({ readOnly, supportAccess, onImpersonated }: { readOnly: bool
   async function openDetails(type: AdminEntityType, id: string) {
     setError("");
     const response = await fetch(`/api/admin/entities?type=${type}&id=${id}`);
-    const data = await response.json() as { entity?: AdminEntity; error?: string };
+    const data = await readJsonResponse(response) as { entity?: AdminEntity; error?: string };
     if (!response.ok || !data.entity) return setError(data.error || "Could not load details");
     setSelected(data.entity);
   }
@@ -1231,7 +1258,22 @@ function AdminPage({ readOnly, supportAccess, onImpersonated }: { readOnly: bool
     event.preventDefault();
     if (section === "overview") return;
     setBusy(true); setError("");
-    const values = Object.fromEntries(new FormData(event.currentTarget).entries());
+    const form = new FormData(event.currentTarget);
+    const image = form.get("image");
+    form.delete("image");
+    const values = Object.fromEntries(form.entries());
+    let uploadedUrl = "";
+    if (section === "produce") {
+      if (!(image instanceof File) || !image.size) {
+        setError("Upload a produce picture before creating the listing."); setBusy(false); return;
+      }
+      try {
+        uploadedUrl = await uploadListingImage(image);
+        values.imageUrl = uploadedUrl;
+      } catch (reason) {
+        setError((reason as Error).message); setBusy(false); return;
+      }
+    }
     if (section === "farms" && (!values.latitude || !values.longitude)) {
       try {
         const position = await new Promise<GeolocationPosition>((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 12000 }));
@@ -1242,8 +1284,11 @@ function AdminPage({ readOnly, supportAccess, onImpersonated }: { readOnly: bool
       }
     }
     const response = await fetch(`/api/admin/entities?type=${section}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(values) });
-    const data = await response.json() as { error?: string };
-    if (!response.ok) { setError(data.error || "Could not add record"); setBusy(false); return; }
+    const data = await readJsonResponse(response) as { error?: string };
+    if (!response.ok) {
+      if (uploadedUrl) void fetch("/api/uploads/listing-image", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: uploadedUrl }) });
+      setError(data.error || "Could not add record"); setBusy(false); return;
+    }
     setAddOpen(false);
     await Promise.all([loadEntities(section), loadOverview()]);
   }
@@ -1252,7 +1297,7 @@ function AdminPage({ readOnly, supportAccess, onImpersonated }: { readOnly: bool
     if (!selected || section === "overview" || !window.confirm(`Remove this ${section === "produce" ? "produce listing" : section.slice(0, -1)}? Historical records will be retained.`)) return;
     setBusy(true); setError("");
     const response = await fetch(`/api/admin/entities?type=${section}&id=${selected.id}`, { method: "DELETE" });
-    const data = await response.json() as { error?: string };
+    const data = await readJsonResponse(response) as { error?: string };
     if (!response.ok) { setError(data.error || "Could not remove record"); setBusy(false); return; }
     setSelected(null);
     await Promise.all([loadEntities(section), loadOverview()]);
@@ -1262,8 +1307,16 @@ function AdminPage({ readOnly, supportAccess, onImpersonated }: { readOnly: bool
     event.preventDefault();
     if (!selected || section === "overview") return;
     setBusy(true); setError("");
+    let uploadedUrl = "";
     try {
-      const values = Object.fromEntries(new FormData(event.currentTarget).entries());
+      const form = new FormData(event.currentTarget);
+      const image = form.get("image");
+      form.delete("image");
+      const values = Object.fromEntries(form.entries());
+      if (section === "produce" && image instanceof File && image.size) {
+        uploadedUrl = await uploadListingImage(image);
+        values.imageUrl = uploadedUrl;
+      }
       const response = await fetch(`/api/admin/entities?type=${section}&id=${selected.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(values) });
       const responseText = await response.text();
       const data = responseText ? JSON.parse(responseText) as { entity?: AdminEntity; error?: string } : {};
@@ -1272,6 +1325,7 @@ function AdminPage({ readOnly, supportAccess, onImpersonated }: { readOnly: bool
       await Promise.all([loadEntities(section), loadOverview()]);
       await openDetails(section, selected.id);
     } catch (reason) {
+      if (uploadedUrl) void fetch("/api/uploads/listing-image", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: uploadedUrl }) });
       setError((reason as Error).message || "Could not update record");
     } finally {
       setBusy(false);
@@ -1303,7 +1357,7 @@ function AdminPage({ readOnly, supportAccess, onImpersonated }: { readOnly: bool
     setBusy(true); setError("");
     try {
       const response = await fetch("/api/admin/impersonate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: selected.id }) });
-      const data = await response.json() as { user?: CurrentUser; error?: string };
+      const data = await readJsonResponse(response) as { user?: CurrentUser; error?: string };
       if (!response.ok) throw new Error(data.error || "Could not view this account");
       if (!data.user) throw new Error("The user session was not returned");
       onImpersonated(data.user);
@@ -1347,7 +1401,7 @@ function AdminPage({ readOnly, supportAccess, onImpersonated }: { readOnly: bool
     try {
       const values = Object.fromEntries(new FormData(event.currentTarget).entries());
       const response = await fetch("/api/admin/payment-settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bankName: values.bankName, accountName: values.accountName, accountNumber: values.accountNumber, instructions: values.instructions, isEnabled: values.isEnabled === "true" }) });
-      const result = await response.json() as { settings?: ManualPaymentSettings; error?: string };
+      const result = await readJsonResponse(response) as { settings?: ManualPaymentSettings; error?: string };
       if (!response.ok || !result.settings) throw new Error(result.error || "Could not save payment settings");
       setPaymentSettings(result.settings); setPaymentSettingsOpen(false);
     } catch (reason) { setError((reason as Error).message); } finally { setBusy(false); }
@@ -1397,8 +1451,8 @@ function AdminPage({ readOnly, supportAccess, onImpersonated }: { readOnly: bool
       </aside>
     </div>}
 
-    {addOpen && section !== "overview" && <div className="modal-overlay" onMouseDown={() => setAddOpen(false)}><div className="admin-add-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close-modal" onClick={() => setAddOpen(false)}><X size={19}/></button><p className="auth-kicker">NEW {section === "produce" ? "LISTING" : section.slice(0, -1).toUpperCase()}</p><h2>Add {section === "produce" ? "produce" : section.slice(0, -1)}</h2><p>Create a new marketplace record. Required fields are marked.</p><form onSubmit={addEntity}>{section === "users" ? <><div className="form-row"><label>First name<input name="firstName" required/></label><label>Last name<input name="lastName" required/></label></div><label>Email<input name="email" type="email" required/></label><label>Phone<input name="phone" required/></label><label>Role<select name="role" required><option value="consumer">Consumer</option><option value="farmer">Farmer</option><option value="support">Support</option><option value="admin">Administrator</option></select></label><label>Temporary password<input name="password" type="password" minLength={8} required/></label></> : section === "farms" ? <><label>Farmer owner<select name="ownerId" required><option value="">Select owner</option>{options.owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.name}</option>)}</select></label><label>Farm name<input name="name" required/></label><div className="form-row"><label>Phone<input name="phone" required/></label><label>Email<input name="email" type="email"/></label></div><label>Address<input name="address" required/></label><div className="form-row"><label>City<input name="city" required/></label><label>State<input name="state" required/></label></div><label className="admin-check"><input type="checkbox" name="offersDelivery" value="true"/> Offers delivery</label></> : <><label>Farm<select name="farmId" required><option value="">Select farm</option>{options.farms.map((farm) => <option key={farm.id} value={farm.id}>{farm.name}</option>)}</select></label><label>Category<select name="categoryId" required><option value="">Select category</option>{options.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>Produce name<input name="name" required/></label><div className="form-row"><label>Unit<input name="unit" placeholder="basket" required/></label><label>Price (NGN)<input name="price" type="number" min="1" required/></label></div><div className="form-row"><label>Stock quantity<input name="stock" type="number" min="1" required/></label><label>Harvest date<input name="harvestDate" type="date" required/></label></div><label>Image path<input name="imageUrl" placeholder="/produce/example.webp"/></label><label>Badge<input name="badge" placeholder="New harvest"/></label></>} {error && <p className="admin-error" role="alert">{error}</p>}<button className="admin-submit" disabled={busy}>{busy ? "Saving..." : "Create record"} {!busy && <ArrowRight size={16}/>}</button></form></div></div>}
-    {editOpen && selected && section !== "overview" && <div className="modal-overlay admin-edit-overlay" onMouseDown={() => setEditOpen(false)}><div className="admin-add-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close-modal" onClick={() => setEditOpen(false)}><X size={19}/></button><p className="auth-kicker">EDIT {section === "produce" ? "LISTING" : section.slice(0, -1).toUpperCase()}</p><h2>{entityTitle(section, selected)}</h2><p>Update this record. Changes are saved to the audit log.</p><form onSubmit={editEntity}>{section === "orders" ? <label>Order status<select name="status" defaultValue={String(selected.status)} required>{["paid","confirmed","preparing","ready","dispatched","delivered","collected","cancelled","refunded"].map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}</select></label> : section === "refunds" ? <><label>Refund status<select name="status" defaultValue={String(selected.status)} required>{["requested","under_review","approved","rejected","processing","completed","failed"].map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}</select></label><label>Resolution note<textarea name="adminNote" defaultValue={String(selected.resolution_note || "")} placeholder="Explain the decision or next action"/></label></> : section === "reviews" ? <><label>Visibility<select name="isVisible" defaultValue={selected.is_visible ? "true" : "false"}><option value="true">Visible</option><option value="false">Hidden</option></select></label><label>Farmer reply<textarea name="farmerReply" defaultValue={String(selected.farmer_reply || "")} placeholder="Optional public response"/></label></> : section === "users" ? <><div className="form-row"><label>First name<input name="firstName" defaultValue={String(selected.first_name)} required/></label><label>Last name<input name="lastName" defaultValue={String(selected.last_name)} required/></label></div><label>Email<input name="email" type="email" defaultValue={String(selected.email)} required/></label><label>Phone<input name="phone" defaultValue={String(selected.phone || "")} required/></label><label>Role<select name="role" defaultValue={String(selected.role)} required><option value="consumer">Consumer</option><option value="farmer">Farmer</option><option value="support">Support</option><option value="admin">Administrator</option></select></label><label>Account status<select name="isActive" defaultValue={selected.is_active ? "true" : "false"}><option value="true">Active</option><option value="false">Disabled</option></select></label></> : section === "farms" ? <><label>Farmer owner<select name="ownerId" defaultValue={String(selected.owner_id)} required>{options.owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.name}</option>)}</select></label><label>Farm name<input name="name" defaultValue={String(selected.name)} required/></label><div className="form-row"><label>Phone<input name="phone" defaultValue={String(selected.phone)} required/></label><label>Email<input name="email" type="email" defaultValue={String(selected.email || "")}/></label></div><label>Address<input name="address" defaultValue={String(selected.address_text)} required/></label><div className="form-row"><label>City<input name="city" defaultValue={String(selected.city)} required/></label><label>State<input name="state" defaultValue={String(selected.state)} required/></label></div><label className="admin-check"><input type="checkbox" name="offersDelivery" value="true" defaultChecked={Boolean(selected.offers_delivery)}/> Offers delivery</label></> : <><label>Farm<select name="farmId" defaultValue={String(selected.farm_id)} required>{options.farms.map((farm) => <option key={farm.id} value={farm.id}>{farm.name}</option>)}</select></label><label>Listing title<input name="title" defaultValue={String(selected.title)} required/></label><div className="form-row"><label>Unit<input name="unit" defaultValue={String(selected.unit)} required/></label><label>Price (NGN)<input name="price" type="number" min="1" defaultValue={Number(selected.unit_price_kobo) / 100} required/></label></div><div className="form-row"><label>Available stock<input name="stock" type="number" min={Number(selected.quantity_reserved || 0)} defaultValue={Number(selected.quantity_available)} required/></label><label>Harvest date<input name="harvestDate" type="date" defaultValue={String(selected.harvest_date).slice(0, 10)} required/></label></div><label>Status<select name="status" defaultValue={String(selected.status)}><option value="draft">Draft</option><option value="active">Active</option><option value="paused">Paused</option><option value="sold_out">Sold out</option><option value="expired">Expired</option></select></label><label>Badge<input name="badge" defaultValue={String(selected.badge || "")}/></label></>} {error && <p className="admin-error" role="alert">{error}</p>}<button className="admin-submit" disabled={busy}>{busy ? "Saving changes..." : "Save changes"} {!busy && <ArrowRight size={16}/>}</button></form></div></div>}
+    {addOpen && section !== "overview" && <div className="modal-overlay" onMouseDown={() => setAddOpen(false)}><div className="admin-add-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close-modal" onClick={() => setAddOpen(false)}><X size={19}/></button><p className="auth-kicker">NEW {section === "produce" ? "LISTING" : section.slice(0, -1).toUpperCase()}</p><h2>Add {section === "produce" ? "produce" : section.slice(0, -1)}</h2><p>Create a new marketplace record. Required fields are marked.</p><form onSubmit={addEntity}>{section === "users" ? <><div className="form-row"><label>First name<input name="firstName" required/></label><label>Last name<input name="lastName" required/></label></div><label>Email<input name="email" type="email" required/></label><label>Phone<input name="phone" required/></label><label>Role<select name="role" required><option value="consumer">Consumer</option><option value="farmer">Farmer</option><option value="support">Support</option><option value="admin">Administrator</option></select></label><label>Temporary password<input name="password" type="password" minLength={8} required/></label></> : section === "farms" ? <><label>Farmer owner<select name="ownerId" required><option value="">Select owner</option>{options.owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.name}</option>)}</select></label><label>Farm name<input name="name" required/></label><div className="form-row"><label>Phone<input name="phone" required/></label><label>Email<input name="email" type="email"/></label></div><label>Address<input name="address" required/></label><div className="form-row"><label>City<input name="city" required/></label><label>State<input name="state" required/></label></div><label className="admin-check"><input type="checkbox" name="offersDelivery" value="true"/> Offers delivery</label></> : <><label>Farm<select name="farmId" required><option value="">Select farm</option>{options.farms.map((farm) => <option key={farm.id} value={farm.id}>{farm.name}</option>)}</select></label><label>Category<select name="categoryId" required><option value="">Select category</option>{options.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>Produce name<input name="name" required/></label><div className="form-row"><label>Unit<input name="unit" placeholder="basket" required/></label><label>Price (NGN)<input name="price" type="number" min="1" required/></label></div><div className="form-row"><label>Stock quantity<input name="stock" type="number" min="1" required/></label><label>Harvest date<input name="harvestDate" type="date" required/></label></div><label>Produce picture<input name="image" type="file" accept="image/png,image/jpeg,image/webp" required/><small>Required. JPG, PNG, or WebP up to 4 MB.</small></label><label>Badge<input name="badge" placeholder="New harvest"/></label></>} {error && <p className="admin-error" role="alert">{error}</p>}<button className="admin-submit" disabled={busy}>{busy ? "Saving..." : "Create record"} {!busy && <ArrowRight size={16}/>}</button></form></div></div>}
+    {editOpen && selected && section !== "overview" && <div className="modal-overlay admin-edit-overlay" onMouseDown={() => setEditOpen(false)}><div className="admin-add-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close-modal" onClick={() => setEditOpen(false)}><X size={19}/></button><p className="auth-kicker">EDIT {section === "produce" ? "LISTING" : section.slice(0, -1).toUpperCase()}</p><h2>{entityTitle(section, selected)}</h2><p>Update this record. Changes are saved to the audit log.</p><form onSubmit={editEntity}>{section === "orders" ? <label>Order status<select name="status" defaultValue={String(selected.status)} required>{["paid","confirmed","preparing","ready","dispatched","delivered","collected","cancelled","refunded"].map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}</select></label> : section === "refunds" ? <><label>Refund status<select name="status" defaultValue={String(selected.status)} required>{["requested","under_review","approved","rejected","processing","completed","failed"].map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}</select></label><label>Resolution note<textarea name="adminNote" defaultValue={String(selected.resolution_note || "")} placeholder="Explain the decision or next action"/></label></> : section === "reviews" ? <><label>Visibility<select name="isVisible" defaultValue={selected.is_visible ? "true" : "false"}><option value="true">Visible</option><option value="false">Hidden</option></select></label><label>Farmer reply<textarea name="farmerReply" defaultValue={String(selected.farmer_reply || "")} placeholder="Optional public response"/></label></> : section === "users" ? <><div className="form-row"><label>First name<input name="firstName" defaultValue={String(selected.first_name)} required/></label><label>Last name<input name="lastName" defaultValue={String(selected.last_name)} required/></label></div><label>Email<input name="email" type="email" defaultValue={String(selected.email)} required/></label><label>Phone<input name="phone" defaultValue={String(selected.phone || "")} required/></label><label>Role<select name="role" defaultValue={String(selected.role)} required><option value="consumer">Consumer</option><option value="farmer">Farmer</option><option value="support">Support</option><option value="admin">Administrator</option></select></label><label>Account status<select name="isActive" defaultValue={selected.is_active ? "true" : "false"}><option value="true">Active</option><option value="false">Disabled</option></select></label></> : section === "farms" ? <><label>Farmer owner<select name="ownerId" defaultValue={String(selected.owner_id)} required>{options.owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.name}</option>)}</select></label><label>Farm name<input name="name" defaultValue={String(selected.name)} required/></label><div className="form-row"><label>Phone<input name="phone" defaultValue={String(selected.phone)} required/></label><label>Email<input name="email" type="email" defaultValue={String(selected.email || "")}/></label></div><label>Address<input name="address" defaultValue={String(selected.address_text)} required/></label><div className="form-row"><label>City<input name="city" defaultValue={String(selected.city)} required/></label><label>State<input name="state" defaultValue={String(selected.state)} required/></label></div><label className="admin-check"><input type="checkbox" name="offersDelivery" value="true" defaultChecked={Boolean(selected.offers_delivery)}/> Offers delivery</label></> : <><label>Farm<select name="farmId" defaultValue={String(selected.farm_id)} required>{options.farms.map((farm) => <option key={farm.id} value={farm.id}>{farm.name}</option>)}</select></label><label>Listing title<input name="title" defaultValue={String(selected.title)} required/></label><div className="form-row"><label>Unit<input name="unit" defaultValue={String(selected.unit)} required/></label><label>Price (NGN)<input name="price" type="number" min="1" defaultValue={Number(selected.unit_price_kobo) / 100} required/></label></div><div className="form-row"><label>Available stock<input name="stock" type="number" min={Number(selected.quantity_reserved || 0)} defaultValue={Number(selected.quantity_available)} required/></label><label>Harvest date<input name="harvestDate" type="date" defaultValue={String(selected.harvest_date).slice(0, 10)} required/></label></div><label>Status<select name="status" defaultValue={String(selected.status)}><option value="draft">Draft</option><option value="active">Active</option><option value="paused">Paused</option><option value="sold_out">Sold out</option><option value="expired">Expired</option></select></label>{selected.image_url && <div className="listing-image-preview"><img src={String(selected.image_url)} alt={`Current ${String(selected.title)}`}/><span>Current picture</span></div>}<label>Replace picture<input name="image" type="file" accept="image/png,image/jpeg,image/webp"/><small>Select a JPG, PNG, or WebP image up to 4 MB. Leave empty to keep the current picture.</small></label><label>Badge<input name="badge" defaultValue={String(selected.badge || "")}/></label></>} {error && <p className="admin-error" role="alert">{error}</p>}<button className="admin-submit" disabled={busy}>{busy ? "Saving changes..." : "Save changes"} {!busy && <ArrowRight size={16}/>}</button></form></div></div>}
     {paymentSettingsOpen && <div className="modal-overlay admin-edit-overlay" onMouseDown={() => setPaymentSettingsOpen(false)}><div className="admin-add-modal payment-settings-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close-modal" onClick={() => setPaymentSettingsOpen(false)}><X size={19}/></button><p className="auth-kicker">MANUAL PAYMENTS</p><h2>Company bank account</h2><p>These details are displayed to signed-in customers during checkout.</p><form onSubmit={savePaymentSettings}><label>Bank name<input name="bankName" defaultValue={paymentSettings.bank_name} maxLength={120} required/></label><label>Account name<input name="accountName" defaultValue={paymentSettings.account_name} maxLength={160} required/></label><label>Account number<input name="accountNumber" inputMode="numeric" pattern="[0-9 -]+" defaultValue={paymentSettings.account_number} maxLength={30} required/></label><label>Payment instructions<textarea name="instructions" defaultValue={paymentSettings.instructions || ""} maxLength={500} placeholder="Optional transfer reference or processing guidance"/></label><label className="admin-check"><input name="isEnabled" type="checkbox" value="true" defaultChecked={paymentSettings.is_enabled}/> Enable manual bank payments</label>{error && <p className="admin-error" role="alert">{error}</p>}<button className="admin-submit" disabled={busy}>{busy ? "Saving details..." : "Save payment details"}</button></form></div></div>}
   </main>;
 }
@@ -1483,11 +1537,11 @@ function HarvestSpinner({ compact = false, label }: { compact?: boolean; label: 
 
 type ProfileData = {
   user: { id: string; first_name: string; last_name: string; email: string; phone: string | null; avatar_url: string | null; created_at: string; email_verified_at: string | null };
-  addresses: Array<{ id: string; label: string; line1: string; city: string; state: string; is_default: boolean }>;
+  addresses: Array<{ id: string; label: string; recipient_phone: string; line1: string; city: string; state: string; latitude: number; longitude: number; is_default: boolean }>;
   stats: { total_orders: number; farms_supported: number; completed_orders: number };
   storeCredit: { balance_kobo: number; updated_at: string | null; transactions: Array<{ id: string; amount_kobo: number; transaction_type: string; reference_type: string; reference_id: string; description: string; created_at: string }> };
   preferences?: { preferred_radius_km: number; marketing_consent: boolean };
-  farm?: { id: string; name: string; description: string | null; phone: string; email: string | null; address_text: string; city: string; state: string; verification_status: string; delivery_radius_km: number; offers_pickup: boolean; offers_delivery: boolean; average_rating: number; review_count: number; created_at: string };
+  farm?: { id: string; name: string; description: string | null; phone: string; email: string | null; address_text: string; city: string; state: string; latitude: number; longitude: number; verification_status: string; delivery_radius_km: number; offers_pickup: boolean; offers_delivery: boolean; average_rating: number; review_count: number; created_at: string };
   farms?: Array<{ id: string; name: string; verification_status: string; city: string; state: string }>;
   listings?: Array<{ id: string; title: string; unit: string; unit_price_kobo: number; quantity_available: number; status: string; image_url: string | null }>;
   farmStats?: { fulfilled_orders: number; customers: number };
@@ -1496,6 +1550,7 @@ type ProfileData = {
 function DatabaseProfilePage({ role, onShop, onFarmer, onUpgraded }: { role: "consumer" | "farmer"; onShop: () => void; onFarmer: () => void; onUpgraded: (user: CurrentUser) => void }) {
   const [data, setData] = useState<ProfileData | null>(null);
   const [editing, setEditing] = useState(false);
+  const [locationEditing, setLocationEditing] = useState<"home" | "farm" | null>(null);
   const [busy, setBusy] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
@@ -1517,7 +1572,7 @@ function DatabaseProfilePage({ role, onShop, onFarmer, onUpgraded }: { role: "co
     if (isFarmSwitch) { setSwitchingFarmId(farmId!); setError(""); }
     try {
       const response = await requestProfile(farmId || data?.farm?.id);
-      const result = await response.json() as ProfileData & { error?: string };
+      const result = await readJsonResponse(response) as ProfileData & { error?: string };
       if (!response.ok) throw new Error(result.error || "Could not load profile");
       setData(result);
     } catch (reason) {
@@ -1529,7 +1584,7 @@ function DatabaseProfilePage({ role, onShop, onFarmer, onUpgraded }: { role: "co
   }
   useEffect(() => {
     requestProfile().then(async (response) => {
-      const result = await response.json() as ProfileData & { error?: string };
+      const result = await readJsonResponse(response) as ProfileData & { error?: string };
       if (!response.ok) throw new Error(result.error || "Could not load profile");
       setData(result);
     }).catch((reason: Error) => setError(reason.message));
@@ -1539,9 +1594,21 @@ function DatabaseProfilePage({ role, onShop, onFarmer, onUpgraded }: { role: "co
     try {
       const values = Object.fromEntries(new FormData(event.currentTarget).entries());
       const response = await fetch("/api/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...values, marketingConsent: values.marketingConsent === "true", offersPickup: values.offersPickup === "true", offersDelivery: values.offersDelivery === "true" }) });
-      const result = await response.json() as { error?: string };
+      const result = await readJsonResponse(response) as { error?: string };
       if (!response.ok) throw new Error(result.error || "Could not save profile");
       setEditing(false); await loadProfile();
+    } catch (reason) { setError((reason as Error).message); } finally { setBusy(false); }
+  }
+  async function saveLocation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setBusy(true); setError("");
+    try {
+      const values = Object.fromEntries(new FormData(event.currentTarget).entries());
+      const response = await fetch("/api/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "location", locationTarget: locationEditing, ...values }) });
+      const result = await readJsonResponse(response) as { error?: string };
+      if (!response.ok) throw new Error(result.error || "Could not update location");
+      setLocationEditing(null);
+      await loadProfile(data?.farm?.id);
+      window.dispatchEvent(new Event("harvestnearu-profile-updated"));
     } catch (reason) { setError((reason as Error).message); } finally { setBusy(false); }
   }
   async function updateAvatar(event: FormEvent<HTMLInputElement>) {
@@ -1550,7 +1617,7 @@ function DatabaseProfilePage({ role, onShop, onFarmer, onUpgraded }: { role: "co
     try {
       const form = new FormData(); form.set("file", file);
       const response = await fetch("/api/profile/avatar", { method: "POST", body: form });
-      const result = await response.json() as { error?: string };
+      const result = await readJsonResponse(response) as { error?: string };
       if (!response.ok) throw new Error(result.error || "Could not update profile picture");
       await loadProfile();
       window.dispatchEvent(new Event("harvestnearu-profile-updated"));
@@ -1561,7 +1628,7 @@ function DatabaseProfilePage({ role, onShop, onFarmer, onUpgraded }: { role: "co
     try {
       const values = Object.fromEntries(new FormData(event.currentTarget).entries());
       const response = await fetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "farm", ...values }) });
-      const result = await response.json() as { user?: CurrentUser; error?: string };
+      const result = await readJsonResponse(response) as { user?: CurrentUser; error?: string };
       if (!response.ok || !result.user) throw new Error(result.error || "Could not upgrade account");
       setUpgradeOpen(false); onUpgraded(result.user);
     } catch (reason) { setError((reason as Error).message); } finally { setBusy(false); }
@@ -1572,55 +1639,16 @@ function DatabaseProfilePage({ role, onShop, onFarmer, onUpgraded }: { role: "co
   const initials = `${data.user.first_name[0] || ""}${data.user.last_name[0] || ""}`;
   return <main className="profile-page" aria-busy={Boolean(switchingFarmId)}>
     {switchingFarmId && <div className="farm-switch-loading" role="status" aria-live="polite"><span><LoaderCircle size={20}/></span><div><strong>Loading farm information</strong><small>Please wait while we update this profile.</small></div></div>}
-    <header className="profile-heading"><div><p className="eyebrow"><span/> {role.toUpperCase()} ACCOUNT</p><h1>My profile</h1><p>Manage your identity, preferences, and marketplace activity.</p></div><div className="profile-heading-actions"><label className="profile-photo-upload"><input type="file" accept="image/png,image/jpeg,image/webp" onChange={updateAvatar} disabled={avatarBusy}/><UserRound size={15}/>{avatarBusy ? "Uploading..." : "Change picture"}</label><button className="profile-edit-primary" onClick={() => { setError(""); setEditing(true); }}>Edit profile</button></div></header>
+    <header className="profile-heading"><div><p className="eyebrow"><span/> {role.toUpperCase()} ACCOUNT</p><h1>My profile</h1><p>Manage your identity, preferences, and marketplace activity.</p></div><div className="profile-heading-actions"><label className="profile-photo-upload"><input type="file" accept="image/png,image/jpeg,image/webp" onChange={updateAvatar} disabled={avatarBusy}/><UserRound size={15}/>{avatarBusy ? "Uploading..." : "Change picture"}</label><button className="profile-location-primary" onClick={() => { setError(""); setLocationEditing("home"); }}><House size={15}/> Update home location</button>{role === "farmer" && <button className="profile-location-primary farm-location" onClick={() => { setError(""); setLocationEditing("farm"); }}><MapPin size={15}/> Update farm location</button>}<button className="profile-edit-primary" onClick={() => { setError(""); setEditing(true); }}>Edit profile</button></div></header>
     <section className="profile-identity"><div className="identity-cover consumer-cover"><img src={role === "farmer" ? "/produce/fresh-sweet-corn.webp" : "/produce/garden-fresh-spinach.webp"} alt="Fresh produce"/><div/></div><div className="identity-row"><span className={`profile-avatar ${data.user.avatar_url ? "has-photo" : ""}`}>{data.user.avatar_url ? <img src={data.user.avatar_url} alt={name}/> : initials}</span><div><span className="verified-label"><Check size={11}/> {role === "farmer" ? data.farm?.verification_status || "pending" : data.user.email_verified_at ? "Verified customer" : "Customer account"}</span><h2>{role === "farmer" ? data.farm?.name || name : name}</h2><p><MapPin size={13}/> {role === "farmer" ? `${data.farm?.city || ""}, ${data.farm?.state || ""}` : data.addresses[0] ? `${data.addresses[0].city}, ${data.addresses[0].state}` : "Add your delivery address"} · Member since {new Date(data.user.created_at).getFullYear()}</p></div></div></section>
     <section className="profile-stats"><div><ShoppingBag size={18}/><strong>{data.stats.total_orders}</strong><span>Total orders</span></div><div><Leaf size={18}/><strong>{role === "farmer" ? data.listings?.length || 0 : data.stats.farms_supported}</strong><span>{role === "farmer" ? "Produce listings" : "Farms supported"}</span></div><div><PackageCheck size={18}/><strong>{role === "farmer" ? data.farmStats?.fulfilled_orders || 0 : data.stats.completed_orders}</strong><span>Completed orders</span></div><div><Star size={18}/><strong>{role === "farmer" ? Number(data.farm?.average_rating || 0).toFixed(1) : data.addresses.length}</strong><span>{role === "farmer" ? "Farm rating" : "Saved addresses"}</span></div></section>
     <section className="profile-credit"><header><span><AtSign size={20}/></span><div><p className="eyebrow">ACCOUNT CREDIT</p><h2>{money(Number(data.storeCredit.balance_kobo) / 100)}</h2><small>Automatically applied to your next eligible purchase.</small></div></header><div className="credit-ledger"><div className="profile-panel-head"><div><h3>Recent credit activity</h3><p>Refund credits and marketplace purchases.</p></div></div>{data.storeCredit.transactions.length ? data.storeCredit.transactions.map((transaction) => <article key={transaction.id}><span className={Number(transaction.amount_kobo) > 0 ? "credit" : "debit"}>{Number(transaction.amount_kobo) > 0 ? <Plus size={14}/> : <Minus size={14}/>}</span><div><strong>{transaction.description}</strong><small>{new Date(transaction.created_at).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" })}</small></div><b className={Number(transaction.amount_kobo) > 0 ? "credit" : "debit"}>{Number(transaction.amount_kobo) > 0 ? "+" : "-"}{money(Math.abs(Number(transaction.amount_kobo)) / 100)}</b></article>) : <div className="credit-empty">No account credit activity yet.</div>}</div></section>
-    {role === "consumer" ? <><div className="profile-live-grid"><section className="profile-contact"><div className="profile-panel-head"><h3>Personal information</h3><span>PRIVATE</span></div><dl className="profile-data-list"><div><dt>Full name</dt><dd>{name}</dd></div><div><dt>Email</dt><dd>{data.user.email}</dd></div><div><dt>Phone</dt><dd>{data.user.phone || "Not added"}</dd></div><div><dt>Preferred radius</dt><dd>{Number(data.preferences?.preferred_radius_km || 20)} km</dd></div></dl></section><section className="address-section"><div className="profile-panel-head"><div><h3>Delivery addresses</h3><p>Addresses saved to your account.</p></div></div><div className="address-list">{data.addresses.length ? data.addresses.map((address) => <article key={address.id}><span><MapPin size={18}/></span><div><strong>{address.label}</strong><p>{address.line1}, {address.city}, {address.state}</p><small>{address.is_default ? "Primary address" : "Saved address"}</small></div></article>) : <div className="panel-empty">No delivery address saved yet.</div>}</div></section></div><section className="farmer-upgrade-card"><span><Store size={21}/></span><div><p className="eyebrow">SELL ON HARVESTNEARU</p><h2>Do you also grow or sell produce?</h2><p>Upgrade this account to manage farms while keeping your orders, saved produce, and customer history.</p></div><button onClick={() => { setError(""); setUpgradeOpen(true); }}>Become a farmer <ArrowRight size={16}/></button></section></> : <><section className="profile-farm-switcher"><div><p className="eyebrow">YOUR FARMS</p><h2>Farm profiles</h2><p>Select a farm to view and edit its information, listings, and performance.</p></div><div>{data.farms?.map((farm) => <button key={farm.id} className={data.farm?.id === farm.id ? "active" : ""} onClick={() => { setError(""); void loadProfile(farm.id); }}><span><Store size={16}/></span><strong>{farm.name}</strong><small>{farm.city}, {farm.state}</small>{farm.verification_status === "verified" ? <BadgeCheck size={16} aria-label="Verified"/> : <i className={farm.verification_status}>{farm.verification_status}</i>}</button>)}</div></section><div className="profile-live-grid"><section className="farm-about"><div className="profile-panel-head"><div><h3>About the farm</h3><p>Public farm information · {data.farms?.length || 1} farms on this account.</p></div><button onClick={onFarmer}>Open workspace</button></div><p>{data.farm?.description || "Add a description so customers can learn about your farm."}</p><dl className="profile-data-list"><div><dt>Location</dt><dd>{data.farm?.address_text}, {data.farm?.city}, {data.farm?.state}</dd></div><div><dt>Delivery radius</dt><dd>{Number(data.farm?.delivery_radius_km || 0)} km</dd></div><div><dt>Fulfilment</dt><dd>{[data.farm?.offers_pickup && "Pickup", data.farm?.offers_delivery && "Delivery"].filter(Boolean).join(" and ") || "Not configured"}</dd></div></dl></section><section className="farm-produce"><div className="profile-panel-head"><div><h3>Current harvests</h3><p>Your latest database listings.</p></div><button onClick={onFarmer}><Plus size={14}/> Manage listings</button></div><div>{data.listings?.length ? data.listings.map((listing) => <article key={listing.id}>{listing.image_url ? <img src={listing.image_url} alt=""/> : <span className="profile-listing-placeholder"><Leaf size={18}/></span>}<div><span>{listing.status}</span><strong>{listing.title}</strong><p>{Number(listing.quantity_available)} {listing.unit}s remaining</p><small>{money(Number(listing.unit_price_kobo) / 100)} / {listing.unit}</small></div></article>) : <div className="panel-empty">No listings yet.</div>}</div></section></div></>}
+    {role === "consumer" ? <><div className="profile-live-grid"><section className="profile-contact"><div className="profile-panel-head"><h3>Personal information</h3><span>PRIVATE</span></div><dl className="profile-data-list"><div><dt>Full name</dt><dd>{name}</dd></div><div><dt>Email</dt><dd>{data.user.email}</dd></div><div><dt>Phone</dt><dd>{data.user.phone || "Not added"}</dd></div><div><dt>Preferred radius</dt><dd>{Number(data.preferences?.preferred_radius_km || 20)} km</dd></div></dl></section><section className="address-section"><div className="profile-panel-head"><div><h3>Delivery addresses</h3><p>Addresses saved to your account.</p></div></div><div className="address-list">{data.addresses.length ? data.addresses.map((address) => <article key={address.id}><span><MapPin size={18}/></span><div><strong>{address.label}</strong><p>{address.line1}, {address.city}, {address.state}</p><small>{address.is_default ? "Primary address" : "Saved address"}</small></div></article>) : <div className="panel-empty">No delivery address saved yet.</div>}</div></section></div><section className="farmer-upgrade-card"><span><Store size={21}/></span><div><p className="eyebrow">SELL ON HARVESTNEARU</p><h2>Do you also grow or sell produce?</h2><p>Upgrade this account to manage farms while keeping your orders, saved produce, and customer history.</p></div><button onClick={() => { setError(""); setUpgradeOpen(true); }}>Become a farmer <ArrowRight size={16}/></button></section></> : <><section className="profile-farm-switcher"><div><p className="eyebrow">YOUR FARMS</p><h2>Farm profiles</h2><p>Select a farm to view and edit its information, listings, and performance.</p></div><div>{data.farms?.map((farm) => <button key={farm.id} className={data.farm?.id === farm.id ? "active" : ""} onClick={() => { setError(""); void loadProfile(farm.id); }}><span><Store size={16}/></span><strong>{farm.name}</strong><small>{farm.city}, {farm.state}</small>{farm.verification_status === "verified" ? <BadgeCheck size={16} aria-label="Verified"/> : <i className={farm.verification_status}>{farm.verification_status}</i>}</button>)}</div></section><div className="profile-live-grid"><section className="farm-about"><div className="profile-panel-head"><div><h3>About the farm</h3><p>Public farm information · {data.farms?.length || 1} farms on this account.</p></div><button onClick={onFarmer}>Open workspace</button></div><p>{data.farm?.description || "Add a description so customers can learn about your farm."}</p><dl className="profile-data-list"><div><dt>Location</dt><dd>{data.farm?.address_text}, {data.farm?.city}, {data.farm?.state}</dd></div><div><dt>Delivery radius</dt><dd>{Number(data.farm?.delivery_radius_km || 0)} km</dd></div><div><dt>Fulfilment</dt><dd>{[data.farm?.offers_pickup && "Pickup", data.farm?.offers_delivery && "Delivery"].filter(Boolean).join(" and ") || "Not configured"}</dd></div></dl></section><section className="farm-produce"><div className="profile-panel-head"><div><h3>Current harvests</h3><p>Your latest database listings.</p></div><button onClick={onFarmer}><Plus size={14}/> Manage listings</button></div><div>{data.listings?.length ? data.listings.map((listing) => <article key={listing.id}>{listing.image_url ? <img src={listing.image_url} alt=""/> : <span className="profile-listing-placeholder"><Leaf size={18}/></span>}<div><span>{listing.status}</span><strong>{listing.title}</strong><p>{quantityLabel(Number(listing.quantity_available), listing.unit)} remaining</p><small>{money(Number(listing.unit_price_kobo) / 100)} / {listing.unit}</small></div></article>) : <div className="panel-empty">No listings yet.</div>}</div></section></div></>}
+    {role === "farmer" && <section className="farmer-home-location"><span><House size={19}/></span><div><small>PERSONAL DELIVERY LOCATION</small><h3>{data.addresses[0]?.label || "Home location not added"}</h3><p>{data.addresses[0] ? `${data.addresses[0].line1}, ${data.addresses[0].city}, ${data.addresses[0].state}` : "Add a separate Home address for shopping and personal deliveries."}</p></div><button onClick={() => { setError(""); setLocationEditing("home"); }}>{data.addresses[0] ? "Update Home" : "Add Home"}</button></section>}
     <div className="profile-page-actions"><button onClick={onShop}><ShoppingBag size={16}/> Browse produce</button>{role === "farmer" && <button onClick={onFarmer}><Store size={16}/> Farmer workspace</button>}</div>
+    {locationEditing && <div className="modal-overlay" onMouseDown={() => setLocationEditing(null)}><div className="admin-add-modal profile-location-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close-modal" onClick={() => setLocationEditing(null)}><X size={19}/></button><p className="auth-kicker">{locationEditing === "farm" ? "FARM LOCATION" : "HOME LOCATION"}</p><h2>Update {locationEditing === "farm" ? data.farm?.name : "your primary address"}</h2><p>{locationEditing === "farm" ? "Customers use this location to understand how near this farm is." : "Your Home location is used to rank produce when you shop."}</p><form onSubmit={saveLocation}>{locationEditing === "farm" ? <input type="hidden" name="farmId" value={data.farm?.id || ""}/> : <><input type="hidden" name="addressId" value={data.addresses[0]?.id || ""}/><label>Address label<input name="label" defaultValue={data.addresses[0]?.label || "Home"} required/></label><label>Recipient phone<input name="recipientPhone" defaultValue={data.addresses[0]?.recipient_phone || data.user.phone || ""} required/></label></>}<label>Street address or area<input name="line1" defaultValue={locationEditing === "farm" ? data.farm?.address_text || "" : data.addresses[0]?.line1 || ""} required/></label><div className="form-row"><label>City<input name="city" defaultValue={locationEditing === "farm" ? data.farm?.city || "" : data.addresses[0]?.city || ""} required/></label><label>State<input name="state" defaultValue={locationEditing === "farm" ? data.farm?.state || "" : data.addresses[0]?.state || ""} required/></label></div><FarmCoordinateFields defaultLatitude={locationEditing === "farm" ? data.farm?.latitude || "" : data.addresses[0]?.latitude || ""} defaultLongitude={locationEditing === "farm" ? data.farm?.longitude || "" : data.addresses[0]?.longitude || ""}/>{error && <p className="admin-error">{error}</p>}<button className="admin-submit" disabled={busy}>{busy ? "Updating location..." : "Save location"} {!busy && <ArrowRight size={16}/>}</button></form></div></div>}
     {editing && <div className="modal-overlay" onMouseDown={() => setEditing(false)}><div className="admin-add-modal profile-edit-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close-modal" onClick={() => setEditing(false)}><X size={19}/></button><p className="auth-kicker">ACCOUNT DETAILS</p><h2>Edit profile</h2><form onSubmit={saveProfile}><div className="form-row"><label>First name<input name="firstName" defaultValue={data.user.first_name} required/></label><label>Last name<input name="lastName" defaultValue={data.user.last_name} required/></label></div><label>Email<input name="email" type="email" defaultValue={data.user.email} required/></label><label>Phone<input name="phone" defaultValue={data.user.phone || ""}/></label>{role === "consumer" ? <><label>Preferred distance (km)<input name="preferredRadius" type="number" min="1" defaultValue={Number(data.preferences?.preferred_radius_km || 20)}/></label><label className="admin-check"><input name="marketingConsent" type="checkbox" value="true" defaultChecked={Boolean(data.preferences?.marketing_consent)}/> Receive marketplace updates</label></> : data.farm && <><input type="hidden" name="farmId" value={data.farm.id}/><label>Farm name<input name="farmName" defaultValue={data.farm.name} required/></label><label>Farm description<textarea name="description" defaultValue={data.farm.description || ""}/></label><div className="form-row"><label>Farm phone<input name="farmPhone" defaultValue={data.farm.phone} required/></label><label>Farm email<input name="farmEmail" type="email" defaultValue={data.farm.email || ""}/></label></div><label>Farm address<input name="address" defaultValue={data.farm.address_text} required/></label><div className="form-row"><label>City<input name="city" defaultValue={data.farm.city} required/></label><label>State<input name="state" defaultValue={data.farm.state} required/></label></div><label>Delivery radius (km)<input name="deliveryRadius" type="number" min="0" defaultValue={Number(data.farm.delivery_radius_km)}/></label><div className="profile-checks"><label><input name="offersPickup" type="checkbox" value="true" defaultChecked={data.farm.offers_pickup}/> Farm pickup</label><label><input name="offersDelivery" type="checkbox" value="true" defaultChecked={data.farm.offers_delivery}/> Delivery</label></div></>}{error && <p className="admin-error">{error}</p>}<button className="admin-submit" disabled={busy}>{busy ? "Saving..." : "Save profile"}</button></form></div></div>}
     {upgradeOpen && <div className="modal-overlay" onMouseDown={() => setUpgradeOpen(false)}><div className="admin-add-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close-modal" onClick={() => setUpgradeOpen(false)}><X size={19}/></button><p className="auth-kicker">FARMER UPGRADE</p><h2>Add your first farm</h2><p>Your existing customer activity stays on this account.</p><form onSubmit={upgradeToFarmer}><label>Farm or business name<input name="name" required/></label><label>Farm address or area<input name="location" placeholder="Kuje, Abuja" required/></label><label>Farm phone<input name="phone" defaultValue={data.user.phone || ""} required/></label><FarmCoordinateFields/>{error && <p className="admin-error">{error}</p>}<button className="admin-submit" disabled={busy}>{busy ? "Upgrading account..." : "Upgrade and add farm"}</button></form></div></div>}
-  </main>;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function ProfilePage({ products, role }: { products: Product[]; role: "consumer" | "farmer" }) {
-  const [editing, setEditing] = useState(false);
-  if (!products.length) return <DataLoading />;
-  return <main className="profile-page">
-    <header className="profile-heading"><div><p className="eyebrow"><span /> {role.toUpperCase()} ACCOUNT</p><h1>My profile</h1><p>Manage your identity, preferences, and HarvestNearU activity.</p></div></header>
-
-    {role === "consumer" ? <div className="consumer-profile">
-      <section className="profile-identity">
-        <div className="identity-cover consumer-cover"><img src="/produce/garden-fresh-spinach.webp" alt="Fresh produce"/><div/></div>
-        <div className="identity-row"><span className="profile-avatar">TA</span><div><span className="verified-label"><Check size={11}/> Verified customer</span><h2>Tola Adebayo</h2><p><MapPin size={13}/> Gudu, Abuja · Member since June 2026</p></div><button onClick={() => setEditing((value) => !value)}>{editing ? "Save changes" : "Edit profile"}</button></div>
-      </section>
-
-      <div className="consumer-profile-grid">
-        <aside className="profile-contact"><div className="profile-panel-head"><h3>Personal information</h3><span>PRIVATE</span></div><label>Full name<input disabled={!editing} defaultValue="Tola Adebayo"/></label><label>Email address<input disabled={!editing} defaultValue="tola.adebayo@example.com"/></label><label>Phone number<input disabled={!editing} defaultValue="+234 801 234 5678"/></label><label>Primary location<input disabled={!editing} defaultValue="Gudu, Abuja"/></label></aside>
-        <div className="profile-main-column">
-          <section className="profile-stats"><div><ShoppingBag size={18}/><strong>10</strong><span>Total orders</span></div><div><Leaf size={18}/><strong>4</strong><span>Farms supported</span></div><div><Star size={18}/><strong>8</strong><span>Reviews shared</span></div><div><PackageCheck size={18}/><strong>98%</strong><span>Delivery success</span></div></section>
-          <section className="address-section"><div className="profile-panel-head"><div><h3>Delivery addresses</h3><p>Used to rank nearby produce and calculate delivery.</p></div><button><Plus size={14}/> Add address</button></div><div className="address-list"><article><span><MapPin size={18}/></span><div><strong>Home</strong><p>14 Bakori Street, Gudu, Abuja</p><small>Primary · Delivery instructions added</small></div><button>Manage</button></article><article><span><Store size={18}/></span><div><strong>Office</strong><p>Plot 18, Adetokunbo Crescent, Wuse 2</p><small>Available weekdays</small></div><button>Manage</button></article></div></section>
-          <section className="preference-section"><div className="profile-panel-head"><div><h3>Shopping preferences</h3><p>These improve recommendations without hiding other produce.</p></div><button>Edit</button></div><div className="preference-tags"><span>Vegetables</span><span>Fruits</span><span>Within about 2 hours&apos; walk</span><span>Available today</span><span>Farmer delivery</span></div></section>
-          <section className="saved-preview"><div className="profile-panel-head"><div><h3>Saved harvests</h3><p>Produce you want to find again.</p></div><button>View all <ArrowRight size={14}/></button></div><div>{products.slice(0,3).map(product=><article key={product.id}><img src={product.image} alt={product.name}/><span title={`${product.distance} km straight-line distance`}>{walkingTime(product.distance)}</span><strong>{product.name}</strong><small>{money(product.price)} / {product.unit}</small></article>)}</div></section>
-        </div>
-      </div>
-    </div> : <div className="farmer-profile">
-      <section className="farm-identity">
-        <div className="farm-cover"><img src="/produce/fresh-sweet-corn.webp" alt="Adebayo Family Farm produce"/><div/></div>
-        <div className="farm-identity-row"><span className="farm-avatar"><img src="/brand/harvestnearu-approved-mark.png" alt="Farm profile"/></span><div><span className="verified-label"><Check size={11}/> Verified farmer</span><h2>Adebayo Family Farm</h2><p title="2.4 km straight-line distance"><MapPin size={13}/> Kuje, Abuja · {walkingTime(2.4)} from Gudu</p></div><button onClick={() => setEditing((value) => !value)}>{editing ? "Save farm profile" : "Edit farm profile"}</button></div>
-      </section>
-
-      <section className="farm-summary"><div><span>FARM TYPE</span><strong>Family-owned mixed farm</strong></div><div><span>FARM SIZE</span><strong>6.5 hectares</strong></div><div><span>FARMING SINCE</span><strong>2014</strong></div><div><span>DELIVERY RADIUS</span><strong>15 km</strong></div><div><span>FARM RATING</span><strong><Star size={14} fill="currentColor"/> 4.9</strong></div></section>
-
-      <div className="farm-profile-grid">
-        <div className="farm-main">
-          <section className="farm-about"><div className="profile-panel-head"><div><h3>About the farm</h3><p>The story customers see before placing an order.</p></div><button>Edit story</button></div><p>We are a second-generation family farm growing tomatoes, sweet corn, peppers, and seasonal vegetables in Kuje. We harvest in small batches, confirm availability every morning, and prioritise careful handling from our field to each pickup or delivery.</p><div className="farm-values"><span><Leaf size={15}/> Responsible growing</span><span><PackageCheck size={15}/> Harvest checked daily</span><span><Truck size={15}/> Farmer delivery available</span></div></section>
-          <section className="farm-produce"><div className="profile-panel-head"><div><h3>Current harvests</h3><p>Active produce customers can order now.</p></div><button><Plus size={14}/> Add listing</button></div><div>{products.slice(0,4).map(product=><article key={product.id}><img src={product.image} alt={product.name}/><div><span>{product.available}</span><strong>{product.name}</strong><p>{product.stock} {product.unit}s remaining</p><small>{money(product.price)} / {product.unit}</small></div></article>)}</div></section>
-        </div>
-        <aside className="farm-details"><section><div className="profile-panel-head"><h3>Farm information</h3></div><dl><div><dt>Contact person</dt><dd>Adebayo Tunde</dd></div><div><dt>Public location</dt><dd>Kuje, Abuja</dd></div><div><dt>Pickup window</dt><dd>Mon–Sat, 8am–5pm</dd></div><div><dt>Order preparation</dt><dd>Usually within 4 hours</dd></div><div><dt>Payment settlement</dt><dd>Verified bank account</dd></div></dl></section><section><div className="profile-panel-head"><h3>Produce specialities</h3></div><div className="preference-tags"><span>Tomatoes</span><span>Sweet corn</span><span>Peppers</span><span>Leafy greens</span></div></section><section className="farm-performance"><div className="profile-panel-head"><h3>Marketplace record</h3></div><div><span>Orders fulfilled<strong>184</strong></span><span>On-time fulfilment<strong>96%</strong></span><span>Repeat customers<strong>61</strong></span><span>Member since<strong>2025</strong></span></div></section></aside>
-      </div>
-    </div>}
   </main>;
 }
 
@@ -1692,13 +1720,13 @@ function DatabaseOrdersPage({ onShop, onHelp }: { onShop: () => void; onHelp: ()
   }
   async function refreshOrders() {
     const response = await fetch("/api/orders", { cache: "no-store" });
-    const result = await response.json() as { orders?: CustomerOrder[]; error?: string };
+    const result = await readJsonResponse(response) as { orders?: CustomerOrder[]; error?: string };
     if (!response.ok || !result.orders) throw new Error(result.error || "Could not load orders");
     setOrders(result.orders);
   }
   useEffect(() => {
     fetch("/api/orders", { cache: "no-store" }).then(async (response) => {
-      const result = await response.json() as { orders?: CustomerOrder[]; error?: string };
+      const result = await readJsonResponse(response) as { orders?: CustomerOrder[]; error?: string };
       if (!response.ok || !result.orders) throw new Error(result.error || "Could not load orders");
       setOrders(result.orders);
     }).catch((reason: Error) => setError(reason.message)).finally(() => setLoading(false));
@@ -1710,7 +1738,7 @@ function DatabaseOrdersPage({ onShop, onHelp }: { onShop: () => void; onHelp: ()
       if (!ratingValue) throw new Error("Select a star rating");
       const values = Object.fromEntries(new FormData(event.currentTarget).entries());
       const response = await fetch("/api/reviews", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...values, orderId: ratingTarget.orderId, farmId: ratingTarget.farm.id, rating: ratingValue }) });
-      const result = await response.json() as { error?: string };
+      const result = await readJsonResponse(response) as { error?: string };
       if (!response.ok) throw new Error(result.error || "Could not save rating");
       setRatingTarget(null); await refreshOrders();
     } catch (reason) { setError((reason as Error).message); } finally { setRatingBusy(false); }
@@ -1720,7 +1748,7 @@ function DatabaseOrdersPage({ onShop, onHelp }: { onShop: () => void; onHelp: ()
     setReceiptBusy(order.id); setError("");
     try {
       const response = await fetch("/api/orders", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: order.id, itemId: item.id, action: "confirm_item_receipt" }) });
-      const result = await response.json() as { error?: string; completed?: boolean };
+      const result = await readJsonResponse(response) as { error?: string; completed?: boolean };
       if (!response.ok) throw new Error(result.error || "Could not confirm receipt");
       await refreshOrders();
       if (result.completed) {
@@ -1747,7 +1775,7 @@ function DatabaseOrdersPage({ onShop, onHelp }: { onShop: () => void; onHelp: ()
     setCancelBusy(true); setError("");
     try {
       const response = await fetch("/api/orders/cancel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: cancelTarget.id, resolutionMethod, ...refundBank }) });
-      const result = await response.json() as { error?: string };
+      const result = await readJsonResponse(response) as { error?: string };
       if (!response.ok) throw new Error(result.error || "Could not cancel the order");
       setCancelTarget(null); await refreshOrders();
     } catch (reason) { setError((reason as Error).message); } finally { setCancelBusy(false); }
@@ -1770,68 +1798,6 @@ function DatabaseOrdersPage({ onShop, onHelp }: { onShop: () => void; onHelp: ()
     {shown.length ? <div className="database-orders">{shown.map((order) => <article className="database-order" key={order.id}><button className="database-order-summary" onClick={() => setExpanded((current) => current === order.id ? null : order.id)}><span className={`status-pill ${order.status}`}><i/> {order.status.replaceAll("_", " ")}</span><span><strong>Order #{order.order_number}</strong><small>{new Date(order.placed_at).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" })} · {order.items.length} {order.items.length === 1 ? "item" : "items"}</small></span><b>{money(Number(order.total_kobo) / 100)}</b><ChevronDown className={expanded === order.id ? "open" : ""} size={18}/></button>{expanded === order.id && <div className="database-order-detail"><div className="database-order-items">{order.items.map((item) => <div key={item.id}>{item.image ? <img src={item.image} alt=""/> : <span><Leaf size={18}/></span>}<p><strong>{item.name}</strong><small>{item.quantity} {item.unit} · {item.farm}</small></p><b>{money(Number(item.unit_price_kobo) * Number(item.quantity) / 100)}</b></div>)}</div>{pastStatuses.includes(order.status) && <div className="order-farm-ratings">{order.farms.map((farm) => <div key={farm.id}><span><strong>{farm.name}</strong><small>{farm.rating ? `Your rating: ${farm.rating}/5` : "Share your experience with this farm"}</small></span><button onClick={() => openRating({ orderId: order.id, farm })}><Star size={14} fill={farm.rating ? "currentColor" : "none"}/> {farm.rating ? "Edit rating" : "Rate farm"}</button></div>)}</div>}<div className="database-order-meta"><span><small>FULFILMENT</small><strong>{order.fulfilment_method.replaceAll("_", " ")}</strong></span><span><small>DELIVERY</small><strong>{money(Number(order.delivery_fee_kobo) / 100)}</strong></span><span><small>TOTAL</small><strong>{money(Number(order.total_kobo) / 100)}</strong></span></div></div>}</article>)}</div> : <section className="orders-empty"><div className="orders-empty-visual" aria-hidden="true"><span><Leaf size={18}/></span><span><ShoppingBag size={31}/></span><span><MapPin size={16}/></span></div><p className="eyebrow">{tab === "active" ? "YOUR BASKET IS READY" : "YOUR HARVEST JOURNEY"}</p><h3>{tab === "active" ? "Nothing on the way just yet." : "Your order history starts here."}</h3><p>{tab === "active" ? "Choose fresh produce from nearby farms and follow every step from confirmation to your doorstep." : "Completed, collected, and resolved orders will be kept here for easy reference."}</p><button onClick={onShop}><Leaf size={16}/> Browse nearby harvests <ArrowRight size={16}/></button><div className="orders-empty-benefits"><span><Check size={12}/> Verified farms</span><span><LocateFixed size={12}/> Proximity ranked</span><span><PackageCheck size={12}/> Track every order</span></div></section>}
     {ratingTarget && <div className="modal-overlay" onMouseDown={() => setRatingTarget(null)}><div className="payment-modal rating-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close-modal" onClick={() => setRatingTarget(null)}><X size={19}/></button><p className="auth-kicker">FARM RATING</p><h2>Rate {ratingTarget.farm.name}</h2><p>Your rating helps nearby customers choose confidently.</p><form onSubmit={submitRating}><fieldset className="star-rating" onMouseLeave={() => setHoverRating(0)}><legend>Your rating</legend>{[1,2,3,4,5].map((value) => <label key={value} className={value <= (hoverRating || ratingValue) ? "selected" : ""} onMouseEnter={() => setHoverRating(value)}><input type="radio" name="rating" value={value} checked={ratingValue === value} onChange={() => setRatingValue(value)} required/><Star size={28} fill="currentColor"/><span>{value} {value === 1 ? "star" : "stars"}</span></label>)}</fieldset><p className="rating-selection" aria-live="polite">{ratingValue ? `${ratingValue} out of 5 stars selected` : "Select your rating"}</p><label className="rating-comment">Comment<textarea name="comment" maxLength={800} defaultValue={ratingTarget.farm.comment || ""} placeholder="What stood out about the produce or service?"/></label>{error && <p className="auth-error">{error}</p>}<button className="pay-button" disabled={ratingBusy || !ratingValue}>{ratingBusy ? "Saving rating..." : "Submit rating"}</button></form></div></div>}
     {cancelTarget && <div className="modal-overlay" onMouseDown={() => !cancelBusy && setCancelTarget(null)}><div className="payment-modal cancel-order-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close-modal" onClick={() => setCancelTarget(null)} disabled={cancelBusy}><X size={19}/></button><p className="auth-kicker">CANCEL ORDER</p><h2>How should we return your payment?</h2><p>Order #{cancelTarget.order_number} will be cancelled immediately and its produce returned to availability. The selected value is issued after administrator review.</p><div className="cancel-bank-fields"><label>Bank name<input value={refundBank.bankName} onChange={(event) => setRefundBank((current) => ({ ...current, bankName: event.target.value }))} maxLength={120}/></label><label>Account name<input value={refundBank.accountName} onChange={(event) => setRefundBank((current) => ({ ...current, accountName: event.target.value }))} maxLength={160}/></label><label>Account number<input value={refundBank.accountNumber} onChange={(event) => setRefundBank((current) => ({ ...current, accountNumber: event.target.value.replace(/[^0-9 -]/g, "") }))} inputMode="numeric" maxLength={30}/></label></div><div className="cancel-refund-options"><button onClick={() => void cancelPendingOrder("store_credit")} disabled={cancelBusy}><span><AtSign size={19}/></span><strong>Full account credit</strong><small>{money(Number(cancelTarget.total_kobo) / 100)} for future purchases · No fee; bank fields are not required</small></button><button onClick={() => void cancelPendingOrder("bank_refund")} disabled={cancelBusy || Number(cancelTarget.total_kobo) <= 50000 || !refundBank.bankName.trim() || !refundBank.accountName.trim() || refundBank.accountNumber.replace(/[^0-9]/g, "").length < 6}><span><RotateCcw size={19}/></span><strong>Refund to bank</strong><small>{money(Math.max(0, Number(cancelTarget.total_kobo) / 100 - 500))} after the ₦500 cancellation fee</small></button></div>{error && <p className="auth-error" role="alert">{error}</p>}{cancelBusy && <div className="cancel-processing"><LoaderCircle size={17}/> Submitting cancellation...</div>}</div></div>}
-  </main>;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function OrdersPage({ products, onShop }: { products: Product[]; onShop: () => void }) {
-  const [tab, setTab] = useState<"active" | "past">("active");
-  if (products.length < 6) return <DataLoading />;
-  return <main className="my-orders-page">
-    <header className="orders-heading">
-      <div><p className="eyebrow"><span /> YOUR PURCHASES</p><h1>My orders</h1><p>Follow your fresh produce from farm gate to your doorstep.</p></div>
-      <button onClick={onShop}><Plus size={17} /> Shop more produce</button>
-    </header>
-
-    <section className="order-overview">
-      <div><span className="overview-icon moving"><Truck size={20} /></span><p><strong>1</strong><small>On the way</small></p></div>
-      <div><span className="overview-icon"><Clock3 size={20} /></span><p><strong>1</strong><small>Being prepared</small></p></div>
-      <div><span className="overview-icon"><PackageCheck size={20} /></span><p><strong>8</strong><small>Delivered this year</small></p></div>
-      <div className="impact"><Leaf size={20} /><p><strong>4 farms</strong><small>supported locally</small></p></div>
-    </section>
-
-    <div className="orders-toolbar">
-      <div className="order-tabs"><button className={tab === "active" ? "selected" : ""} onClick={() => setTab("active")}>Active orders <b>2</b></button><button className={tab === "past" ? "selected" : ""} onClick={() => setTab("past")}>Order history</button></div>
-      <button className="order-help"><Headphones size={16} /> Need help?</button>
-    </div>
-
-    {tab === "active" ? <div className="active-orders">
-      <article className="featured-order">
-        <div className="featured-order-head"><div><span className="status-pill"><i /> OUT FOR DELIVERY</span><h2>Order #FM-2048</h2><p>Placed 18 July 2026 · 3 items from 2 farms</p></div><div className="arrival"><small>ESTIMATED ARRIVAL</small><strong>Today, 11:30 am–12:30 pm</strong><span>Driver is 3.2 km away</span></div></div>
-        <div className="order-progress">
-          {[{label:"Order confirmed",time:"8:12 am"},{label:"Packed by farmers",time:"9:05 am"},{label:"Out for delivery",time:"10:18 am"},{label:"Delivered",time:"Expected 12:30 pm"}].map((step,index)=><div className={index < 3 ? "done" : ""} key={step.label}><span>{index < 2 ? <Check size={13}/> : index === 2 ? <Truck size={14}/> : <PackageCheck size={14}/>}</span><strong>{step.label}</strong><small>{step.time}</small></div>)}
-        </div>
-        <div className="order-detail-grid">
-          <div className="order-produce"><h3>In this order</h3><div className="produce-stack">{products.slice(0,3).map((product,index)=><div key={product.id}><img src={product.image} alt={product.name}/><span>{index === 0 ? "2" : "1"}</span></div>)}</div><div className="order-item-names"><strong>Vine-ripe tomatoes, sweet corn</strong><span>and Oyo white yam</span></div></div>
-          <div className="delivery-address"><MapPin size={18}/><div><small>DELIVERING TO</small><strong>14 Bakori Street, Gudu</strong><span>Abuja, FCT</span></div></div>
-          <div className="order-total"><small>ORDER TOTAL</small><strong>{money(11200)}</strong><span>Paid with card</span></div>
-        </div>
-        <div className="featured-actions"><button className="track-order"><LocateFixed size={17}/> Track live delivery</button><button><Headphones size={16}/> Contact support</button><button>View receipt</button></div>
-      </article>
-
-      <article className="compact-order"><div className="compact-status"><span><Clock3 size={18}/></span><div><small>BEING PREPARED</small><h3>Order #FM-2051</h3><p>Placed today at 9:44 am</p></div></div><div className="compact-products"><img src={products[4].image} alt="Plantain"/><div><strong>Sweet ripe plantain</strong><span>2 bunches · Olaoluwa Farms</span></div></div><div className="compact-arrival"><small>Pickup tomorrow</small><strong>Gudu collection hub</strong></div><strong className="compact-price">{money(5200)}</strong><button><ArrowRight size={17}/></button></article>
-    </div> : <div className="past-orders">
-      {[{id:"#FM-1976",date:"04 July 2026",items:"Tomatoes, honey beans + 1 more",price:8650,images:[0,5],status:"Delivered"},{id:"#FM-1842",date:"21 June 2026",items:"Sweet corn and white yam",price:10400,images:[1,2],status:"Delivered"},{id:"#FM-1699",date:"08 June 2026",items:"Plantain and scotch bonnet",price:7100,images:[4,3],status:"Delivered"}].map(order=><article className="history-order" key={order.id}><div className="history-images">{order.images.map(index=><img key={index} src={products[index].image} alt=""/>)}</div><div><span><Check size={11}/> {order.status}</span><h3>Order {order.id}</h3><p>{order.date} · {order.items}</p></div><strong>{money(order.price)}</strong><button><RotateCcw size={15}/> Buy again</button><button className="history-open"><ArrowRight size={17}/></button></article>)}
-    </div>}
-  </main>;
-}
-
-// Kept as a visual reference while the database-backed workspace is rolled out.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function FarmerDashboard({ products, onShop }: { products: Product[]; onShop: () => void }) {
-  if (!products.length) return <DataLoading />;
-  const orders = [
-    { id: "#FM-2041", customer: "Chioma Okafor", item: "3 baskets · Tomatoes", time: "12 min ago", status: "Prepare" },
-    { id: "#FM-2037", customer: "Musa Bello", item: "2 dozens · Sweet corn", time: "34 min ago", status: "Ready" },
-    { id: "#FM-2029", customer: "Tola Adebayo", item: "1 basket · Tomatoes", time: "1 hr ago", status: "Collected" },
-  ];
-  return <main className="farmer-page">
-    <div className="farmer-heading"><div><button onClick={onShop}><ArrowLeft size={16} /> Marketplace</button><p className="eyebrow"><span /> FARMER WORKSPACE</p><h1>Good morning, Adebayo.</h1><p>Here&apos;s what&apos;s happening with your harvest today.</p></div><button className="new-listing"><Plus size={18} /> Add new listing</button></div>
-    <div className="metric-grid"><div><span>Today&apos;s sales</span><strong>₦84,500</strong><small>↑ 18% from yesterday</small></div><div><span>Open orders</span><strong>12</strong><small>5 need your attention</small></div><div><span>Produce listed</span><strong>148 <i>kg</i></strong><small>Across 4 active listings</small></div><div><span>Next payout</span><strong>₦62,300</strong><small>Monday, 22 July</small></div></div>
-    <div className="farmer-columns">
-      <section className="orders-panel"><div className="panel-head"><div><h2>Orders to fulfil</h2><p>Today&apos;s customer orders</p></div><button>View all <ArrowRight size={15} /></button></div>{orders.map((order) => <div className="order-row" key={order.id}><span className="order-icon"><ShoppingBag size={18} /></span><div><strong>{order.customer}</strong><p>{order.id} · {order.item}</p></div><small>{order.time}</small><button className={order.status.toLowerCase()}>{order.status}</button></div>)}</section>
-      <section className="inventory-panel"><div className="panel-head"><div><h2>Inventory pulse</h2><p>Your active harvests</p></div><button><SlidersHorizontal size={16} /></button></div>{products.slice(0, 3).map((p) => <div className="inventory-row" key={p.id}><img src={p.image} alt="" /><div><strong>{p.name}</strong><p>{p.stock} {p.unit}s remaining</p><span><i style={{ width: `${p.stock / (p.stock + p.sold) * 100}%` }} /></span></div><b>{Math.round(p.stock / (p.stock + p.sold) * 100)}%</b></div>)}</section>
-    </div>
   </main>;
 }
 
@@ -1885,7 +1851,7 @@ function FarmerWorkspace({ onShop }: { onShop: () => void }) {
   async function refresh(farmId?: string) {
     const activeFarmId = farmId || data?.farm.id;
     const response = await fetch(`/api/farmer/dashboard${activeFarmId ? `?farmId=${encodeURIComponent(activeFarmId)}` : ""}`, { cache: "no-store" });
-    const result = await response.json() as FarmerWorkspaceData & { error?: string };
+    const result = await readJsonResponse(response) as FarmerWorkspaceData & { error?: string };
     if (!response.ok) throw new Error(result.error || "Could not load farmer workspace");
     setData(result);
   }
@@ -1895,7 +1861,7 @@ function FarmerWorkspace({ onShop }: { onShop: () => void }) {
     try {
       const values = Object.fromEntries(new FormData(event.currentTarget).entries());
       const response = await fetch("/api/farmer/dashboard", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "farm", ...values }) });
-      const result = await response.json() as { farm?: { id: string }; error?: string };
+      const result = await readJsonResponse(response) as { farm?: { id: string }; error?: string };
       if (!response.ok || !result.farm) throw new Error(result.error || "Could not add farm");
       setFarmOpen(false); await refresh(result.farm.id);
     } catch (reason) { setError((reason as Error).message); } finally { setBusy(false); }
@@ -1903,7 +1869,7 @@ function FarmerWorkspace({ onShop }: { onShop: () => void }) {
 
   useEffect(() => {
     fetch("/api/farmer/dashboard", { cache: "no-store" }).then(async (response) => {
-      const result = await response.json() as FarmerWorkspaceData & { error?: string };
+      const result = await readJsonResponse(response) as FarmerWorkspaceData & { error?: string };
       if (!response.ok) throw new Error(result.error || "Could not load farmer workspace");
       setData(result);
     }).catch((reason: Error) => setError(reason.message));
@@ -1918,10 +1884,11 @@ function FarmerWorkspace({ onShop }: { onShop: () => void }) {
       const image = form.get("image");
       form.delete("image");
       const values = Object.fromEntries(form.entries());
-      const imageUrl = image instanceof File && image.size ? await uploadListingImage(image) : "";
+      if (!(image instanceof File) || !image.size) throw new Error("Upload a produce picture before publishing this listing");
+      const imageUrl = await uploadListingImage(image);
       uploadedUrl = imageUrl;
       const response = await fetch("/api/farmer/dashboard", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...values, imageUrl, farmId: data.farm.id }) });
-      const result = await response.json() as { error?: string };
+      const result = await readJsonResponse(response) as { error?: string };
       if (!response.ok) throw new Error(result.error || "Could not create listing");
       setListingOpen(false); await refresh();
     } catch (reason) { if (uploadedUrl) void fetch("/api/uploads/listing-image", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: uploadedUrl }) }); setError((reason as Error).message); } finally { setBusy(false); }
@@ -1936,7 +1903,7 @@ function FarmerWorkspace({ onShop }: { onShop: () => void }) {
     setBusy(true); setError("");
     try {
       const response = await fetch("/api/farmer/dashboard", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "item", id: item!.id, status }) });
-      const result = await response.json() as { error?: string }; if (!response.ok) throw new Error(result.error || "Could not update order"); await refresh();
+      const result = await readJsonResponse(response) as { error?: string }; if (!response.ok) throw new Error(result.error || "Could not update order"); await refresh();
     } catch (reason) { setError((reason as Error).message); } finally { setBusy(false); }
   }
 
@@ -1952,7 +1919,7 @@ function FarmerWorkspace({ onShop }: { onShop: () => void }) {
       const imageUrl = image instanceof File && image.size ? await uploadListingImage(image) : manageListing.stored_image_url || "";
       if (image instanceof File && image.size) uploadedUrl = imageUrl;
       const response = await fetch("/api/farmer/dashboard", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...values, imageUrl, type: "listing", id: manageListing.id }) });
-      const result = await response.json() as { error?: string }; if (!response.ok) throw new Error(result.error || "Could not update listing"); setManageListing(null); await refresh();
+      const result = await readJsonResponse(response) as { error?: string }; if (!response.ok) throw new Error(result.error || "Could not update listing"); setManageListing(null); await refresh();
     } catch (reason) { if (uploadedUrl) void fetch("/api/uploads/listing-image", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: uploadedUrl }) }); setError((reason as Error).message); } finally { setBusy(false); }
   }
 
@@ -1973,7 +1940,7 @@ function FarmerWorkspace({ onShop }: { onShop: () => void }) {
     <div className="farmer-columns">
       <ExpandedFarmerOrders orders={fulfilmentOrders} busy={busy} readOnly={Boolean(data.user.impersonating)} onAdvance={advanceOrder}/>
       <section className="orders-panel closed-orders-panel"><div className="panel-head"><div><h2>Closed orders</h2><p>Completed, cancelled, and refunded orders</p></div><span>{closedOrders.length} total</span>{closedOrders.length > 3 && <button onClick={() => setShowAllOrders((value) => !value)}>{showAllOrders ? "Show recent" : "View all"} <ArrowRight className={showAllOrders ? "back" : ""} size={15}/></button>}</div>{shownClosedOrders.length ? shownClosedOrders.map((order) => <div className="order-row closed-order-row" key={order.id}><span className="order-icon"><PackageCheck size={18}/></span><div><strong>{order.customer}</strong><p>#{order.order_number} · {order.items}</p></div><small>{new Date(order.placed_at).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })}</small><span className={`status-badge ${order.status}`}>{order.status.replaceAll("_", " ")}</span><b>{["delivered","collected"].includes(order.status) ? `${money(Number(order.farmer_net_kobo) / 100)} net` : money(Number(order.subtotal_kobo) / 100)}</b></div>) : <div className="panel-empty">No closed orders yet.</div>}</section>
-      <section className="inventory-panel"><div className="panel-head"><div><h2>Inventory pulse</h2><p>Your produce listings</p></div>{data.listings.length > 3 && <button onClick={() => setShowAllListings((value) => !value)}>{showAllListings ? "Show recent" : "View all"} <ArrowRight className={showAllListings ? "back" : ""} size={15}/></button>}</div>{listings.length ? listings.map((listing) => { const available = Number(listing.quantity_available) - Number(listing.quantity_reserved); const total = Number(listing.quantity_available) + Number(listing.quantity_sold); const percent = total ? Math.round(available / total * 100) : 0; return <button className="inventory-row farmer-inventory-row" key={listing.id} onClick={() => { setError(""); setManageListing(listing); }}><span className="inventory-image">{listing.image_url ? <img src={listing.image_url} alt=""/> : <Leaf size={18}/>}</span><div><strong>{listing.title}</strong><p>{available} {listing.unit}s available · {listing.status}</p><span><i style={{ width: `${Math.max(0, percent)}%` }}/></span></div><b>{percent}%</b></button>}) : <div className="panel-empty">No listings yet.</div>}</section>
+      <section className="inventory-panel"><div className="panel-head"><div><h2>Inventory pulse</h2><p>Your produce listings</p></div>{data.listings.length > 3 && <button onClick={() => setShowAllListings((value) => !value)}>{showAllListings ? "Show recent" : "View all"} <ArrowRight className={showAllListings ? "back" : ""} size={15}/></button>}</div>{listings.length ? listings.map((listing) => { const available = Number(listing.quantity_available) - Number(listing.quantity_reserved); const total = Number(listing.quantity_available) + Number(listing.quantity_sold); const percent = total ? Math.round(available / total * 100) : 0; return <button className="inventory-row farmer-inventory-row" key={listing.id} onClick={() => { setError(""); setManageListing(listing); }}><span className="inventory-image">{listing.image_url ? <img src={listing.image_url} alt=""/> : <Leaf size={18}/>}</span><div><strong>{listing.title}</strong><p>{quantityLabel(available, listing.unit)} available · {listing.status}</p><span><i style={{ width: `${Math.max(0, percent)}%` }}/></span></div><b>{percent}%</b></button>}) : <div className="panel-empty">No listings yet.</div>}</section>
     </div>
     <FarmReviews farmName={data.farm.name} reviews={data.reviews}/>
     {listingOpen && <div className="modal-overlay" onMouseDown={() => setListingOpen(false)}><div className="admin-add-modal farmer-listing-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close-modal" onClick={() => setListingOpen(false)}><X size={19}/></button><p className="auth-kicker">NEW HARVEST</p><h2>Add a produce listing</h2><p>Publish available produce from {data.farm.name}.</p><form onSubmit={createListing}><label>Category<select name="categoryId" required><option value="">Select category</option>{data.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>Produce name<input name="name" required/></label><div className="form-row"><label>Unit<input name="unit" placeholder="basket" required/></label><label>Price (NGN)<input name="price" type="number" min="1" required/></label></div><div className="form-row"><label>Available quantity<input name="stock" type="number" min="1" required/></label><label>Harvest date<input name="harvestDate" type="date" required/></label></div><label>Produce picture<input name="image" type="file" accept="image/png,image/jpeg,image/webp" required/><small>Uploaded securely to Blob. JPG, PNG, or WebP up to 4 MB.</small></label><label>Badge<input name="badge" placeholder="Picked today"/></label>{error && <p className="admin-error">{error}</p>}<button className="admin-submit" disabled={busy}>{busy ? "Uploading and publishing..." : "Publish listing"} {!busy && <ArrowRight size={16}/>}</button></form></div></div>}

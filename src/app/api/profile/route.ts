@@ -3,8 +3,7 @@ import { randomUUID } from "node:crypto";
 
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
-import { listingImageUrl } from "@/lib/images";
-import { profileImageUrl } from "@/lib/images";
+import { DEFAULT_LISTING_IMAGE, listingImageUrl, profileImageUrl } from "@/lib/images";
 import { canMutateAs, checkRateLimit, validText } from "@/lib/security";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +13,7 @@ export async function GET(request: Request) {
   if (!session || !["consumer", "farmer"].includes(session.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const sql = getDatabase();
   const [user] = await sql`SELECT id, first_name, last_name, email, phone, avatar_url, role, email_verified_at, phone_verified_at, created_at FROM users WHERE id = ${session.id}`;
-  const addresses = await sql`SELECT id, label, recipient_name, recipient_phone, line1, line2, city, state, landmark, is_default FROM addresses WHERE user_id = ${session.id} ORDER BY is_default DESC, created_at`;
+  const addresses = await sql`SELECT id, label, recipient_name, recipient_phone, line1, line2, city, state, landmark, latitude, longitude, is_default FROM addresses WHERE user_id = ${session.id} ORDER BY is_default DESC, created_at`;
   const [stats] = await sql`SELECT count(DISTINCT orders.id)::int AS total_orders,
     count(DISTINCT item.farm_name)::int AS farms_supported,
     count(DISTINCT orders.id) FILTER (WHERE orders.status IN ('delivered','collected'))::int AS completed_orders
@@ -28,12 +27,12 @@ export async function GET(request: Request) {
     const [preferences] = await sql`SELECT preferred_radius_km, dietary_preferences, marketing_consent FROM consumer_profiles WHERE user_id = ${session.id}`;
     return NextResponse.json({ user: { ...user, avatar_url: user.avatar_url ? profileImageUrl(String(user.id), user.avatar_url) : null }, addresses, stats, storeCredit, preferences: preferences ?? { preferred_radius_km: 20, dietary_preferences: [], marketing_consent: false } });
   }
-  const farms = await sql`SELECT id, name, description, phone, email, address_text, city, state, logo_url, cover_image_url, verification_status, delivery_radius_km, offers_pickup, offers_delivery, average_rating, review_count, created_at FROM farms WHERE owner_id = ${session.id} ORDER BY created_at`;
+  const farms = await sql`SELECT id, name, description, phone, email, address_text, city, state, latitude, longitude, logo_url, cover_image_url, verification_status, delivery_radius_km, offers_pickup, offers_delivery, average_rating, review_count, created_at FROM farms WHERE owner_id = ${session.id} ORDER BY created_at`;
   const requestedFarmId = new URL(request.url).searchParams.get("farmId");
   const farm = farms.find((item) => String(item.id) === requestedFarmId) || farms[0];
   const listings = farm ? await sql`SELECT listing.id, listing.title, listing.unit, listing.unit_price_kobo, listing.quantity_available, listing.status, image.url AS image_url FROM produce_listings listing LEFT JOIN LATERAL (SELECT url FROM listing_images WHERE listing_id = listing.id ORDER BY sort_order LIMIT 1) image ON true WHERE listing.farm_id = ${farm.id} ORDER BY listing.created_at DESC LIMIT 6` : [];
   const [farmStats] = farm ? await sql`SELECT count(DISTINCT fo.id) FILTER (WHERE fo.status IN ('delivered','collected'))::int AS fulfilled_orders, count(DISTINCT o.customer_id)::int AS customers FROM farm_orders fo JOIN orders o ON o.id = fo.order_id WHERE fo.farm_id = ${farm.id}` : [{ fulfilled_orders: 0, customers: 0 }];
-  return NextResponse.json({ user: { ...user, avatar_url: user.avatar_url ? profileImageUrl(String(user.id), user.avatar_url) : null }, addresses, stats, storeCredit, farm, farms, listings: listings.map((listing) => ({ ...listing, image_url: listing.image_url ? listingImageUrl(String(listing.id), listing.image_url) : null })), farmStats });
+  return NextResponse.json({ user: { ...user, avatar_url: user.avatar_url ? profileImageUrl(String(user.id), user.avatar_url) : null }, addresses, stats, storeCredit, farm, farms, listings: listings.map((listing) => ({ ...listing, image_url: listing.image_url ? listingImageUrl(String(listing.id), listing.image_url) : DEFAULT_LISTING_IMAGE })), farmStats });
 }
 
 export async function POST(request: Request) {
@@ -70,6 +69,44 @@ export async function PATCH(request: Request) {
   const session = await getSessionUser();
   if (!session || !["consumer", "farmer"].includes(session.role) || !canMutateAs(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await request.json().catch(() => null) as Record<string, string | boolean> | null;
+  if (body?.type === "location") {
+    const latitude = Number(body.latitude);
+    const longitude = Number(body.longitude);
+    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+      return NextResponse.json({ error: "Capture or enter valid coordinates" }, { status: 400 });
+    }
+    const line1 = String(body.line1 || "").trim();
+    const city = String(body.city || "").trim();
+    const state = String(body.state || "").trim();
+    if (!line1 || !city || !state || !validText(line1, 300) || !validText(city, 100) || !validText(state, 100)) {
+      return NextResponse.json({ error: "Address, city, and state are required" }, { status: 400 });
+    }
+    const sql = getDatabase();
+    if (session.role === "farmer" && body.locationTarget !== "home") {
+      const farmId = String(body.farmId || "");
+      const [farm] = await sql`UPDATE farms SET address_text = ${line1}, city = ${city}, state = ${state}, latitude = ${latitude}, longitude = ${longitude}, updated_at = now() WHERE id = ${farmId} AND owner_id = ${session.id} RETURNING id`;
+      if (!farm) return NextResponse.json({ error: "Farm not found" }, { status: 404 });
+      await sql`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES (${session.id}, 'farm.location_updated', 'farm', ${farmId}, ${JSON.stringify({ city, state })}::jsonb)`;
+      return NextResponse.json({ updated: true });
+    }
+    const label = String(body.label || "Home").trim();
+    const recipientPhone = String(body.recipientPhone || "").trim();
+    if (!recipientPhone || !validText(label, 50) || !validText(recipientPhone, 30)) return NextResponse.json({ error: "Address label and recipient phone are required" }, { status: 400 });
+    const addressId = String(body.addressId || "");
+    if (addressId) {
+      const [ownedAddress] = await sql`SELECT id FROM addresses WHERE id = ${addressId} AND user_id = ${session.id}`;
+      if (!ownedAddress) return NextResponse.json({ error: "Saved address not found" }, { status: 404 });
+    }
+    const queries = [sql`UPDATE addresses SET is_default = false, updated_at = now() WHERE user_id = ${session.id}`];
+    if (addressId) {
+      queries.push(sql`UPDATE addresses SET label = ${label}, recipient_name = ${`${session.firstName} ${session.lastName}`}, recipient_phone = ${recipientPhone}, line1 = ${line1}, city = ${city}, state = ${state}, latitude = ${latitude}, longitude = ${longitude}, is_default = true, updated_at = now() WHERE id = ${addressId} AND user_id = ${session.id}`);
+    } else {
+      queries.push(sql`INSERT INTO addresses (user_id, label, recipient_name, recipient_phone, line1, city, state, latitude, longitude, is_default) VALUES (${session.id}, ${label}, ${`${session.firstName} ${session.lastName}`}, ${recipientPhone}, ${line1}, ${city}, ${state}, ${latitude}, ${longitude}, true)`);
+    }
+    queries.push(sql`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES (${session.id}, 'user.location_updated', 'user', ${session.id}, ${JSON.stringify({ label, city, state })}::jsonb)`);
+    await sql.transaction(queries);
+    return NextResponse.json({ updated: true });
+  }
   if (!body?.firstName || !body.lastName || !body.email) return NextResponse.json({ error: "Name and email are required" }, { status: 400 });
   if (!validText(body.firstName, 80) || !validText(body.lastName, 80) || !validText(body.email, 254) || (body.phone && !validText(body.phone, 30))) return NextResponse.json({ error: "One or more profile fields are too long" }, { status: 400 });
   const sql = getDatabase();

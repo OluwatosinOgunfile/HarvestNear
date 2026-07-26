@@ -1,0 +1,45 @@
+/* Cross-page UI defaults live here so feature styles do not need to compete. */
+.app-shell :is(button, a, input, select, textarea) {
+  transition:
+    color 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+.app-shell :is(button, a, input, select, textarea):focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--green) 24%, transparent);
+  outline-offset: 2px;
+}
+
+.app-shell :is(input, select, textarea):disabled,
+.app-shell button:disabled {
+  cursor: not-allowed;
+}
+
+@media (min-width: 769px) {
+  .app-shell small {
+    font-size: 10px;
+    line-height: 1.45;
+  }
+
+  .app-shell :is(label, .status-badge, .auth-kicker, .eyebrow) {
+    font-size: max(9px, 0.625rem);
+  }
+
+  .app-shell :is(input, select, textarea, button) {
+    font-size: max(10px, 0.6875rem);
+  }
+
+  .app-shell :is(.profile-data-list dt, .profile-panel-head > span, .panel-head > span) {
+    font-size: 9px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell :is(button, a, input, select, textarea) {
+    transition: none;
+  }
+}

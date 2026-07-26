@@ -1,3 +1,5 @@
+export const DEFAULT_LISTING_IMAGE = "/produce/vine-ripe-tomatoes.webp";
+
 function blobVersion(url: string) {
   try {
     const pathname = new URL(url).pathname;

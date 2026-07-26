@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
-import { listingImageUrl } from "@/lib/images";
+import { DEFAULT_LISTING_IMAGE, listingImageUrl } from "@/lib/images";
 
 export const dynamic = "force-dynamic";
 
@@ -16,10 +16,12 @@ export async function GET(request: NextRequest) {
     let latitude = Number(request.nextUrl.searchParams.get("lat") ?? DEFAULT_LATITUDE);
     let longitude = Number(request.nextUrl.searchParams.get("lng") ?? DEFAULT_LONGITUDE);
     let proximitySource: "saved_address" | "selected_location" = "selected_location";
+    let proximityLabel: string | null = null;
+    const selectedLocationOverride = request.nextUrl.searchParams.get("origin") === "selected";
 
-    if (session && ["consumer", "farmer"].includes(session.role)) {
+    if (session && ["consumer", "farmer"].includes(session.role) && !selectedLocationOverride) {
       const [address] = await sql`
-        SELECT latitude, longitude
+        SELECT label, city, state, latitude, longitude
         FROM addresses
         WHERE user_id = ${session.id}
         ORDER BY is_default DESC, updated_at DESC
@@ -31,6 +33,7 @@ export async function GET(request: NextRequest) {
         latitude = savedLatitude;
         longitude = savedLongitude;
         proximitySource = "saved_address";
+        proximityLabel = [address.label, address.city, address.state].filter(Boolean).join(" · ");
       }
     }
 
@@ -102,14 +105,14 @@ export async function GET(request: NextRequest) {
         rating: Number(row.rating),
         reviewCount: Number(row.review_count),
         badge: row.badge ? String(row.badge) : undefined,
-        image: row.image ? listingImageUrl(String(row.id), row.image) : "/produce/vine-ripe-tomatoes.webp",
+        image: row.image ? listingImageUrl(String(row.id), row.image) : DEFAULT_LISTING_IMAGE,
       };
     });
 
     const stats = statsRows[0];
     return NextResponse.json({
       produce,
-      proximity: { source: proximitySource },
+      proximity: { source: proximitySource, label: proximityLabel },
       stats: {
         farms: Number(stats.farms),
         listings: Number(stats.listings),

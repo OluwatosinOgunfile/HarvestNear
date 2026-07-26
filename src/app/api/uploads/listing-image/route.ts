@@ -16,7 +16,7 @@ function isBlobUrl(value: string) {
 
 export async function POST(request: Request) {
   const user = await getSessionUser();
-  if (!user || user.role !== "farmer" || !canMutateAs(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!user || !["farmer", "admin"].includes(user.role) || !canMutateAs(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   if (!await checkRateLimit(request, "upload.listing", 30, 60 * 60, user.id)) return NextResponse.json({ error: "Upload limit reached. Try again later." }, { status: 429 });
   const form = await request.formData().catch(() => null);
   const file = form?.get("file");
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   const user = await getSessionUser();
-  if (!user || user.role !== "farmer" || !canMutateAs(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!user || !["farmer", "admin"].includes(user.role) || !canMutateAs(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await request.json().catch(() => null) as { url?: string } | null;
   if (!body?.url || !isBlobUrl(body.url)) return NextResponse.json({ error: "Invalid Blob URL" }, { status: 400 });
   const pathname = decodeURIComponent(new URL(body.url).pathname).replace(/^\/+/, "");

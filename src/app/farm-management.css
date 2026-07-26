@@ -13,7 +13,8 @@
 .farmer-heading .farmer-heading-actions > .new-listing { color: white; background: var(--green); border: 1px solid var(--green); }
 .farmer-heading .farmer-heading-actions > .new-listing:disabled { color: var(--muted); background: #edf1ea; border-color: var(--line); opacity: 1; }
 .active-farm-identity { display: flex; align-items: center; gap: 7px; }
-.farm-verified-mark { width: 18px; height: 18px; display: inline-grid; place-items: center; color: var(--green); line-height: 0; }
+.farm-verified-mark { width: 18px; height: 18px; display: inline-grid; place-items: center; flex:0 0 18px; color:#237348; line-height:0; }
+.farm-verified-mark>svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2.4}
 .farmer-upgrade-card { margin-top: 18px; padding: 20px 22px; display: grid; grid-template-columns: 42px 1fr auto; gap: 15px; align-items: center; color: var(--ink); background: #f3f8f0; border: 1px solid var(--line); border-radius: 6px; }
 .farmer-upgrade-card > span { width: 42px; height: 42px; display: grid; place-items: center; color: var(--green); background: #e3eee0; border-radius: 5px; }
 .farmer-upgrade-card h2 { margin: 4px 0 5px; font: 500 19px Georgia, serif; }
@@ -29,7 +30,7 @@
 .profile-farm-switcher button > span { width: 30px; height: 30px; grid-row: 1 / 3; display: grid; place-items: center; color: var(--green); background: #edf3e9; border-radius: 4px; }
 .profile-farm-switcher button strong { align-self: end; font-size: 9px; }
 .profile-farm-switcher button small { align-self: start; color: var(--muted); font-size: 7px; }
-.profile-farm-switcher button > svg { grid-column: 3; grid-row: 1 / 3; color: var(--green); }
+.profile-farm-switcher button > svg { width:17px; height:17px; grid-column:3; grid-row:1/3; color:#237348; stroke-width:2.4; }
 .profile-farm-switcher button > i { grid-column: 3; grid-row: 1 / 3; color: #8b6119; font-size: 7px; font-style: normal; font-weight: 800; text-transform: capitalize; }
 .profile-farm-switcher button.active { border-color: var(--green); box-shadow: inset 0 0 0 1px var(--green); }
 .farmer-readonly-notice{margin:12px 0;padding:12px 15px;display:flex;align-items:center;gap:10px;color:#654d16;background:#fff5ce;border:1px solid #dec36a;border-radius:6px}.farmer-readonly-notice>svg{flex:none}.farmer-readonly-notice strong,.farmer-readonly-notice span{display:block}.farmer-readonly-notice strong{margin-bottom:3px;font-size:9px}.farmer-readonly-notice span{font-size:8px;line-height:1.45}.app-shell[data-theme="dark"] .farmer-readonly-notice{color:#f0d77f;background:#332d1c;border-color:#756329}
@@ -45,6 +46,8 @@
 .app-shell[data-theme="dark"] .farmer-upgrade-card { background: #19251d; }
 .app-shell[data-theme="dark"] .farmer-upgrade-card > span { background: #26382c; }
 .app-shell[data-theme="dark"] .profile-farm-switcher button > span { background: #26382c; }
+.app-shell[data-theme="dark"] .farm-verified-mark,
+.app-shell[data-theme="dark"] .profile-farm-switcher button>svg{color:#72c892}
 .app-shell[data-theme="dark"] .farm-switch-loading { background: rgba(12, 24, 17, .78); }
 @media (prefers-reduced-motion: reduce) { .farm-switch-loading svg { animation: none; } }
 .farm-reviews-panel{grid-column:1/-1;background:#fff;border:1px solid var(--line);border-radius:7px;overflow:hidden}.farmer-page>.farm-reviews-panel{margin-top:20px}.farm-reviews-panel .panel-head>span{display:none}.farm-review-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:16px}.farm-review-list article{padding:15px;color:var(--ink);background:#f8faf7;border:1px solid var(--line);border-radius:7px}.farm-review-list article header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.farm-review-list article header strong,.farm-review-list article header small{display:block}.farm-review-list article header strong{font-size:10px}.farm-review-list article header small{margin-top:4px;color:var(--muted);font-size:8px}.farm-review-list article header>span{display:flex;gap:2px;color:#d59b22}.farm-review-list article>p{margin:13px 0 0;color:var(--ink);font-size:9px;line-height:1.6}.farm-review-list blockquote{margin:12px 0 0;padding:10px 12px;color:var(--muted);background:#fff;border-left:3px solid var(--green);font-size:8px;line-height:1.55}.farm-review-list blockquote strong{display:block;margin-bottom:3px;color:var(--green)}.farm-reviews-empty{min-height:170px;display:flex;align-items:center;justify-content:center;flex-direction:column;color:var(--muted);text-align:center}.farm-reviews-empty>svg{margin-bottom:9px;color:var(--green)}.farm-reviews-empty strong{color:var(--ink);font:500 17px Georgia,serif}.farm-reviews-empty p{margin:5px 0 0;font-size:9px}.app-shell[data-theme="dark"] .farm-reviews-panel{background:#19211c}.app-shell[data-theme="dark"] .farm-review-list article{background:#151d18}.app-shell[data-theme="dark"] .farm-review-list blockquote{background:#202a23}@media(max-width:700px){.farm-review-list{grid-template-columns:1fr;padding:12px}.farm-review-list article header{flex-direction:column}.farm-review-list article header>span{order:-1}}

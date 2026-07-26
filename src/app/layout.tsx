@@ -15,6 +15,7 @@ import "./admin.css";
 import "./spinner.css";
 import "./polish.css";
 import "./modern.css";
+import "./consistency.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.harvestnearu.com"),

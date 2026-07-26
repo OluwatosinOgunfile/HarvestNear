@@ -3,9 +3,13 @@ import { del } from "@vercel/blob";
 
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
-import { listingImageUrl, profileImageUrl } from "@/lib/images";
+import { DEFAULT_LISTING_IMAGE, listingImageUrl, profileImageUrl } from "@/lib/images";
 
 type EntityType = "users" | "farms" | "produce" | "orders" | "refunds" | "reviews" | "activity" | "options";
+
+function isUploadedListingImage(value?: string) {
+  try { return Boolean(value && new URL(value).hostname.endsWith(".blob.vercel-storage.com")); } catch { return false; }
+}
 
 async function authorize(write = false) {
   const user = await getSessionUser();
@@ -89,7 +93,7 @@ export async function GET(request: NextRequest) {
       LEFT JOIN LATERAL (SELECT url FROM listing_images WHERE listing_id = listing.id ORDER BY sort_order LIMIT 1) image ON true
       ORDER BY listing.created_at DESC LIMIT 100
     `;
-    const mapped = rows.map((row) => ({ ...row, image_url: row.image_url ? listingImageUrl(String(row.id), String(row.image_url)) : null }));
+    const mapped = rows.map((row) => ({ ...row, image_url: row.image_url ? listingImageUrl(String(row.id), String(row.image_url)) : DEFAULT_LISTING_IMAGE }));
     return NextResponse.json(id ? { entity: mapped[0] ?? null } : { entities: mapped });
   }
 
@@ -223,7 +227,8 @@ export async function POST(request: NextRequest) {
     }
 
     if (type === "produce") {
-      if (!body.farmId || !body.categoryId || !body.name || !body.unit || !body.price || !body.stock || !body.harvestDate) throw new Error("Complete all required fields");
+      if (!body.farmId || !body.categoryId || !body.name || !body.unit || !body.price || !body.stock || !body.harvestDate || !body.imageUrl) throw new Error("Complete all required fields and upload a produce picture");
+      if (!isUploadedListingImage(body.imageUrl)) throw new Error("Upload a valid produce picture");
       const slug = slugify(body.name);
       const [product] = await sql`
         INSERT INTO products (category_id, name, slug, default_unit)
@@ -394,12 +399,24 @@ export async function PATCH(request: NextRequest) {
         if (!body.farmId || !body.title || !body.unit || !body.price || !body.stock || !body.harvestDate || !["draft", "active", "sold_out", "expired", "paused"].includes(body.status)) {
           return NextResponse.json({ error: "Complete all required produce fields" }, { status: 400 });
         }
+        if (body.imageUrl && !isUploadedListingImage(body.imageUrl)) return NextResponse.json({ error: "Upload a valid produce picture" }, { status: 400 });
+        const [currentImage] = body.imageUrl ? await sql`SELECT url FROM listing_images WHERE listing_id = ${id} ORDER BY sort_order, created_at LIMIT 1` : [];
         [entity] = await sql`
           UPDATE produce_listings SET farm_id = ${body.farmId}, title = ${body.title}, unit = ${body.unit},
             unit_price_kobo = ${Math.round(Number(body.price) * 100)}, quantity_available = ${Number(body.stock)},
             harvest_date = ${body.harvestDate}, badge = ${body.badge || null}, status = ${body.status}::listing_status, updated_at = now()
           WHERE id = ${id} RETURNING id
         `;
+        if (entity && body.imageUrl) {
+          await sql.transaction([
+            sql`DELETE FROM listing_images WHERE listing_id = ${id}`,
+            sql`INSERT INTO listing_images (listing_id, url, alt_text) VALUES (${id}, ${body.imageUrl}, ${body.title})`,
+          ]);
+          const previousUrl = currentImage?.url ? String(currentImage.url) : "";
+          if (previousUrl && previousUrl !== body.imageUrl && previousUrl.includes(".blob.vercel-storage.com")) {
+            await del(previousUrl).catch((error) => console.error("Administrator listing image cleanup failed", error));
+          }
+        }
       }
       if (!entity) return NextResponse.json({ error: "Entity not found" }, { status: 404 });
       await sql`

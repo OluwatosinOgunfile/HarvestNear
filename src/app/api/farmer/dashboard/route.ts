@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
-import { listingImageUrl, profileImageUrl } from "@/lib/images";
+import { DEFAULT_LISTING_IMAGE, listingImageUrl, profileImageUrl } from "@/lib/images";
 import { canMutateAs, checkRateLimit, validText } from "@/lib/security";
 
 async function farmerSession(write = false) {
@@ -16,6 +16,10 @@ function validListingImage(value?: string) {
   if (!value) return true;
   if (/^\/produce\/[a-z0-9._-]+$/i.test(value)) return true;
   try { return new URL(value).hostname.endsWith(".blob.vercel-storage.com"); } catch { return false; }
+}
+
+function isUploadedListingImage(value?: string) {
+  try { return Boolean(value && new URL(value).hostname.endsWith(".blob.vercel-storage.com")); } catch { return false; }
 }
 
 export async function GET(request: Request) {
@@ -67,7 +71,7 @@ export async function GET(request: Request) {
   return NextResponse.json({ user, farm, farms, metrics: metricRows[0], orders: orders.map((order) => {
     const itemTracking = order.items as Array<{ id: string; name: string; quantity: number; unit: string; status: string; preparing_at: string | null; ready_at: string | null; dispatched_at: string | null; received_at: string | null; updated_at: string }>;
     return { ...order, items: itemTracking.map((item) => `${item.quantity} ${item.unit} · ${item.name} (${item.status.replaceAll("_", " ")})`).join(", "), itemTracking, customer_avatar: order.customer_avatar ? profileImageUrl(String(order.customer_id), order.customer_avatar) : null };
-  }), listings: listings.map((listing) => ({ ...listing, stored_image_url: listing.image_url, image_url: listing.image_url ? listingImageUrl(String(listing.id), listing.image_url) : null })), categories, reviews });
+  }), listings: listings.map((listing) => ({ ...listing, stored_image_url: listing.image_url, image_url: listing.image_url ? listingImageUrl(String(listing.id), listing.image_url) : DEFAULT_LISTING_IMAGE })), categories, reviews });
 }
 
 export async function POST(request: Request) {
@@ -80,7 +84,7 @@ export async function POST(request: Request) {
   }
   if (!body?.farmId || !body.categoryId || !body.name || !body.unit || !body.price || !body.stock || !body.harvestDate) return NextResponse.json({ error: "Complete all required fields" }, { status: 400 });
   if (!validText(body.name, 140) || !validText(body.unit, 40) || (body.badge && !validText(body.badge, 80))) return NextResponse.json({ error: "One or more listing fields are too long" }, { status: 400 });
-  if (!validListingImage(body.imageUrl)) return NextResponse.json({ error: "Upload a JPG, PNG, or WebP image no larger than 2 MB" }, { status: 400 });
+  if (!isUploadedListingImage(body.imageUrl)) return NextResponse.json({ error: "Upload a produce picture before publishing this listing" }, { status: 400 });
   const sql = getDatabase();
   const [ownedFarm] = await sql`SELECT id FROM farms WHERE id = ${body.farmId} AND owner_id = ${user.id} AND verification_status = 'verified'`;
   if (!ownedFarm) return NextResponse.json({ error: "Only verified farms can publish listings" }, { status: 403 });
@@ -199,7 +203,7 @@ export async function PATCH(request: Request) {
   }
   if (body?.type === "listing" && body.id && ["active", "paused"].includes(body.status)) {
     if (!body.categoryId || !body.name || !body.unit || !body.price || !body.stock || !body.harvestDate) return NextResponse.json({ error: "Complete all required fields" }, { status: 400 });
-    if (!validListingImage(body.imageUrl)) return NextResponse.json({ error: "Upload a JPG, PNG, or WebP image no larger than 2 MB" }, { status: 400 });
+    if (!validListingImage(body.imageUrl)) return NextResponse.json({ error: "Upload a JPG, PNG, or WebP image no larger than 4 MB" }, { status: 400 });
     const price = Number(body.price);
     const stock = Number(body.stock);
     if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(stock) || stock < 0) return NextResponse.json({ error: "Enter a valid price and quantity" }, { status: 400 });
