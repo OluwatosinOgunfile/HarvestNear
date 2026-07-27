@@ -19,6 +19,22 @@
   cursor: not-allowed;
 }
 
+.signin-submit.is-loading {
+  opacity: 0.88;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.signin-spinner {
+  flex: 0 0 auto;
+  animation: signin-spin 750ms linear infinite;
+}
+
+@keyframes signin-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (min-width: 769px) {
   .app-shell small {
     font-size: 10px;
@@ -41,5 +57,9 @@
 @media (prefers-reduced-motion: reduce) {
   .app-shell :is(button, a, input, select, textarea) {
     transition: none;
+  }
+
+  .signin-spinner {
+    animation: none;
   }
 }

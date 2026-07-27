@@ -897,7 +897,9 @@ export default function Home() {
             <label>Password<div className="password-field"><input required autoComplete="current-password" value={signinPassword} onChange={(event) => setSigninPassword(event.target.value)} type={showSigninPassword ? "text" : "password"} placeholder="Enter your password"/><button type="button" onClick={() => setShowSigninPassword((value) => !value)} aria-label={showSigninPassword ? "Hide password" : "Show password"} aria-pressed={showSigninPassword} title={showSigninPassword ? "Hide password" : "Show password"}>{showSigninPassword ? <EyeOff size={17}/> : <Eye size={17}/>}</button></div></label>
             {signinError && <p className="auth-error" role="alert">{signinError}</p>}
             <div className="signin-options"><label><input type="checkbox" /> Keep me signed in</label><button type="button">Forgot password?</button></div>
-            <button className="signin-submit" type="submit" disabled={signinBusy}>{signinBusy ? "Signing in..." : "Sign in securely"} {!signinBusy && <ArrowRight size={17} />}</button>
+            <button className={`signin-submit${signinBusy ? " is-loading" : ""}`} type="submit" disabled={signinBusy} aria-busy={signinBusy}>
+              {signinBusy ? <><LoaderCircle className="signin-spinner" size={18}/> <span>Signing in...</span></> : <><span>Sign in securely</span> <ArrowRight size={17}/></>}
+            </button>
           </form>
           <div className="auth-divider"><span>or</span></div>
           <p className="signin-copy">New to HarvestNearU? <button onClick={() => { setSigninOpen(false); openSignup(); }}>Create an account</button></p>
