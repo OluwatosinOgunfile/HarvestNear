@@ -11,6 +11,14 @@ function isUploadedListingImage(value?: string) {
   try { return Boolean(value && new URL(value).hostname.endsWith(".blob.vercel-storage.com")); } catch { return false; }
 }
 
+function availabilityWindow(from?: string, until?: string) {
+  if (!from || !until) return null;
+  const availableFrom = new Date(`${from}:00+01:00`);
+  const availableUntil = new Date(`${until}:00+01:00`);
+  if (!Number.isFinite(availableFrom.getTime()) || !Number.isFinite(availableUntil.getTime()) || availableUntil <= availableFrom) return null;
+  return { availableFrom: availableFrom.toISOString(), availableUntil: availableUntil.toISOString() };
+}
+
 async function authorize(write = false) {
   const user = await getSessionUser();
   if (!user || !["admin", "support"].includes(user.role) || (write && (user.role !== "admin" || user.impersonating))) return null;
@@ -86,7 +94,8 @@ export async function GET(request: NextRequest) {
       WHERE listing.id = ${id} LIMIT 1
     ` : await sql`
       SELECT listing.id, listing.title, listing.unit, listing.unit_price_kobo, listing.quantity_available,
-        listing.quantity_reserved, listing.quantity_sold, listing.status, listing.harvest_date, listing.created_at,
+        listing.quantity_reserved, listing.quantity_sold, listing.status, listing.harvest_date,
+        listing.available_from, listing.available_until, listing.created_at,
         farm.name AS farm_name, category.name AS category_name, image.url AS image_url
       FROM produce_listings listing JOIN products product ON product.id = listing.product_id
       JOIN produce_categories category ON category.id = product.category_id JOIN farms farm ON farm.id = listing.farm_id
@@ -227,7 +236,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (type === "produce") {
-      if (!body.farmId || !body.categoryId || !body.name || !body.unit || !body.price || !body.stock || !body.harvestDate || !body.imageUrl) throw new Error("Complete all required fields and upload a produce picture");
+      if (!body.farmId || !body.categoryId || !body.name || !body.unit || !body.price || !body.stock || !body.harvestDate || !body.availableFrom || !body.availableUntil || !body.imageUrl) throw new Error("Complete all required fields and upload a produce picture");
+      const availability = availabilityWindow(body.availableFrom, body.availableUntil);
+      if (!availability) throw new Error("Available until must be later than available from");
       if (!isUploadedListingImage(body.imageUrl)) throw new Error("Upload a valid produce picture");
       const slug = slugify(body.name);
       const [product] = await sql`
@@ -237,8 +248,8 @@ export async function POST(request: NextRequest) {
         RETURNING id
       `;
       const [entity] = await sql`
-        INSERT INTO produce_listings (farm_id, product_id, title, unit, unit_price_kobo, quantity_available, harvest_date, available_from, available_until, status, badge)
-        VALUES (${body.farmId}, ${product.id}, ${body.name}, ${body.unit}, ${Math.round(Number(body.price) * 100)}, ${Number(body.stock)}, ${body.harvestDate}, now(), now() + interval '14 days', 'active', ${body.badge || null})
+        INSERT INTO produce_listings (farm_id, product_id, title, unit, unit_price_kobo, quantity_available, last_restock_total, last_restocked_at, harvest_date, available_from, available_until, status, badge)
+        VALUES (${body.farmId}, ${product.id}, ${body.name}, ${body.unit}, ${Math.round(Number(body.price) * 100)}, ${Number(body.stock)}, ${Number(body.stock)}, now(), ${body.harvestDate}, ${availability.availableFrom}, ${availability.availableUntil}, 'active', ${body.badge || null})
         RETURNING id
       `;
       if (body.imageUrl) await sql`INSERT INTO listing_images (listing_id, url, alt_text) VALUES (${entity.id}, ${body.imageUrl}, ${body.name})`;
@@ -396,15 +407,22 @@ export async function PATCH(request: NextRequest) {
           WHERE id = ${id} RETURNING id
         `;
       } else {
-        if (!body.farmId || !body.title || !body.unit || !body.price || !body.stock || !body.harvestDate || !["draft", "active", "sold_out", "expired", "paused"].includes(body.status)) {
+        if (!body.farmId || !body.title || !body.unit || !body.price || body.stock === undefined || body.stock === null || body.stock === "" || !body.harvestDate || !body.availableFrom || !body.availableUntil || !["draft", "active", "sold_out", "expired", "paused"].includes(body.status)) {
           return NextResponse.json({ error: "Complete all required produce fields" }, { status: 400 });
         }
+        const availability = availabilityWindow(body.availableFrom, body.availableUntil);
+        if (!availability) return NextResponse.json({ error: "Available until must be later than available from" }, { status: 400 });
         if (body.imageUrl && !isUploadedListingImage(body.imageUrl)) return NextResponse.json({ error: "Upload a valid produce picture" }, { status: 400 });
         const [currentImage] = body.imageUrl ? await sql`SELECT url FROM listing_images WHERE listing_id = ${id} ORDER BY sort_order, created_at LIMIT 1` : [];
         [entity] = await sql`
           UPDATE produce_listings SET farm_id = ${body.farmId}, title = ${body.title}, unit = ${body.unit},
             unit_price_kobo = ${Math.round(Number(body.price) * 100)}, quantity_available = ${Number(body.stock)},
-            harvest_date = ${body.harvestDate}, badge = ${body.badge || null}, status = ${body.status}::listing_status, updated_at = now()
+            last_restock_total = CASE WHEN ${Number(body.stock)} > quantity_available THEN ${Number(body.stock)} ELSE last_restock_total END,
+            last_restocked_at = CASE WHEN ${Number(body.stock)} > quantity_available THEN now() ELSE last_restocked_at END,
+            harvest_date = ${body.harvestDate}, available_from = ${availability.availableFrom},
+            available_until = ${availability.availableUntil}, badge = ${body.badge || null},
+            status = CASE WHEN ${Number(body.stock)} <= quantity_reserved THEN 'sold_out'::listing_status ELSE ${body.status}::listing_status END,
+            updated_at = now()
           WHERE id = ${id} RETURNING id
         `;
         if (entity && body.imageUrl) {

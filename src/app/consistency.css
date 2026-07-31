@@ -19,6 +19,13 @@
   cursor: not-allowed;
 }
 
+.stepper button:disabled {
+  color: var(--muted);
+  opacity: 0.38;
+  background: transparent;
+  box-shadow: none;
+}
+
 .signin-submit.is-loading {
   opacity: 0.88;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);

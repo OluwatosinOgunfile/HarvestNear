@@ -52,6 +52,7 @@ export async function GET(request: NextRequest) {
         listing.unit,
         (listing.quantity_available - listing.quantity_reserved) AS stock,
         listing.quantity_sold AS sold,
+        listing.last_restock_total,
         category.name AS category,
         listing.harvest_date,
         farm.average_rating AS rating,
@@ -70,14 +71,18 @@ export async function GET(request: NextRequest) {
       ) image ON true
       WHERE listing.status = 'active'
         AND listing.quantity_available > listing.quantity_reserved
-        AND listing.available_until > now()
         AND farm.verification_status = 'verified'
       ORDER BY distance_km(${latitude}, ${longitude}, farm.latitude, farm.longitude), listing.created_at DESC
     `, sql`
       SELECT
         count(*) FILTER (WHERE verification_status = 'verified')::int AS farms,
         coalesce(round(avg(average_rating) FILTER (WHERE verification_status = 'verified'), 1), 0) AS average_rating,
-        (SELECT count(*)::int FROM produce_listings WHERE status = 'active' AND quantity_available > quantity_reserved AND available_until > now()) AS listings,
+        (SELECT count(*)::int
+          FROM produce_listings listing
+          JOIN farms listing_farm ON listing_farm.id = listing.farm_id
+          WHERE listing.status = 'active'
+            AND listing.quantity_available > listing.quantity_reserved
+            AND listing_farm.verification_status = 'verified') AS listings,
         (SELECT count(*)::int FROM users WHERE role = 'consumer' AND is_active) AS consumers,
         (SELECT count(*)::int FROM users WHERE role = 'farmer' AND is_active) AS farmers
       FROM farms
@@ -100,6 +105,7 @@ export async function GET(request: NextRequest) {
         unit: String(row.unit),
         stock: Number(row.stock),
         sold: Number(row.sold),
+        restockTotal: Number(row.last_restock_total),
         category: String(row.category),
         available: daysAway <= 0 ? "Today" : daysAway === 1 ? "Tomorrow" : harvestDate.toLocaleDateString("en-NG", { weekday: "short", day: "numeric", month: "short", timeZone: "Africa/Lagos" }),
         rating: Number(row.rating),

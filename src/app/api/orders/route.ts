@@ -57,7 +57,7 @@ export async function POST(request: Request) {
   const [paymentSettings] = await sql`SELECT is_enabled, bank_name, account_name, account_number FROM manual_payment_settings WHERE id = 1`;
   const listingIds = items.map((item) => item.listingId);
   const listings = await sql`
-    SELECT listing.id, listing.title, listing.unit, listing.unit_price_kobo, listing.quantity_available,
+    SELECT listing.id, listing.title, listing.unit, listing.unit_price_kobo, listing.quantity_available, listing.quantity_reserved,
       listing.farm_id, farm.owner_id AS farm_owner_id, farm.name AS farm_name, image.url AS image_url
     FROM produce_listings listing JOIN farms farm ON farm.id = listing.farm_id
     LEFT JOIN LATERAL (SELECT url FROM listing_images WHERE listing_id = listing.id ORDER BY sort_order LIMIT 1) image ON true
@@ -67,7 +67,10 @@ export async function POST(request: Request) {
 
   const requested = new Map(items.map((item) => [item.listingId, item.quantity]));
   for (const listing of listings) {
-    if (Number(listing.quantity_available) < Number(requested.get(String(listing.id)))) return NextResponse.json({ error: `${listing.title} does not have enough stock` }, { status: 409 });
+    const available = Number(listing.quantity_available) - Number(listing.quantity_reserved);
+    if (available < Number(requested.get(String(listing.id)))) {
+      return NextResponse.json({ error: `${listing.title} only has ${Math.max(0, available)} ${listing.unit} available` }, { status: 409 });
+    }
   }
 
   const orderId = randomUUID();
@@ -83,7 +86,20 @@ export async function POST(request: Request) {
   const farms = new Map<string, typeof listings>();
   for (const listing of listings) farms.set(String(listing.farm_id), [...(farms.get(String(listing.farm_id)) ?? []), listing]);
 
-  const queries = [sql`
+  const queries = [
+    sql`SELECT id FROM produce_listings WHERE id = ANY(${listingIds}::uuid[]) ORDER BY id FOR UPDATE`,
+    ...listings.map((listing) => {
+      const quantity = Number(requested.get(String(listing.id)));
+      return sql`
+        SELECT CASE
+          WHEN status = 'active' AND quantity_available - quantity_reserved >= ${quantity} THEN true
+          ELSE CAST('insufficient_stock' AS boolean)
+        END
+        FROM produce_listings
+        WHERE id = ${listing.id}
+      `;
+    }),
+    sql`
     INSERT INTO orders (id, order_number, customer_id, status, subtotal_kobo, delivery_fee_kobo, discount_kobo, total_kobo, fulfilment_method, delivery_address_snapshot, placed_at, paid_at)
     VALUES (${orderId}, ${orderNumber}, ${user.id}, ${paidWithCredit ? "confirmed" : "pending_payment"}::order_status, ${subtotalKobo}, ${deliveryFeeKobo}, ${creditAppliedKobo}, ${payableKobo}, ${fulfilmentMethod}::fulfilment_method,
       ${fulfilmentMethod === "doorstep" ? JSON.stringify({ city: "Gudu", state: "FCT" }) : null}::jsonb, now(), ${paidWithCredit ? new Date() : null})
@@ -116,7 +132,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ orderId, orderNumber, requiresReceipt: !paidWithCredit, creditAppliedKobo, payableKobo }, { status: 201 });
   } catch (error) {
     console.error("Checkout failed", error);
-    return NextResponse.json({ error: "Could not complete the order. Refresh your basket and try again." }, { status: 409 });
+    const message = String((error as { message?: string }).message || "");
+    return NextResponse.json({ error: message.includes("insufficient_stock") ? "Some basket quantities exceed current stock. Refresh your basket and try again." : "Could not complete the order. Refresh your basket and try again." }, { status: 409 });
   }
 }
 

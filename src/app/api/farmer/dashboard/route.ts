@@ -22,6 +22,14 @@ function isUploadedListingImage(value?: string) {
   try { return Boolean(value && new URL(value).hostname.endsWith(".blob.vercel-storage.com")); } catch { return false; }
 }
 
+function availabilityWindow(from?: string, until?: string) {
+  if (!from || !until) return null;
+  const availableFrom = new Date(`${from}:00+01:00`);
+  const availableUntil = new Date(`${until}:00+01:00`);
+  if (!Number.isFinite(availableFrom.getTime()) || !Number.isFinite(availableUntil.getTime()) || availableUntil <= availableFrom) return null;
+  return { availableFrom: availableFrom.toISOString(), availableUntil: availableUntil.toISOString() };
+}
+
 export async function GET(request: Request) {
   const user = await farmerSession();
   if (!user) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -57,7 +65,9 @@ export async function GET(request: Request) {
       GROUP BY fo.id, o.order_number, o.fulfilment_method, o.placed_at, o.delivery_address_snapshot, o.customer_note, users.id, users.email, users.phone, users.avatar_url, users.first_name, users.last_name, delivery.tracking_code, delivery.status
       ORDER BY o.placed_at DESC LIMIT 50`,
     sql`SELECT listing.id, listing.title, listing.unit, listing.unit_price_kobo, listing.quantity_available,
-      listing.quantity_reserved, listing.quantity_sold, listing.status, listing.harvest_date, listing.badge, product.category_id, image.url AS image_url
+      listing.quantity_reserved, listing.quantity_sold, listing.last_restock_total, listing.last_restocked_at,
+      listing.status, listing.harvest_date, listing.available_from, listing.available_until,
+      listing.badge, product.category_id, image.url AS image_url
       FROM produce_listings listing JOIN products product ON product.id = listing.product_id
       LEFT JOIN LATERAL (SELECT url FROM listing_images WHERE listing_id = listing.id ORDER BY sort_order LIMIT 1) image ON true
       WHERE listing.farm_id = ${farm.id} ORDER BY listing.created_at DESC LIMIT 50`,
@@ -82,7 +92,9 @@ export async function POST(request: Request) {
   if (body?.type === "farm") {
     return POSTFarm(request, user, body);
   }
-  if (!body?.farmId || !body.categoryId || !body.name || !body.unit || !body.price || !body.stock || !body.harvestDate) return NextResponse.json({ error: "Complete all required fields" }, { status: 400 });
+  if (!body?.farmId || !body.categoryId || !body.name || !body.unit || !body.price || !body.stock || !body.harvestDate || !body.availableFrom || !body.availableUntil) return NextResponse.json({ error: "Complete all required fields" }, { status: 400 });
+  const availability = availabilityWindow(body.availableFrom, body.availableUntil);
+  if (!availability) return NextResponse.json({ error: "Available until must be later than available from" }, { status: 400 });
   if (!validText(body.name, 140) || !validText(body.unit, 40) || (body.badge && !validText(body.badge, 80))) return NextResponse.json({ error: "One or more listing fields are too long" }, { status: 400 });
   if (!isUploadedListingImage(body.imageUrl)) return NextResponse.json({ error: "Upload a produce picture before publishing this listing" }, { status: 400 });
   const sql = getDatabase();
@@ -92,8 +104,8 @@ export async function POST(request: Request) {
   try {
     const [product] = await sql`INSERT INTO products (category_id, name, slug, default_unit) VALUES (${body.categoryId}, ${body.name}, ${slug}, ${body.unit}) ON CONFLICT (slug) DO UPDATE SET default_unit = excluded.default_unit RETURNING id`;
     const [listing] = await sql`
-      INSERT INTO produce_listings (farm_id, product_id, title, unit, unit_price_kobo, quantity_available, harvest_date, available_from, available_until, status, badge)
-      VALUES (${ownedFarm.id}, ${product.id}, ${body.name}, ${body.unit}, ${Math.round(Number(body.price) * 100)}, ${Number(body.stock)}, ${body.harvestDate}, now(), now() + interval '14 days', 'active', ${body.badge || null}) RETURNING id
+      INSERT INTO produce_listings (farm_id, product_id, title, unit, unit_price_kobo, quantity_available, last_restock_total, last_restocked_at, harvest_date, available_from, available_until, status, badge)
+      VALUES (${ownedFarm.id}, ${product.id}, ${body.name}, ${body.unit}, ${Math.round(Number(body.price) * 100)}, ${Number(body.stock)}, ${Number(body.stock)}, now(), ${body.harvestDate}, ${availability.availableFrom}, ${availability.availableUntil}, 'active', ${body.badge || null}) RETURNING id
     `;
     if (body.imageUrl) await sql`INSERT INTO listing_images (listing_id, url, alt_text) VALUES (${listing.id}, ${body.imageUrl}, ${body.name})`;
     return NextResponse.json({ id: listing.id }, { status: 201 });
@@ -202,7 +214,9 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ updated: true });
   }
   if (body?.type === "listing" && body.id && ["active", "paused"].includes(body.status)) {
-    if (!body.categoryId || !body.name || !body.unit || !body.price || !body.stock || !body.harvestDate) return NextResponse.json({ error: "Complete all required fields" }, { status: 400 });
+    if (!body.categoryId || !body.name || !body.unit || !body.price || !body.stock || !body.harvestDate || !body.availableFrom || !body.availableUntil) return NextResponse.json({ error: "Complete all required fields" }, { status: 400 });
+    const availability = availabilityWindow(body.availableFrom, body.availableUntil);
+    if (!availability) return NextResponse.json({ error: "Available until must be later than available from" }, { status: 400 });
     if (!validListingImage(body.imageUrl)) return NextResponse.json({ error: "Upload a JPG, PNG, or WebP image no larger than 4 MB" }, { status: 400 });
     const price = Number(body.price);
     const stock = Number(body.stock);
@@ -213,7 +227,14 @@ export async function PATCH(request: Request) {
     const slug = body.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
     try {
       const [product] = await sql`INSERT INTO products (category_id, name, slug, default_unit) VALUES (${body.categoryId}, ${body.name}, ${slug}, ${body.unit}) ON CONFLICT (slug) DO UPDATE SET category_id = excluded.category_id, name = excluded.name, default_unit = excluded.default_unit RETURNING id`;
-      await sql`UPDATE produce_listings SET product_id = ${product.id}, title = ${body.name}, unit = ${body.unit}, unit_price_kobo = ${Math.round(price * 100)}, quantity_available = ${stock}, harvest_date = ${body.harvestDate}, status = ${body.status}::listing_status, badge = ${body.badge || null}, updated_at = now(), version = version + 1 WHERE id = ${body.id}`;
+      await sql`UPDATE produce_listings SET product_id = ${product.id}, title = ${body.name}, unit = ${body.unit}, unit_price_kobo = ${Math.round(price * 100)},
+        last_restock_total = CASE WHEN ${stock} > quantity_available THEN ${stock} ELSE last_restock_total END,
+        last_restocked_at = CASE WHEN ${stock} > quantity_available THEN now() ELSE last_restocked_at END,
+        quantity_available = ${stock}, harvest_date = ${body.harvestDate},
+        available_from = ${availability.availableFrom}, available_until = ${availability.availableUntil},
+        status = CASE WHEN ${stock} <= quantity_reserved THEN 'sold_out'::listing_status ELSE ${body.status}::listing_status END,
+        badge = ${body.badge || null},
+        updated_at = now(), version = version + 1 WHERE id = ${body.id}`;
       await sql`DELETE FROM listing_images WHERE listing_id = ${body.id}`;
       if (body.imageUrl) await sql`INSERT INTO listing_images (listing_id, url, alt_text) VALUES (${body.id}, ${body.imageUrl}, ${body.name})`;
       const previousImage = ownedListing.image_url ? String(ownedListing.image_url) : "";
