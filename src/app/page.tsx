@@ -1096,8 +1096,8 @@ function SupportPage({ page, onNavigate, user, onSignIn }: { page: "help" | "del
     ["How do manual bank-transfer payments work?", "At checkout, transfer the displayed amount to the company bank account and upload a JPG, PNG, WebP, or PDF receipt. Your order remains pending while an administrator verifies the transfer. You will receive a notification when payment is confirmed."],
     ["Can I pay with my account credit?", "Yes. Available account credit is applied during checkout. If it covers the full order, no bank transfer or receipt is required. You can see your current balance in the account menu and on your profile."],
     ["Can I cancel an order after submitting payment?", "You can cancel a pending-payment order before an administrator confirms it. Choose full account credit for a future purchase or request a bank refund. Bank refunds include the displayed cancellation fee and require administrator review."],
-    ["How do I track and confirm receipt of an order?", "Open My orders to follow every product separately. Confirm each product only after it is delivered or ready for collection. The order is completed, and farm feedback becomes available, after every product has been acknowledged."],
-    ["How do farm ratings work?", "After confirming receipt, you will be asked to rate each farm involved in the order. You can give one to five stars, add a comment, and update your rating later from the completed order."],
+    ["How do I track and confirm receipt of an order?", "Open My orders to follow every product separately. Confirm each product only after it is delivered or ready for collection. You can rate its farm immediately, while the overall order completes after every product has been acknowledged."],
+    ["How do farm ratings work?", "After confirming an individual product, you will be invited to rate the farm that supplied it. You can give one to five stars, add a comment, and update the rating later from the completed order."],
     ["Can a consumer account become a farmer account?", "Yes. Open your profile and choose Become a farmer. Your existing orders, saved produce, and customer history remain on the account while you add farm information for verification."],
     ["Can a farmer manage more than one farm?", "Yes. Farmers can add multiple farms, switch the active farm in the workspace and profile, and manage separate verification, listings, orders, delivery settings, and earnings for each farm."],
     ["How do I report a problem and follow the response?", "Sign in and open the Help Centre, then create a support ticket with the issue category and relevant details. You can read staff replies and continue the conversation from your ticket history."],
@@ -1737,10 +1737,11 @@ function CustomerOrderCard({ order, active, expanded, receiptBusy, onToggle, onU
         const itemIndex = received ? itemSteps.length - 1 : statusOrder.indexOf(item.status);
         const canConfirmItem = order.fulfilment_method === "doorstep" ? item.status === "dispatched" : ["ready","dispatched"].includes(item.status);
         const itemOpen = expandedItems.includes(item.id);
+        const itemFarm = order.farms.find((farm) => farm.name === item.farm);
         return <article className={received ? "received" : ""} key={item.id}>
           <div className="item-tracking-heading"><button className="item-tracking-main" onClick={() => toggleItem(item.id)} aria-expanded={itemOpen}>{item.image ? <img src={item.image} alt=""/> : <span><Leaf size={17}/></span>}<p><strong>{item.name}</strong><small>{item.farm} · {item.quantity} {item.unit}</small></p><div className="item-tracking-meta"><strong>{money(Number(item.unit_price_kobo) * Number(item.quantity) / 100)}</strong><b className={`status-badge ${item.status}`}>{received ? "received" : item.status.replaceAll("_", " ")}</b></div></button><button className="item-expand-button" onClick={() => toggleItem(item.id)} aria-expanded={itemOpen} aria-label={`${itemOpen ? "Hide" : "Show"} tracking progress for ${item.name}`}><ChevronDown className={itemOpen ? "open" : ""} size={18}/></button></div>
           <div className={`item-progress-collapse ${itemOpen ? "open" : ""}`} aria-hidden={!itemOpen}><div><div className="item-tracking-progress">{itemSteps.map((status, index) => { const complete = itemIndex >= index; return <div className={complete ? "complete" : ""} key={status}><span>{complete ? <Check size={11}/> : index + 1}</span><small>{status === "dispatched" ? "On the way" : status}</small>{index < itemSteps.length - 1 && <i/>}</div>; })}</div>
-          <div className="item-receipt-row"><p className="item-tracking-time">Last updated {new Date(item.updated_at || order.placed_at).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" })}</p>{canConfirmItem && <button onClick={() => onConfirm(item)} disabled={receiptBusy}><PackageCheck size={14}/>{receiptBusy ? "Confirming..." : `I received ${item.name}`}</button>}{received && <span><Check size={13}/> Receipt confirmed</span>}</div></div></div>
+          <div className="item-receipt-row"><p className="item-tracking-time">Last updated {new Date(item.updated_at || order.placed_at).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" })}</p>{canConfirmItem && <button onClick={() => onConfirm(item)} disabled={receiptBusy}><PackageCheck size={14}/>{receiptBusy ? "Confirming..." : `I received ${item.name}`}</button>}{received && <span><Check size={13}/> Receipt confirmed</span>}{received && itemFarm && <button onClick={() => onRating(itemFarm)}><Star size={14} fill={itemFarm.rating ? "currentColor" : "none"}/>{itemFarm.rating ? "Edit farm rating" : "Rate this farm"}</button>}</div></div></div>
         </article>;
       })}</div>
       {order.tracking?.events?.length ? <div className="tracking-events">{order.tracking.events.map((event) => <div key={event.id}><span/><p><strong>{event.message}</strong><small>{new Date(event.occurred_at).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" })}</small></p></div>)}</div> : <p className="tracking-note">Confirm each product only after it reaches you. Feedback becomes available when all products are received.</p>}
@@ -1800,15 +1801,16 @@ function DatabaseOrdersPage({ onShop, onHelp }: { onShop: () => void; onHelp: ()
     setReceiptBusy(order.id); setError("");
     try {
       const response = await fetch("/api/orders", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: order.id, itemId: item.id, action: "confirm_item_receipt" }) });
-      const result = await readJsonResponse(response) as { error?: string; completed?: boolean };
+      const result = await readJsonResponse(response) as { error?: string; completed?: boolean; farm?: CustomerOrder["farms"][number] };
       if (!response.ok) throw new Error(result.error || "Could not confirm receipt");
       await refreshOrders();
+      const receivedFarm = result.farm && !result.farm.rating ? result.farm : null;
       if (result.completed) {
         setTab("past");
         setExpanded(order.id);
-        const unratedFarm = order.farms.find((farm) => !farm.rating) || order.farms[0];
+        const unratedFarm = receivedFarm || order.farms.find((farm) => !farm.rating);
         if (unratedFarm) openRating({ orderId: order.id, farm: unratedFarm });
-      }
+      } else if (receivedFarm) openRating({ orderId: order.id, farm: receivedFarm });
     } catch (reason) { setError((reason as Error).message); } finally { setReceiptBusy(null); }
   }
   async function uploadPaymentReceipt(orderId: string, file: File | undefined) {

@@ -15,9 +15,14 @@ export async function POST(request: Request) {
   const [eligible] = await sql`
     SELECT fo.id, EXISTS(SELECT 1 FROM reviews WHERE order_id = o.id AND farm_id = fo.farm_id) AS existing_review FROM farm_orders fo JOIN orders o ON o.id = fo.order_id
     WHERE o.id = ${body.orderId} AND o.customer_id = ${user.id} AND fo.farm_id = ${body.farmId}
-      AND o.status IN ('delivered','collected') AND fo.status IN ('delivered','collected')
+      AND EXISTS (
+        SELECT 1 FROM order_items item
+        WHERE item.farm_order_id = fo.id
+          AND item.received_at IS NOT NULL
+          AND item.status IN ('delivered','collected')
+      )
   `;
-  if (!eligible) return NextResponse.json({ error: "Only completed purchases can be rated" }, { status: 403 });
+  if (!eligible) return NextResponse.json({ error: "You can rate this farm after acknowledging one of its products" }, { status: 403 });
   const comment = body.comment?.trim().slice(0, 800) || null;
   try {
     await sql.transaction([

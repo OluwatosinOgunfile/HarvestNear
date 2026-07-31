@@ -149,7 +149,8 @@ export async function PATCH(request: Request) {
   const sql = getDatabase();
   const [item] = await sql`
     SELECT item.id, item.product_name, item.status, item.farm_order_id, item.order_id,
-      orders.order_number, orders.fulfilment_method, farm.owner_id AS farmer_id
+      orders.order_number, orders.fulfilment_method, farm.id AS farm_id, farm.name AS farm_name,
+      farm.owner_id AS farmer_id
     FROM order_items item
     JOIN orders ON orders.id = item.order_id
     JOIN farm_orders farm_order ON farm_order.id = item.farm_order_id
@@ -192,6 +193,12 @@ export async function PATCH(request: Request) {
       VALUES (${user.id}, 'order', 'Tell us about your order', 'Every product has been received. Rate the farms and share feedback about your experience.', '/orders',
         ${JSON.stringify({ orderId: String(item.order_id), completed: true })}::jsonb)`;
   }
+  const [receivedFarm] = await sql`
+    SELECT farm.id, farm.name, review.rating, review.comment
+    FROM farms farm
+    LEFT JOIN reviews review ON review.order_id = ${item.order_id} AND review.farm_id = farm.id AND review.customer_id = ${user.id}
+    WHERE farm.id = ${item.farm_id}
+  `;
   const farms = completed ? await sql`SELECT farm.id, farm.name FROM farm_orders fo JOIN farms farm ON farm.id = fo.farm_id WHERE fo.order_id = ${item.order_id} ORDER BY farm.name` : [];
-  return NextResponse.json({ status: finalStatus, orderStatus: updatedOrder?.status, completed, farms });
+  return NextResponse.json({ status: finalStatus, orderStatus: updatedOrder?.status, completed, farm: receivedFarm, farms });
 }
