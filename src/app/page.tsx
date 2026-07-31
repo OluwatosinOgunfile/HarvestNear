@@ -655,7 +655,7 @@ export default function Home() {
     const [cartResponse, favouriteResponse, notificationResponse] = await Promise.all([fetch("/api/cart", { cache: "no-store" }), fetch("/api/favourites", { cache: "no-store" }), fetch("/api/notifications", { cache: "no-store" })]);
     const cartData = await readJsonResponse(cartResponse) as { cart?: Record<string, number> };
     const favouriteData = await readJsonResponse(favouriteResponse) as { favourites?: string[] };
-    const mergedCart = clampCartToStock({ ...(cartData.cart || {}), ...cart }, products);
+    const mergedCart = clampCartToStock({ ...cart, ...(cartData.cart || {}) }, products);
     const mergedFavourites = [...new Set([...(favouriteData.favourites || []), ...liked])];
     setCart(mergedCart); setLiked(mergedFavourites);
     if (Object.keys(cart).length) persistCartForUser(mergedCart);

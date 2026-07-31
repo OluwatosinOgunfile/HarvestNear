@@ -95,10 +95,10 @@ export async function POST(request: Request) {
     ...listings.map((listing) => {
       const quantity = Number(requested.get(String(listing.id)));
       return sql`
-        SELECT CASE
-          WHEN status = 'active' AND quantity_available - quantity_reserved >= ${quantity} THEN true
-          ELSE CAST('insufficient_stock' AS boolean)
-        END
+        SELECT CAST(CASE
+          WHEN status = 'active' AND quantity_available - quantity_reserved >= ${quantity} THEN 'true'
+          ELSE 'insufficient_stock'
+        END AS boolean)
         FROM produce_listings
         WHERE id = ${listing.id}
       `;
