@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
 import { listingImageUrl } from "@/lib/images";
+import { paystackEnabled } from "@/lib/paystack";
 import { canMutateAs, checkRateLimit } from "@/lib/security";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +22,7 @@ export async function GET() {
       orders.placed_at, orders.delivered_at,
       EXISTS (SELECT 1 FROM manual_payment_receipts receipt WHERE receipt.order_id = orders.id) AS receipt_submitted,
       (SELECT payment.status FROM payments payment WHERE payment.order_id = orders.id ORDER BY payment.created_at DESC LIMIT 1) AS payment_status,
+      (SELECT payment.provider FROM payments payment WHERE payment.order_id = orders.id ORDER BY payment.created_at DESC LIMIT 1) AS payment_provider,
       (SELECT json_build_object('status', refund.status, 'resolution_method', refund.resolution_method, 'amount_kobo', refund.amount_kobo, 'cancellation_fee_kobo', refund.cancellation_fee_kobo, 'requested_at', refund.requested_at) FROM refunds refund WHERE refund.order_id = orders.id ORDER BY refund.requested_at DESC LIMIT 1) AS refund,
       (SELECT json_build_object('id', delivery.id, 'status', delivery.status, 'tracking_code', delivery.tracking_code,
         'courier_name', delivery.courier_name, 'courier_phone', delivery.courier_phone,
@@ -47,7 +49,7 @@ export async function POST(request: Request) {
   const user = await getSessionUser();
   if (!user || !["consumer", "farmer"].includes(user.role) || !canMutateAs(user)) return NextResponse.json({ error: "Sign in with a non-impersonated account to place an order" }, { status: 401 });
   if (!await checkRateLimit(request, "orders.create", 10, 10 * 60, user.id)) return NextResponse.json({ error: "Too many checkout attempts. Try again later." }, { status: 429 });
-  const body = await request.json().catch(() => null) as { items?: CheckoutItem[]; fulfilmentMethod?: string } | null;
+  const body = await request.json().catch(() => null) as { items?: CheckoutItem[]; fulfilmentMethod?: string; paymentMethod?: "paystack" | "manual" } | null;
   if (!Array.isArray(body?.items) || body.items.length > 50) return NextResponse.json({ error: "Invalid basket" }, { status: 400 });
   const items = body.items.filter((item) => /^[0-9a-f-]{36}$/i.test(item.listingId) && Number.isInteger(item.quantity) && item.quantity > 0 && item.quantity <= 10_000);
   const fulfilmentMethod = body?.fulfilmentMethod === "pickup" ? "farm_pickup" : "doorstep";
@@ -82,7 +84,9 @@ export async function POST(request: Request) {
   const creditAppliedKobo = Math.min(grossTotalKobo, Number(creditAccount?.balance_kobo || 0));
   const payableKobo = grossTotalKobo - creditAppliedKobo;
   const paidWithCredit = payableKobo === 0;
-  if (!paidWithCredit && (!paymentSettings?.is_enabled || !paymentSettings.bank_name || !paymentSettings.account_name || !paymentSettings.account_number)) return NextResponse.json({ error: "Manual bank payment is not currently available" }, { status: 503 });
+  const paymentMethod = body?.paymentMethod === "manual" ? "manual" : "paystack";
+  if (!paidWithCredit && paymentMethod === "paystack" && !paystackEnabled()) return NextResponse.json({ error: "Paystack is not currently available" }, { status: 503 });
+  if (!paidWithCredit && paymentMethod === "manual" && (!paymentSettings?.is_enabled || !paymentSettings.bank_name || !paymentSettings.account_name || !paymentSettings.account_number)) return NextResponse.json({ error: "Manual bank payment is not currently available" }, { status: 503 });
   const farms = new Map<string, typeof listings>();
   for (const listing of listings) farms.set(String(listing.farm_id), [...(farms.get(String(listing.farm_id)) ?? []), listing]);
 
@@ -115,11 +119,11 @@ export async function POST(request: Request) {
       queries.push(sql`UPDATE produce_listings SET quantity_available = quantity_available - ${quantity}, quantity_sold = quantity_sold + ${quantity}, status = CASE WHEN quantity_available - ${quantity} <= quantity_reserved THEN 'sold_out'::listing_status ELSE status END, updated_at = now(), version = version + 1 WHERE id = ${listing.id} AND quantity_available - quantity_reserved >= ${quantity}`);
     }
   }
-  if (payableKobo > 0) queries.push(sql`INSERT INTO payments (order_id, provider, provider_reference, status, amount_kobo, payment_channel, provider_response) VALUES (${orderId}, 'manual', ${`manual-${orderNumber}`}, 'initialized', ${payableKobo}, 'bank_transfer', '{"mode":"manual","receiptSubmitted":false}'::jsonb)`);
+  if (payableKobo > 0 && paymentMethod === "manual") queries.push(sql`INSERT INTO payments (order_id, provider, provider_reference, status, amount_kobo, payment_channel, provider_response) VALUES (${orderId}, 'manual', ${`manual-${orderNumber}`}, 'initialized', ${payableKobo}, 'bank_transfer', '{"mode":"manual","receiptSubmitted":false}'::jsonb)`);
   if (creditAppliedKobo > 0) queries.push(sql`UPDATE store_credit_accounts SET balance_kobo = balance_kobo - ${creditAppliedKobo}, updated_at = now() WHERE user_id = ${user.id} AND balance_kobo >= ${creditAppliedKobo}`);
   if (creditAppliedKobo > 0) queries.push(sql`INSERT INTO store_credit_transactions (user_id, amount_kobo, transaction_type, reference_type, reference_id, description) VALUES (${user.id}, ${-creditAppliedKobo}, 'order_debit', 'order', ${orderId}, ${`Account credit applied to order ${orderNumber}`})`);
   queries.push(sql`DELETE FROM cart_items WHERE cart_id IN (SELECT id FROM carts WHERE user_id = ${user.id})`);
-  queries.push(sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) VALUES (${user.id}, 'order', ${paidWithCredit ? "Order confirmed with account credit" : "Payment receipt required"}, ${paidWithCredit ? `Your account credit paid order ${orderNumber} in full.` : `Order ${orderNumber} is reserved. Upload your bank-transfer receipt for administrator confirmation.`}, '/orders', ${JSON.stringify({ orderId, orderNumber, creditAppliedKobo })}::jsonb)`);
+  queries.push(sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) VALUES (${user.id}, 'order', ${paidWithCredit ? "Order confirmed with account credit" : paymentMethod === "paystack" ? "Complete your Paystack payment" : "Payment receipt required"}, ${paidWithCredit ? `Your account credit paid order ${orderNumber} in full.` : paymentMethod === "paystack" ? `Order ${orderNumber} is reserved while you complete secure payment with Paystack.` : `Order ${orderNumber} is reserved. Upload your bank-transfer receipt for administrator confirmation.`}, '/orders', ${JSON.stringify({ orderId, orderNumber, creditAppliedKobo, paymentMethod })}::jsonb)`);
   if (paidWithCredit) queries.push(sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) SELECT DISTINCT farm.owner_id, 'order', 'New order to fulfil', ${`Order ${orderNumber} is paid and ready for fulfilment.`}, '/farmer', ${JSON.stringify({ orderId, orderNumber })}::jsonb FROM farm_orders farm_order JOIN farms farm ON farm.id = farm_order.farm_id WHERE farm_order.order_id = ${orderId}`);
   if (paidWithCredit && fulfilmentMethod === "doorstep") {
     const deliveryId = randomUUID(); const trackingCode = `TRK-${orderNumber.slice(3)}`;
@@ -129,7 +133,7 @@ export async function POST(request: Request) {
 
   try {
     await sql.transaction(queries);
-    return NextResponse.json({ orderId, orderNumber, requiresReceipt: !paidWithCredit, creditAppliedKobo, payableKobo }, { status: 201 });
+    return NextResponse.json({ orderId, orderNumber, requiresReceipt: !paidWithCredit && paymentMethod === "manual", paymentMethod: paidWithCredit ? "credit" : paymentMethod, creditAppliedKobo, payableKobo }, { status: 201 });
   } catch (error) {
     console.error("Checkout failed", error);
     const message = String((error as { message?: string }).message || "");
