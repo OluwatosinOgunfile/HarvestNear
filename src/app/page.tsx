@@ -685,12 +685,12 @@ export default function Home() {
   }
 
   function markNotificationRead(id: string) {
-    setNotifications((current) => current.map((item) => item.id === id ? { ...item, read: true } : item));
+    setNotifications((current) => current.filter((item) => item.id !== id));
     fetch("/api/notifications", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
   }
 
   function markAllNotificationsRead() {
-    setNotifications((current) => current.map((item) => ({ ...item, read: true })));
+    setNotifications([]);
     fetch("/api/notifications", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ all: true }) });
   }
 
