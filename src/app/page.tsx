@@ -66,6 +66,10 @@ function ModalBrand() {
   return <div className="modal-brand" aria-hidden="true"><img src="/brand/harvestnearu-header-lockup.png" alt=""/></div>;
 }
 
+function GoogleIcon() {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M21.6 12.2c0-.7-.1-1.4-.2-2H12v3.9h5.4a4.6 4.6 0 0 1-2 3v2.5h3.2c1.9-1.7 3-4.3 3-7.4Z"/><path fill="#34A853" d="M12 22c2.7 0 5-.9 6.6-2.4l-3.2-2.5c-.9.6-2 1-3.4 1a5.8 5.8 0 0 1-5.5-4H3.2v2.6A10 10 0 0 0 12 22Z"/><path fill="#FBBC05" d="M6.5 14.1a6 6 0 0 1 0-4.2V7.3H3.2a10 10 0 0 0 0 9.4l3.3-2.6Z"/><path fill="#EA4335" d="M12 5.9c1.5 0 2.8.5 3.8 1.5l2.9-2.8A9.7 9.7 0 0 0 3.2 7.3l3.3 2.6A5.8 5.8 0 0 1 12 5.9Z"/></svg>;
+}
+
 function VerificationSeal({ label = "Verified" }: { label?: string }) {
   return <span className="verification-seal" title={label} aria-label={label}><BadgeCheck size={16} strokeWidth={2.4}/></span>;
 }
@@ -298,6 +302,25 @@ export default function Home() {
     syncView();
     window.addEventListener("popstate", syncView);
     return () => window.removeEventListener("popstate", syncView);
+  }, []);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const authError = url.searchParams.get("authError");
+    if (!authError) return;
+    const messages: Record<string, string> = {
+      google_not_configured: "Google sign-in is not configured yet.",
+      too_many_attempts: "Too many Google sign-in attempts. Try again shortly.",
+      invalid_google_request: "This Google sign-in request expired or could not be verified. Please try again.",
+      account_disabled: "This HarvestNearU account has been disabled.",
+      google_signin_failed: "Google could not sign you in. Please try again.",
+    };
+    queueMicrotask(() => {
+      openSignIn(false);
+      setSigninError(messages[authError] || "Google sign-in could not be completed.");
+    });
+    url.searchParams.delete("authError");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
   }, []);
 
   useEffect(() => {
@@ -914,6 +937,7 @@ export default function Home() {
             <button className={signupRole === "consumer" ? "selected" : ""} onClick={() => setSignupRole("consumer")}><ShoppingBag size={19} /><span><strong>Consumer</strong><small>Shop fresh produce</small></span></button>
             <button className={signupRole === "farmer" ? "selected" : ""} onClick={() => setSignupRole("farmer")}><Store size={19} /><span><strong>Farmer</strong><small>List and sell harvests</small></span></button>
           </div>
+          {signupRole === "consumer" && <><a className="google-auth-button" href={`/api/auth/google?returnTo=${encodeURIComponent(viewPaths[view])}`}><GoogleIcon/><span>Continue with Google</span></a><div className="auth-divider"><span>or create with email</span></div></>}
           <form className="signup-form" onSubmit={submitSignup}>
             <div className="form-row"><label>First name<input name="firstName" required placeholder="Tola" /></label><label>Last name<input name="lastName" required placeholder="Adebayo" /></label></div>
             <label>Phone number<div className="phone-field"><span>+234</span><input name="phone" required type="tel" placeholder="801 234 5678" /></div></label>
@@ -946,6 +970,7 @@ export default function Home() {
             </button>
           </form>
           <div className="auth-divider"><span>or</span></div>
+          <a className="google-auth-button" href={`/api/auth/google?returnTo=${encodeURIComponent(viewPaths[view])}`}><GoogleIcon/><span>Continue with Google</span></a>
           <p className="signin-copy">New to HarvestNearU? <button onClick={() => { setSigninOpen(false); openSignup(); }}>Create an account</button></p>
         </> : <div className="signup-success"><span><Check size={30} /></span><p>SIGNED IN</p><h2>Good to have you back.</h2><p>Your {currentUser ? roleLabel(currentUser.role) : "account"} is ready.</p><button onClick={() => { closeSignIn(); navigate(isAdmin ? "admin" : isFarmer ? "farmer" : "market"); }}>Continue to my workspace <ArrowRight size={17} /></button></div>}
       </div></div>}
