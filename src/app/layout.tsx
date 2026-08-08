@@ -19,6 +19,7 @@ import "./polish.css";
 import "./modern.css";
 import "./consistency.css";
 import "./readability.css";
+import "./farm-store.css";
 
 const manrope = Manrope({
   subsets: ["latin"],

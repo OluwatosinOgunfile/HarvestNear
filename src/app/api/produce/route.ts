@@ -44,6 +44,7 @@ export async function GET(request: NextRequest) {
     const [rows, statsRows] = await Promise.all([sql`
       SELECT
         listing.id,
+        farm.id AS farm_id,
         listing.title AS name,
         farm.name AS farmer,
         farm.city || ', ' || farm.state AS location,
@@ -55,7 +56,7 @@ export async function GET(request: NextRequest) {
         listing.last_restock_total,
         category.name AS category,
         listing.harvest_date,
-        farm.average_rating AS rating,
+        coalesce((SELECT round(avg(review.rating)::numeric, 2) FROM reviews review WHERE review.farm_id = farm.id AND review.is_visible), 0) AS rating,
         (SELECT count(*)::int FROM reviews WHERE farm_id = farm.id AND is_visible) AS review_count,
         listing.badge,
         image.url AS image
@@ -97,6 +98,7 @@ export async function GET(request: NextRequest) {
 
       return {
         id: String(row.id),
+        farmId: String(row.farm_id),
         name: String(row.name),
         farmer: String(row.farmer),
         location: String(row.location),

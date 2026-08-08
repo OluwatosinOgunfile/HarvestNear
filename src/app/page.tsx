@@ -45,6 +45,7 @@ import { readJsonResponse } from "@/lib/client-api";
 
 type Product = {
   id: string;
+  farmId: string;
   name: string;
   farmer: string;
   location: string;
@@ -885,7 +886,7 @@ export default function Home() {
                   <div className="product-body">
                     <div className="availability"><span /> {product.available}</div>
                     <h3>{product.name}</h3>
-                    <p className="farmer"><Store size={14} /> {product.farmer} <VerificationSeal label="Verified farm"/></p>
+                    <a className="farmer farmer-link" href={`/farms/${product.farmId}`} aria-label={`View ${product.farmer} store`}><Store size={14} /> <span>{product.farmer}</span> <VerificationSeal label="Verified farm"/></a>
                     <div className="rating"><Star size={14} fill="currentColor" /> {product.rating} <span>({product.reviewCount})</span></div>
                     <div className="stock-track" title={`${Math.round(product.stock / Math.max(1, product.restockTotal) * 100)}% of the last restock remaining`}><span style={{ width: `${Math.max(0, Math.min(100, product.stock / Math.max(1, product.restockTotal) * 100))}%` }} /></div>
                     <p className="stock-copy">{product.stock} {quantityUnit(product.unit, product.stock)} left</p>
