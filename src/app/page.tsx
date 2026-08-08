@@ -26,6 +26,7 @@ import {
   Moon,
   PackageCheck,
   Plus,
+  Printer,
   RotateCcw,
   Search,
   ShoppingBag,
@@ -1765,7 +1766,7 @@ function DatabaseProfilePage({ role, onShop, onFarmer, onUpgraded }: { role: "co
 type CustomerOrder = {
   id: string; order_number: string; status: string; total_kobo: number; subtotal_kobo: number; discount_kobo: number;
   delivery_fee_kobo: number; fulfilment_method: string; delivery_address_snapshot: { city?: string; state?: string } | null;
-  placed_at: string; delivered_at: string | null;
+  placed_at: string; paid_at: string | null; delivered_at: string | null;
   receipt_submitted: boolean; payment_status: string | null; payment_provider: string | null;
   refund: null | { status: string; resolution_method: "bank_refund" | "store_credit"; amount_kobo: number; cancellation_fee_kobo: number; requested_at: string };
   tracking: null | { id: string; status: string; tracking_code: string; courier_name: string | null; courier_phone: string | null; events: Array<{ id: string; status: string; message: string; occurred_at: string }> };
@@ -1806,6 +1807,7 @@ function CustomerOrderCard({ order, active, expanded, receiptBusy, onToggle, onU
     </section></div></div>}
     <div className={`order-detail-collapse ${expanded ? "open" : ""}`} aria-hidden={!expanded}><div><div className="database-order-detail">{!active && <div className="database-order-items">{order.items.map((item) => <div key={item.id}>{item.image ? <img src={item.image} alt=""/> : <span><Leaf size={18}/></span>}<p><strong>{item.name}</strong><small>{item.quantity} {item.unit} · {item.farm}</small></p><b>{money(Number(item.unit_price_kobo) * Number(item.quantity) / 100)}</b></div>)}</div>}{!active && <div className="order-farm-ratings">{order.farms.map((farm) => <div key={farm.id}><span><strong>{farm.name}</strong><small>{farm.rating ? `Your rating: ${farm.rating}/5` : "Share your experience with this farm"}</small></span><button onClick={() => onRating(farm)}><Star size={14} fill={farm.rating ? "currentColor" : "none"}/> {farm.rating ? "Edit rating" : "Rate farm"}</button></div>)}</div>}<div className="database-order-meta"><span><small>FULFILMENT</small><strong>{order.fulfilment_method.replaceAll("_", " ")}</strong></span><span><small>DELIVERY</small><strong>{money(Number(order.delivery_fee_kobo) / 100)}</strong></span><span><small>TOTAL</small><strong>{money(Number(order.total_kobo) / 100)}</strong></span></div></div></div></div>
     <div className="database-order-meta persistent-order-summary"><span><small>FULFILMENT</small><strong>{order.fulfilment_method.replaceAll("_", " ")}</strong></span><span><small>DELIVERY</small><strong>{money(Number(order.delivery_fee_kobo) / 100)}</strong></span><span><small>TOTAL</small><strong>{money(Number(order.total_kobo) / 100)}</strong></span></div>
+    {Boolean(order.paid_at) && <a className="order-print-receipt" href={`/orders/${order.id}/receipt`} target="_blank" rel="noreferrer"><Printer size={15}/> Print receipt</a>}
   </article>;
 }
 

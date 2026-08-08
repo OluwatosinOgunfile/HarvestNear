@@ -19,7 +19,7 @@ export async function GET() {
   const orders = await sql`
     SELECT orders.id, orders.order_number, orders.status, orders.total_kobo, orders.subtotal_kobo, orders.discount_kobo,
       orders.delivery_fee_kobo, orders.fulfilment_method, orders.delivery_address_snapshot,
-      orders.placed_at, orders.delivered_at,
+      orders.placed_at, orders.paid_at, orders.delivered_at,
       EXISTS (SELECT 1 FROM manual_payment_receipts receipt WHERE receipt.order_id = orders.id) AS receipt_submitted,
       (SELECT payment.status FROM payments payment WHERE payment.order_id = orders.id ORDER BY payment.created_at DESC LIMIT 1) AS payment_status,
       (SELECT payment.provider FROM payments payment WHERE payment.order_id = orders.id ORDER BY payment.created_at DESC LIMIT 1) AS payment_provider,
