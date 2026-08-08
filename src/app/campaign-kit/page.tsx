@@ -29,7 +29,7 @@ export default function CampaignKit() {
       <div className="creative-row">
         <article className="creative social-square">
           <img className="creative-photo" src="/produce/vine-ripe-tomatoes.webp" alt="Fresh tomatoes"/>
-          <div className="photo-shade"/><img className="creative-logo logo-light" src="/brand/harvestnearu-header-lockup.png" alt="HarvestNearU"/>
+          <div className="photo-shade"/><img className="creative-logo logo-light" style={{ background: "transparent" }} src="/brand/harvestnearu-opaque-seal-se2-lockup.png" alt="HarvestNearU"/>
           <div className="creative-copy"><small>FRESH FROM FARMS NEAR YOU</small><h3>Today&apos;s harvest.<br/><em>Closer than ever.</em></h3><p>Shop fresh produce from trusted local farmers.</p><button>Shop nearby harvests <ShoppingBag size={15}/></button></div>
           <div className="creative-foot"><span><MapPin size={13}/> Gudu, Abuja</span><b>harvestnearu.com</b></div>
         </article>
@@ -44,7 +44,7 @@ export default function CampaignKit() {
     <section className="kit-section"><div className="section-label"><span>02</span><div><h2>Farmer recruitment</h2><p>Supply-side onboarding campaign</p></div></div>
       <article className="creative farmer-banner">
         <img src="/produce/oyo-white-yam.webp" alt="Fresh yam harvest"/><div className="farmer-banner-shade"/>
-        <div className="banner-logo"><img src="/brand/harvestnearu-header-lockup.png" alt="HarvestNearU"/></div>
+        <div className="banner-logo" style={{ background: "transparent" }}><img src="/brand/harvestnearu-opaque-seal-se2-lockup.png" alt="HarvestNearU"/></div>
         <div className="farmer-message"><small>FOR FARMERS</small><h3>Your harvest already<br/>has buyers nearby.</h3><p>List what&apos;s ready. Sell in practical quantities.<br/>Reach more households without the long journey.</p><button><Store size={16}/> Start selling on HarvestNearU</button></div>
         <div className="banner-stats"><div><strong>Nearby</strong><span>customer discovery</span></div><div><strong>Simple</strong><span>inventory control</span></div><div><strong>Secure</strong><span>naira payments</span></div></div>
       </article>
@@ -58,6 +58,6 @@ export default function CampaignKit() {
       <div className="copy-grid">{captions.map(item=><article key={item.title}><div><Leaf size={17}/><strong>{item.title}</strong></div><p>{item.text}</p><button onClick={() => copyText(item.title,item.text)}>{copied===item.title?<><Check size={14}/> Copied</>:<><Copy size={14}/> Copy text</>}</button></article>)}</div>
     </section>
 
-    <footer className="kit-footer"><img src="/brand/harvestnearu-header-lockup.png" alt="HarvestNearU"/><span>Fresh Local Produce, Found Here.</span><p>Launch campaign · Abuja pilot · 2026</p></footer>
+    <footer className="kit-footer"><img style={{ background: "transparent" }} src="/brand/harvestnearu-opaque-seal-se2-lockup.png" alt="HarvestNearU"/><span>Fresh Local Produce, Found Here.</span><p>Launch campaign · Abuja pilot · 2026</p></footer>
   </main>;
 }

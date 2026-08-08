@@ -1,0 +1,345 @@
+/* Desktop readability floor for text that was previously rendered at 7-9px. */
+.app-shell {
+  --muted: #59665e;
+  --line: #d4dcd3;
+}
+
+.landing-hero h1,
+.profile-avatar,
+.farm-avatar,
+.farm-rating-summary strong i {
+  font-family: var(--font-manrope), "Segoe UI", sans-serif;
+}
+
+.app-shell[data-theme="dark"] {
+  --muted: #b4c0b7;
+  --line: #435148;
+}
+
+.app-shell :is(input, textarea)::placeholder {
+  color: #657269;
+  opacity: 1;
+}
+
+.app-shell[data-theme="dark"] :is(input, textarea)::placeholder {
+  color: #b5c1b8;
+}
+
+.app-shell :is(input, select, textarea):disabled,
+.app-shell button:disabled {
+  opacity: .7;
+}
+
+.app-shell[data-theme="dark"] :is(input, select, textarea):disabled {
+  color: #c3cec6;
+  -webkit-text-fill-color: #c3cec6;
+}
+
+.app-shell[data-theme="dark"] :is(
+  .checkout-button,
+  .create-account,
+  .signin-submit,
+  .pay-button,
+  .add-button,
+  .new-listing,
+  .ticket-create > button,
+  .ticket-reply > button,
+  .experience-feedback > button,
+  .receipt-confirm button
+) {
+  color: #fff;
+  background: #286b46;
+}
+
+.app-shell[data-theme="dark"] :is(
+  .checkout-button,
+  .create-account,
+  .signin-submit,
+  .pay-button,
+  .add-button,
+  .new-listing,
+  .ticket-create > button,
+  .ticket-reply > button,
+  .experience-feedback > button,
+  .receipt-confirm button
+):hover {
+  background: #337d54;
+}
+
+.support-note,
+.app-shell[data-theme="dark"] .support-note,
+.farmer-notice,
+.receipt-confirm {
+  color: #342b12;
+}
+
+.support-note span,
+.farmer-notice span,
+.receipt-confirm span small {
+  color: #493d1c;
+}
+
+.app-shell[data-theme="dark"] .farmer-notice,
+.app-shell[data-theme="dark"] .receipt-confirm {
+  color: #f5dda2;
+}
+
+.app-shell[data-theme="dark"] .farmer-notice span,
+.app-shell[data-theme="dark"] .receipt-confirm span small {
+  color: #ead59f;
+}
+
+.status-badge.pending,
+.status-badge.paused,
+.status-pill.pending_payment {
+  color: #624500;
+}
+
+.status-badge.suspended,
+.status-badge.sold_out,
+.admin-error,
+.auth-error {
+  color: #812f25;
+}
+
+.app-shell[data-theme="dark"] :is(.panel-empty, .entity-empty, .ticket-empty, .empty-state) {
+  color: #bcc8bf;
+}
+
+.app-shell[data-theme="dark"] :is(.entity-table small, .entity-table > button > i, .admin-order-item small) {
+  color: #b7c3ba;
+}
+
+/* Transactional figures use one interface typeface; serif remains reserved for headings. */
+.app-shell :is(
+  .account-credit-menu > b,
+  .price-row strong,
+  .cart-item > div > strong,
+  .cart-total strong,
+  .pay-summary strong,
+  .admin-metrics strong,
+  .admin-credit-balance strong,
+  .entity-credit-balance,
+  .admin-order-item > b,
+  .admin-order-totals b,
+  .profile-credit > header h2,
+  .credit-ledger article > b,
+  .database-order-summary > b,
+  .database-order-items > div > b,
+  .database-order-meta strong,
+  .item-tracking-meta > strong,
+  .metric-grid strong,
+  .payout-breakdown b,
+  .cumulative-sales-card > strong,
+  .cumulative-sales-breakdown b,
+  .closed-order-row > b
+) {
+  font-family: var(--font-manrope), "Segoe UI", sans-serif;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+.account-credit-menu > b {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.metric-grid strong,
+.admin-metrics strong,
+.admin-credit-balance strong,
+.profile-credit > header h2,
+.cumulative-sales-card > strong {
+  line-height: 1.15;
+}
+
+.payout-breakdown {
+  margin-top: 8px;
+  padding: 10px 12px;
+}
+
+.payout-breakdown p {
+  min-height: 30px;
+  padding: 7px 0;
+  align-items: center;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.payout-breakdown p span,
+.payout-breakdown p b {
+  font-size: 11px;
+}
+
+.payout-breakdown p b {
+  min-width: 76px;
+  display: inline-block;
+  color: var(--ink);
+  font-family: var(--font-manrope), "Segoe UI", sans-serif;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.payout-breakdown p:last-child span,
+.payout-breakdown p:last-child b {
+  font-weight: 700;
+}
+
+.payout-breakdown p:nth-child(2) b {
+  color: #a23e32;
+}
+
+.payout-breakdown p:last-child b {
+  color: #1f6841;
+}
+
+.app-shell[data-theme="dark"] .payout-breakdown p:nth-child(2) b {
+  color: #f3a196;
+}
+
+.app-shell[data-theme="dark"] .payout-breakdown p:last-child b {
+  color: #9bd5ad;
+}
+
+@media (min-width: 769px) {
+  body {
+    font-size: 16px;
+  }
+
+  .app-shell small {
+    font-size: 11px;
+    line-height: 1.45;
+  }
+
+  .app-shell label,
+  .app-shell legend {
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .app-shell input,
+  .app-shell select,
+  .app-shell textarea {
+    font-size: 13px;
+  }
+
+  .app-shell table th {
+    font-size: 11px;
+  }
+
+  .app-shell table td {
+    font-size: 12px;
+  }
+
+  .eyebrow,
+  .landing-kicker,
+  .landing-section-head > div > p,
+  .panel-head > div > span,
+  .metric-grid > div > span {
+    font-size: 10px;
+    line-height: 1.45;
+  }
+
+  .account-menu-heading strong,
+  .account-menu > button strong {
+    font-size: 12px;
+  }
+
+  .account-menu-heading small,
+  .account-menu > button small {
+    font-size: 11px;
+  }
+
+  .account-menu > button,
+  .account-menu-auth button {
+    font-size: 11px;
+  }
+
+  .landing-section-head > span {
+    max-width: 310px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .steps-line article > span {
+    font-size: 10px;
+  }
+
+  .steps-line h3 {
+    font-size: 19px;
+  }
+
+  .steps-line p {
+    max-width: 245px;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  .site-footer p,
+  .site-footer a,
+  .site-footer button,
+  .site-footer input,
+  .site-footer span {
+    font-size: 11px;
+    line-height: 1.5;
+  }
+
+  .tracking-progress > div > strong,
+  .tracking-events strong,
+  .tracking-note,
+  .fulfilment-info span,
+  .fulfilment-info a,
+  .fulfilment-card > footer > span {
+    font-size: 11px;
+  }
+
+  .tracking-events small,
+  .fulfilment-info small,
+  .closed-orders-panel .panel-head > span {
+    font-size: 10px;
+  }
+
+  .receipt-confirm span strong,
+  .fulfilment-info strong,
+  .fulfilment-card > header small {
+    font-size: 11px;
+  }
+
+  .receipt-confirm span small,
+  .fulfilment-card > header p {
+    font-size: 10px;
+  }
+}
+
+/* This yellow CTA keeps the same surface in both themes, so its text must not inherit dark-mode foregrounds. */
+.landing-cta,
+.app-shell[data-theme="dark"] .landing-cta {
+  color: #17231b;
+}
+
+.landing-cta p,
+.app-shell[data-theme="dark"] .landing-cta p {
+  color: #174d31;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.landing-cta h2,
+.app-shell[data-theme="dark"] .landing-cta h2 {
+  color: #173622;
+}
+
+.landing-cta span,
+.app-shell[data-theme="dark"] .landing-cta span {
+  color: #34483b;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.landing-cta > button,
+.app-shell[data-theme="dark"] .landing-cta > button {
+  color: #fff;
+  background: #174d31;
+}

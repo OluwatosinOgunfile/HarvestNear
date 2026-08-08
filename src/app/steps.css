@@ -3,9 +3,16 @@
 }
 
 .steps-line article{
+  --step-delay:0ms;
   padding:48px 14px 0;
   text-align:center;
+  animation:journey-step-in .55s cubic-bezier(.22,1,.36,1) backwards;
 }
+
+.steps-line article:nth-child(2){--step-delay:120ms}
+.steps-line article:nth-child(3){--step-delay:240ms}
+.steps-line article:nth-child(4){--step-delay:360ms}
+.steps-line article{animation-delay:var(--step-delay)}
 
 .steps-line article>span{
   width:28px;
@@ -34,11 +41,27 @@
   left:calc(50% + 18px);
   right:calc(-50% + 18px);
   background:#cfd9d0;
+  transform-origin:left center;
+  animation:journey-line-in .5s ease-out backwards;
+  animation-delay:calc(var(--step-delay) + 160ms);
 }
 
 .steps-line article>div{
   margin-right:auto;
   margin-left:auto;
+  color:#176b43;
+  background:#e1f0e4;
+  border:1px solid #c9decf;
+  box-shadow:0 7px 18px rgba(31,91,58,.12);
+  animation:journey-icon-in .55s cubic-bezier(.34,1.56,.64,1) backwards;
+  animation-delay:calc(var(--step-delay) + 100ms);
+  transition:transform .22s ease,box-shadow .22s ease,background-color .22s ease;
+}
+
+.steps-line article:hover>div{
+  transform:translateY(-4px);
+  background:#d8ebdc;
+  box-shadow:0 11px 24px rgba(31,91,58,.19);
 }
 
 .steps-line article>p{
@@ -55,6 +78,34 @@
 
 .app-shell[data-theme="dark"] .steps-line article:not(:last-child)::after{
   background:#48604f;
+}
+
+.app-shell[data-theme="dark"] .steps-line article>div{
+  color:#a9e6bb;
+  background:#244532;
+  border-color:#3b6a4d;
+  box-shadow:0 8px 20px rgba(0,0,0,.24),inset 0 0 0 1px rgba(169,230,187,.08);
+}
+
+.app-shell[data-theme="dark"] .steps-line article:hover>div{
+  color:#c5f2d0;
+  background:#2b523b;
+  box-shadow:0 12px 26px rgba(0,0,0,.32),0 0 0 1px rgba(169,230,187,.12);
+}
+
+@keyframes journey-step-in{
+  from{opacity:0;transform:translateY(16px)}
+  to{opacity:1;transform:translateY(0)}
+}
+
+@keyframes journey-icon-in{
+  from{opacity:0;transform:scale(.72)}
+  to{opacity:1;transform:scale(1)}
+}
+
+@keyframes journey-line-in{
+  from{transform:scaleX(0)}
+  to{transform:scaleX(1)}
 }
 
 @media(max-width:900px) and (min-width:621px){
@@ -106,5 +157,24 @@
     bottom:16px;
     left:50%;
     transform:translateX(-50%);
+    transform-origin:center top;
+    animation-name:journey-line-in-mobile;
+  }
+}
+
+@keyframes journey-line-in-mobile{
+  from{transform:translateX(-50%) scaleY(0)}
+  to{transform:translateX(-50%) scaleY(1)}
+}
+
+@media(prefers-reduced-motion:reduce){
+  .steps-line article,
+  .steps-line article>div,
+  .steps-line article:not(:last-child)::after{
+    animation:none;
+  }
+
+  .steps-line article>div{
+    transition:none;
   }
 }

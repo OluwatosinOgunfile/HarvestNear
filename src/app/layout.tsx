@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Manrope } from "next/font/google";
 import MobileRuntime from "@/components/MobileRuntime";
 import "./globals.css";
 import "./theme.css";
@@ -17,6 +18,13 @@ import "./spinner.css";
 import "./polish.css";
 import "./modern.css";
 import "./consistency.css";
+import "./readability.css";
+
+const manrope = Manrope({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-manrope",
+});
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.harvestnearu.com"),
@@ -84,5 +92,5 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       },
     ],
   };
-  return <html lang="en-NG"><body><MobileRuntime/>{children}<script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}/></body></html>;
+  return <html lang="en-NG"><body className={manrope.variable}><MobileRuntime/>{children}<script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}/></body></html>;
 }
