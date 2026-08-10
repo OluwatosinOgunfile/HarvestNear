@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
 
   if (type === "produce") {
     const rows = id ? await sql`
-      SELECT listing.*, product.name AS product_name, category.name AS category_name, farm.name AS farm_name,
+      SELECT listing.*, product.name AS product_name, product.category_id, category.name AS category_name, farm.name AS farm_name,
         image.url AS image_url
       FROM produce_listings listing JOIN products product ON product.id = listing.product_id
       JOIN produce_categories category ON category.id = product.category_id JOIN farms farm ON farm.id = listing.farm_id
@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
       SELECT listing.id, listing.title, listing.unit, listing.unit_price_kobo, listing.quantity_available,
         listing.quantity_reserved, listing.quantity_sold, listing.status, listing.harvest_date,
         listing.available_from, listing.available_until, listing.created_at,
-        farm.name AS farm_name, category.name AS category_name, image.url AS image_url
+        farm.name AS farm_name, product.category_id, category.name AS category_name, image.url AS image_url
       FROM produce_listings listing JOIN products product ON product.id = listing.product_id
       JOIN produce_categories category ON category.id = product.category_id JOIN farms farm ON farm.id = listing.farm_id
       LEFT JOIN LATERAL (SELECT url FROM listing_images WHERE listing_id = listing.id ORDER BY sort_order LIMIT 1) image ON true
@@ -408,24 +408,32 @@ export async function PATCH(request: NextRequest) {
           WHERE id = ${id} RETURNING id
         `;
       } else {
-        if (!body.farmId || !body.title || !body.unit || !body.price || body.stock === undefined || body.stock === null || body.stock === "" || !body.harvestDate || !["draft", "active", "sold_out", "expired", "paused"].includes(body.status)) {
+        if (!body.farmId || !body.categoryId || !body.title || !body.unit || !body.price || body.stock === undefined || body.stock === null || body.stock === "" || !body.harvestDate || !["draft", "active", "sold_out", "expired", "paused"].includes(body.status)) {
           return NextResponse.json({ error: "Complete all required produce fields" }, { status: 400 });
         }
+        const [category] = await sql`SELECT id FROM produce_categories WHERE id = ${body.categoryId} AND is_active LIMIT 1`;
+        if (!category) return NextResponse.json({ error: "Select an active produce category" }, { status: 400 });
         const availability = availabilityWindow(body.availableFrom, body.availableUntil);
         if (!availability) return NextResponse.json({ error: "Enter both availability dates with Available until later than Available from, or leave both blank" }, { status: 400 });
         if (body.imageUrl && !isUploadedListingImage(body.imageUrl)) return NextResponse.json({ error: "Upload a valid produce picture" }, { status: 400 });
         const [currentImage] = body.imageUrl ? await sql`SELECT url FROM listing_images WHERE listing_id = ${id} ORDER BY sort_order, created_at LIMIT 1` : [];
-        [entity] = await sql`
-          UPDATE produce_listings SET farm_id = ${body.farmId}, title = ${body.title}, unit = ${body.unit},
-            unit_price_kobo = ${Math.round(Number(body.price) * 100)}, quantity_available = ${Number(body.stock)},
-            last_restock_total = CASE WHEN ${Number(body.stock)} > quantity_available THEN ${Number(body.stock)} ELSE last_restock_total END,
-            last_restocked_at = CASE WHEN ${Number(body.stock)} > quantity_available THEN now() ELSE last_restocked_at END,
-            harvest_date = ${body.harvestDate}, available_from = ${availability.availableFrom},
-            available_until = ${availability.availableUntil}, badge = ${body.badge || null},
-            status = CASE WHEN ${Number(body.stock)} <= quantity_reserved THEN 'sold_out'::listing_status ELSE ${body.status}::listing_status END,
-            updated_at = now()
-          WHERE id = ${id} RETURNING id
-        `;
+        const [currentListing] = await sql`SELECT product_id FROM produce_listings WHERE id = ${id} LIMIT 1`;
+        if (!currentListing) return NextResponse.json({ error: "Produce listing not found" }, { status: 404 });
+        const listingUpdates = await sql.transaction([
+          sql`UPDATE products SET category_id = ${body.categoryId}, updated_at = now() WHERE id = ${currentListing.product_id} RETURNING id`,
+          sql`
+            UPDATE produce_listings SET farm_id = ${body.farmId}, title = ${body.title}, unit = ${body.unit},
+              unit_price_kobo = ${Math.round(Number(body.price) * 100)}, quantity_available = ${Number(body.stock)},
+              last_restock_total = CASE WHEN ${Number(body.stock)} > quantity_available THEN ${Number(body.stock)} ELSE last_restock_total END,
+              last_restocked_at = CASE WHEN ${Number(body.stock)} > quantity_available THEN now() ELSE last_restocked_at END,
+              harvest_date = ${body.harvestDate}, available_from = ${availability.availableFrom},
+              available_until = ${availability.availableUntil}, badge = ${body.badge || null},
+              status = CASE WHEN ${Number(body.stock)} <= quantity_reserved THEN 'sold_out'::listing_status ELSE ${body.status}::listing_status END,
+              updated_at = now()
+            WHERE id = ${id} RETURNING id
+          `,
+        ]);
+        [entity] = listingUpdates[1];
         if (entity && body.imageUrl) {
           await sql.transaction([
             sql`DELETE FROM listing_images WHERE listing_id = ${id}`,
