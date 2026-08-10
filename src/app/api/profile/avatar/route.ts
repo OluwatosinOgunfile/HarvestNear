@@ -21,5 +21,6 @@ export async function POST(request: Request) {
   const blob = await put(`profile-images/${session.id}/${crypto.randomUUID()}.${extension}`, file, { access: "private", addRandomSuffix: false });
   await sql`UPDATE users SET avatar_url = ${blob.url}, updated_at = now() WHERE id = ${session.id}`;
   if (current?.avatar_url && String(current.avatar_url).includes(".blob.vercel-storage.com")) await del(String(current.avatar_url)).catch((error) => console.error("Old avatar cleanup failed", error));
-  return NextResponse.json({ avatarUrl: `/api/images/profiles/${session.id}` });
+  const version = encodeURIComponent(new URL(blob.url).pathname.split("/").pop() || crypto.randomUUID());
+  return NextResponse.json({ avatarUrl: `/api/images/profiles/${session.id}?v=${version}` });
 }

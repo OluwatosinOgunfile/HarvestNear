@@ -42,6 +42,7 @@ import {
   X,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import Image from "next/image";
 import { readJsonResponse } from "@/lib/client-api";
 
 type Product = {
@@ -343,7 +344,7 @@ export default function Home() {
         const produceUrl = locationOverride
           ? `/api/produce?origin=selected&lat=${deliveryLocation.latitude}&lng=${deliveryLocation.longitude}`
           : "/api/produce";
-        const response = await fetch(produceUrl, { signal: controller.signal, cache: "no-store" });
+        const response = await fetch(produceUrl, { signal: controller.signal });
         if (!response.ok) throw new Error("Could not load produce");
         const data = await readJsonResponse(response) as { produce: Product[]; stats: MarketplaceStats; proximity?: { source: string; label: string | null } };
         setProducts(data.produce);
@@ -361,7 +362,7 @@ export default function Home() {
     }
     loadProduce();
     return () => controller.abort();
-  }, [view, deliveryLocation.latitude, deliveryLocation.longitude, locationOverride, currentUser?.id]);
+  }, [deliveryLocation.latitude, deliveryLocation.longitude, locationOverride]);
 
   useEffect(() => {
     fetch("/api/auth/session")
@@ -875,11 +876,11 @@ export default function Home() {
               {availableCategories.map((item) => <button key={item} onClick={() => { setCategory(item); setCurrentPage(1); }} className={effectiveCategory === item ? "selected" : ""}>{item}</button>)}
             </div>
 
-            {productsLoading ? <HarvestSpinner compact label="Loading nearby harvests"/> : productsError ? <div className="empty-state"><RotateCcw size={28} /><h3>Could not load harvests</h3><p>Please refresh the page to try again.</p></div> : visible.length ? <div className="product-grid">
+            {productsLoading ? <ProductGridSkeleton/> : productsError ? <div className="empty-state"><RotateCcw size={28} /><h3>Could not load harvests</h3><p>Please refresh the page to try again.</p></div> : visible.length ? <div className="product-grid">
               {paginatedProducts.map((product) => (
                 <article className="product-card" key={product.id}>
                   <div className="product-image">
-                    <img src={product.image} alt={product.name} />
+                    <Image src={product.image} alt={product.name} fill sizes="(max-width: 620px) calc(100vw - 28px), (max-width: 800px) 50vw, (max-width: 1100px) 33vw, 25vw" />
                     <span className="distance" title={`${product.distance} km straight-line distance`}><MapPin size={13} /> {walkingTime(product.distance)}</span>
                     <button className={`heart ${liked.includes(product.id) ? "liked" : ""}`} onClick={() => toggleFavourite(product.id)} aria-label={liked.includes(product.id) ? "Remove saved product" : "Save product"}><Heart size={18} fill={liked.includes(product.id) ? "currentColor" : "none"} /></button>
                     {product.badge && <span className="product-badge">{product.badge}</span>}
@@ -922,7 +923,7 @@ export default function Home() {
           <div className="drawer-head"><div><p>Your basket</p><span>{itemCount} {itemCount === 1 ? "item" : "items"} from local farms</span></div><button className="icon-btn" onClick={() => setCartOpen(false)}><X size={20} /></button></div>
           {items.length ? <>
             <div className="cart-items">{items.map((product) => <div className="cart-item" key={product.id}>
-              <img src={product.image} alt="" />
+              <Image src={product.image} alt="" width={62} height={62} sizes="62px" />
               <div><h4>{product.name}</h4><p>{product.farmer}</p><strong>{money(product.price * cart[product.id])}</strong></div>
               <div className="stepper"><button onClick={() => update(product.id, -1)} aria-label={`Remove one ${product.name}`}><Minus size={14} /></button><span>{cart[product.id]}</span><button onClick={() => update(product.id, 1)} disabled={cart[product.id] >= product.stock} aria-label={cart[product.id] >= product.stock ? `All available ${product.name} is already in your basket` : `Add one ${product.name}`}><Plus size={14} /></button></div>
             </div>)}</div>
@@ -1659,6 +1660,12 @@ function formatEntityValue(key: string, value: unknown) {
 
 function DataLoading() {
   return <main className="profile-page loading-page"><HarvestSpinner label="Loading marketplace data"/></main>;
+}
+
+function ProductGridSkeleton() {
+  return <div className="product-grid product-grid-skeleton" role="status" aria-label="Loading nearby harvests">
+    {Array.from({ length: 4 }, (_, index) => <article className="product-card" key={index} aria-hidden="true"><div className="product-image skeleton-block"/><div className="product-body"><span className="skeleton-line short"/><span className="skeleton-line title"/><span className="skeleton-line medium"/><span className="skeleton-line"/><div className="skeleton-price"><span/><b/></div></div></article>)}
+  </div>;
 }
 
 function HarvestSpinner({ compact = false, label }: { compact?: boolean; label: string }) {

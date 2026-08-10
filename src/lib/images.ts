@@ -11,6 +11,9 @@ function blobVersion(url: string) {
 
 export function listingImageUrl(listingId: string, url: unknown) {
   const value = url ? String(url) : "";
+  if (value.startsWith("/produce/") && value.toLowerCase().endsWith(".png")) {
+    return `${value.slice(0, -4)}.webp`;
+  }
   return value.includes(".blob.vercel-storage.com") ? `/api/images/listings/${listingId}?v=${blobVersion(value)}` : value;
 }
 

@@ -132,7 +132,7 @@ export async function GET(request: NextRequest) {
         consumers: Number(stats.consumers),
         farmers: Number(stats.farmers),
       },
-    });
+    }, { headers: { "Cache-Control": "private, max-age=15, stale-while-revalidate=30" } });
   } catch (error) {
     console.error("Could not load produce", error);
     return NextResponse.json({ error: "Could not load produce" }, { status: 500 });

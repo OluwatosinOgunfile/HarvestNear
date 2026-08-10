@@ -10,7 +10,7 @@ async function developmentImageFallback(request: Request) {
   const requested = new URL(request.url);
   const response = await fetch(new URL(`${requested.pathname}${requested.search}`, PRODUCTION_ORIGIN), { cache: "no-store" });
   if (!response.ok || !response.body) return null;
-  return new Response(response.body, { headers: { "Content-Type": response.headers.get("Content-Type") || "image/webp", "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400" } });
+  return new Response(response.body, { headers: { "Content-Type": response.headers.get("Content-Type") || "image/webp", "Cache-Control": "public, max-age=31536000, immutable" } });
 }
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -22,7 +22,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   try {
     const result = await get(String(image.url), { access: "private" });
     if (!result || result.statusCode !== 200) return NextResponse.json({ error: "Image not found" }, { status: 404 });
-    return new Response(result.stream, { headers: { "Content-Type": result.blob.contentType, "Content-Length": String(result.blob.size), "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400", ETag: result.blob.etag } });
+    return new Response(result.stream, { headers: { "Content-Type": result.blob.contentType, "Content-Length": String(result.blob.size), "Cache-Control": "public, max-age=31536000, immutable", ETag: result.blob.etag } });
   } catch (error) {
     console.error("Could not read listing image", error);
     return (await developmentImageFallback(request)) ?? NextResponse.json({ error: "Could not load image" }, { status: 502 });

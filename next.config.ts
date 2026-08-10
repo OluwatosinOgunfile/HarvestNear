@@ -1,6 +1,14 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  images: {
+    localPatterns: [
+      { pathname: "/api/images/listings/**" },
+      { pathname: "/api/images/profiles/**" },
+      { pathname: "/produce/**" },
+      { pathname: "/brand/**" },
+    ],
+  },
   turbopack: {
     root: process.cwd(),
   },
@@ -16,6 +24,9 @@ const nextConfig: NextConfig = {
         { key: "X-Frame-Options", value: "DENY" },
         { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
       ],
+    }, {
+      source: "/produce/:path*",
+      headers: [{ key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" }],
     }];
   },
 };
