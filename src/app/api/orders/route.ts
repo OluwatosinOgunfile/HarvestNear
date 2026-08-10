@@ -63,7 +63,10 @@ export async function POST(request: Request) {
       listing.farm_id, farm.owner_id AS farm_owner_id, farm.name AS farm_name, image.url AS image_url
     FROM produce_listings listing JOIN farms farm ON farm.id = listing.farm_id
     LEFT JOIN LATERAL (SELECT url FROM listing_images WHERE listing_id = listing.id ORDER BY sort_order LIMIT 1) image ON true
-    WHERE listing.id = ANY(${listingIds}::uuid[]) AND listing.status = 'active' AND farm.verification_status = 'verified'
+    WHERE listing.id = ANY(${listingIds}::uuid[]) AND listing.status = 'active'
+      AND (listing.available_from IS NULL OR listing.available_from <= now())
+      AND (listing.available_until IS NULL OR listing.available_until > now())
+      AND farm.verification_status = 'verified'
   `;
   if (listings.length !== items.length) return NextResponse.json({ error: "One or more listings are no longer available" }, { status: 409 });
 
@@ -96,7 +99,10 @@ export async function POST(request: Request) {
       const quantity = Number(requested.get(String(listing.id)));
       return sql`
         SELECT CAST(CASE
-          WHEN status = 'active' AND quantity_available - quantity_reserved >= ${quantity} THEN 'true'
+          WHEN status = 'active'
+            AND (available_from IS NULL OR available_from <= now())
+            AND (available_until IS NULL OR available_until > now())
+            AND quantity_available - quantity_reserved >= ${quantity} THEN 'true'
           ELSE 'insufficient_stock'
         END AS boolean)
         FROM produce_listings

@@ -22,6 +22,8 @@ export async function GET() {
     JOIN produce_listings listing ON listing.id = item.listing_id
     WHERE cart.user_id = ${user.id} AND listing.status = 'active'
       AND listing.quantity_available > listing.quantity_reserved
+      AND (listing.available_from IS NULL OR listing.available_from <= now())
+      AND (listing.available_until IS NULL OR listing.available_until > now())
   `;
   return NextResponse.json({ cart: Object.fromEntries(rows.map((row) => [String(row.listing_id), Number(row.quantity)])) });
 }
@@ -45,6 +47,8 @@ export async function PUT(request: NextRequest) {
       FROM produce_listings listing
       WHERE listing.id = ${item.listingId} AND listing.status = 'active'
         AND listing.quantity_available > listing.quantity_reserved
+        AND (listing.available_from IS NULL OR listing.available_from <= now())
+        AND (listing.available_until IS NULL OR listing.available_until > now())
       ON CONFLICT (cart_id, listing_id) DO UPDATE SET quantity = excluded.quantity, updated_at = now()
     `;
   }

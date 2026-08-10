@@ -12,6 +12,7 @@ function isUploadedListingImage(value?: string) {
 }
 
 function availabilityWindow(from?: string, until?: string) {
+  if (!from && !until) return { availableFrom: null, availableUntil: null };
   if (!from || !until) return null;
   const availableFrom = new Date(`${from}:00+01:00`);
   const availableUntil = new Date(`${until}:00+01:00`);
@@ -236,9 +237,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (type === "produce") {
-      if (!body.farmId || !body.categoryId || !body.name || !body.unit || !body.price || !body.stock || !body.harvestDate || !body.availableFrom || !body.availableUntil || !body.imageUrl) throw new Error("Complete all required fields and upload a produce picture");
+      if (!body.farmId || !body.categoryId || !body.name || !body.unit || !body.price || !body.stock || !body.harvestDate || !body.imageUrl) throw new Error("Complete all required fields and upload a produce picture");
       const availability = availabilityWindow(body.availableFrom, body.availableUntil);
-      if (!availability) throw new Error("Available until must be later than available from");
+      if (!availability) throw new Error("Enter both availability dates with Available until later than Available from, or leave both blank");
       if (!isUploadedListingImage(body.imageUrl)) throw new Error("Upload a valid produce picture");
       const slug = slugify(body.name);
       const [product] = await sql`
@@ -407,11 +408,11 @@ export async function PATCH(request: NextRequest) {
           WHERE id = ${id} RETURNING id
         `;
       } else {
-        if (!body.farmId || !body.title || !body.unit || !body.price || body.stock === undefined || body.stock === null || body.stock === "" || !body.harvestDate || !body.availableFrom || !body.availableUntil || !["draft", "active", "sold_out", "expired", "paused"].includes(body.status)) {
+        if (!body.farmId || !body.title || !body.unit || !body.price || body.stock === undefined || body.stock === null || body.stock === "" || !body.harvestDate || !["draft", "active", "sold_out", "expired", "paused"].includes(body.status)) {
           return NextResponse.json({ error: "Complete all required produce fields" }, { status: 400 });
         }
         const availability = availabilityWindow(body.availableFrom, body.availableUntil);
-        if (!availability) return NextResponse.json({ error: "Available until must be later than available from" }, { status: 400 });
+        if (!availability) return NextResponse.json({ error: "Enter both availability dates with Available until later than Available from, or leave both blank" }, { status: 400 });
         if (body.imageUrl && !isUploadedListingImage(body.imageUrl)) return NextResponse.json({ error: "Upload a valid produce picture" }, { status: 400 });
         const [currentImage] = body.imageUrl ? await sql`SELECT url FROM listing_images WHERE listing_id = ${id} ORDER BY sort_order, created_at LIMIT 1` : [];
         [entity] = await sql`

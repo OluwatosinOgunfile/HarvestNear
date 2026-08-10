@@ -29,6 +29,8 @@ async function loadFarm(id: string) {
       JOIN produce_categories category ON category.id=product.category_id
       LEFT JOIN LATERAL (SELECT url FROM listing_images WHERE listing_id=listing.id ORDER BY sort_order,created_at LIMIT 1) image ON true
       WHERE listing.farm_id=${id} AND listing.status='active' AND listing.quantity_available>listing.quantity_reserved
+      AND (listing.available_from IS NULL OR listing.available_from<=now())
+      AND (listing.available_until IS NULL OR listing.available_until>now())
       ORDER BY listing.created_at DESC`,
     sql`SELECT review.id,review.rating,review.comment,review.farmer_reply,review.created_at,customer.first_name,customer.last_name
       FROM reviews review JOIN users customer ON customer.id=review.customer_id
@@ -43,6 +45,8 @@ async function loadFarm(id: string) {
     LEFT JOIN LATERAL (SELECT url FROM listing_images WHERE listing_id=listing.id ORDER BY sort_order,created_at LIMIT 1) image ON true
     WHERE listing.farm_id<>${id} AND product.category_id=ANY(${categoryIds}::uuid[]) AND farm.verification_status='verified'
     AND listing.status='active' AND listing.quantity_available>listing.quantity_reserved
+    AND (listing.available_from IS NULL OR listing.available_from<=now())
+    AND (listing.available_until IS NULL OR listing.available_until>now())
     ORDER BY listing.created_at DESC LIMIT 8` : [];
   return { farm: farms[0] as Row, listings: listings as Row[], reviews: reviews as Row[], recommendations: recommendations as Row[] };
 }

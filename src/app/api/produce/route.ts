@@ -72,6 +72,8 @@ export async function GET(request: NextRequest) {
       ) image ON true
       WHERE listing.status = 'active'
         AND listing.quantity_available > listing.quantity_reserved
+        AND (listing.available_from IS NULL OR listing.available_from <= now())
+        AND (listing.available_until IS NULL OR listing.available_until > now())
         AND farm.verification_status = 'verified'
       ORDER BY distance_km(${latitude}, ${longitude}, farm.latitude, farm.longitude), listing.created_at DESC
     `, sql`
@@ -83,6 +85,8 @@ export async function GET(request: NextRequest) {
           JOIN farms listing_farm ON listing_farm.id = listing.farm_id
           WHERE listing.status = 'active'
             AND listing.quantity_available > listing.quantity_reserved
+            AND (listing.available_from IS NULL OR listing.available_from <= now())
+            AND (listing.available_until IS NULL OR listing.available_until > now())
             AND listing_farm.verification_status = 'verified') AS listings,
         (SELECT count(*)::int FROM users WHERE role = 'consumer' AND is_active) AS consumers,
         (SELECT count(*)::int FROM users WHERE role = 'farmer' AND is_active) AS farmers

@@ -23,6 +23,7 @@ function isUploadedListingImage(value?: string) {
 }
 
 function availabilityWindow(from?: string, until?: string) {
+  if (!from && !until) return { availableFrom: null, availableUntil: null };
   if (!from || !until) return null;
   const availableFrom = new Date(`${from}:00+01:00`);
   const availableUntil = new Date(`${until}:00+01:00`);
@@ -92,9 +93,9 @@ export async function POST(request: Request) {
   if (body?.type === "farm") {
     return POSTFarm(request, user, body);
   }
-  if (!body?.farmId || !body.categoryId || !body.name || !body.unit || !body.price || !body.stock || !body.harvestDate || !body.availableFrom || !body.availableUntil) return NextResponse.json({ error: "Complete all required fields" }, { status: 400 });
+  if (!body?.farmId || !body.categoryId || !body.name || !body.unit || !body.price || !body.stock || !body.harvestDate) return NextResponse.json({ error: "Complete all required fields" }, { status: 400 });
   const availability = availabilityWindow(body.availableFrom, body.availableUntil);
-  if (!availability) return NextResponse.json({ error: "Available until must be later than available from" }, { status: 400 });
+  if (!availability) return NextResponse.json({ error: "Enter both availability dates with Available until later than Available from, or leave both blank" }, { status: 400 });
   if (!validText(body.name, 140) || !validText(body.unit, 40) || (body.badge && !validText(body.badge, 80))) return NextResponse.json({ error: "One or more listing fields are too long" }, { status: 400 });
   if (!isUploadedListingImage(body.imageUrl)) return NextResponse.json({ error: "Upload a produce picture before publishing this listing" }, { status: 400 });
   const sql = getDatabase();
@@ -214,9 +215,9 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ updated: true });
   }
   if (body?.type === "listing" && body.id && ["active", "paused"].includes(body.status)) {
-    if (!body.categoryId || !body.name || !body.unit || !body.price || !body.stock || !body.harvestDate || !body.availableFrom || !body.availableUntil) return NextResponse.json({ error: "Complete all required fields" }, { status: 400 });
+    if (!body.categoryId || !body.name || !body.unit || !body.price || !body.stock || !body.harvestDate) return NextResponse.json({ error: "Complete all required fields" }, { status: 400 });
     const availability = availabilityWindow(body.availableFrom, body.availableUntil);
-    if (!availability) return NextResponse.json({ error: "Available until must be later than available from" }, { status: 400 });
+    if (!availability) return NextResponse.json({ error: "Enter both availability dates with Available until later than Available from, or leave both blank" }, { status: 400 });
     if (!validListingImage(body.imageUrl)) return NextResponse.json({ error: "Upload a JPG, PNG, or WebP image no larger than 4 MB" }, { status: 400 });
     const price = Number(body.price);
     const stock = Number(body.stock);
