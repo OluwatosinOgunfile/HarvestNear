@@ -34,4 +34,6 @@ Android requires Android Studio, the Android SDK, a signed release keystore, a P
 
 iOS requires macOS, Xcode, an Apple Developer account, signing certificates, App Store Connect metadata, privacy disclosures, screenshots, and an archived `.ipa` submission.
 
-Before store submission, verify sign-in, role navigation, location permission, photo/receipt uploads, Paystack return flow, notifications, hardware back navigation, and dark mode on physical devices.
+Before store submission, verify password and Google sign-in, role navigation, saved and device location, farm switching, photo/receipt uploads, Paystack return flow, persistent basket/favourites, per-item tracking and receipt acknowledgement, ratings, support tickets, notifications, hardware back navigation, and dark mode on physical devices.
+
+The current notification experience is application-backed rather than native push. Add APNs/FCM registration, permission handling, device-token storage, and delivery services before advertising background push notifications in app-store material.

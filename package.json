@@ -10,6 +10,7 @@
     "db:migrate": "node --env-file=.env.local scripts/migrate.mjs",
     "db:status": "node --env-file=.env.local scripts/db-status.mjs",
     "blob:migrate-images": "node --env-file=.env.local scripts/migrate-listing-images-to-blob.mjs",
+    "blob:optimize-images": "node --env-file=.env.local scripts/optimize-blob-images.mjs",
     "mobile:sync": "cap sync",
     "mobile:android": "cap open android",
     "mobile:ios": "cap open ios",
@@ -25,7 +26,8 @@
     "lucide-react": "^1.25.0",
     "next": "^16.2.12",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "sharp": "0.35.0"
   },
   "devDependencies": {
     "@capacitor/android": "^8.5.0",

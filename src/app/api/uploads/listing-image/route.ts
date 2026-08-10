@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { getSessionUser } from "@/lib/auth";
 import { canMutateAs, checkRateLimit, validImageFile } from "@/lib/security";
+import { optimizeUploadedImage } from "@/lib/image-processing";
 
 const MAX_IMAGE_SIZE = 4 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -24,9 +25,17 @@ export async function POST(request: Request) {
   if (!ALLOWED_TYPES.has(file.type)) return NextResponse.json({ error: "Upload a JPG, PNG, or WebP image" }, { status: 400 });
   if (file.size > MAX_IMAGE_SIZE) return NextResponse.json({ error: "Listing images must be 4 MB or smaller" }, { status: 413 });
   if (!await validImageFile(file)) return NextResponse.json({ error: "The file content does not match a supported image format" }, { status: 400 });
-  const extension = file.type === "image/jpeg" ? "jpg" : file.type.split("/")[1];
-  const blob = await put(`listing-images/${user.id}/${crypto.randomUUID()}.${extension}`, file, { access: "private", addRandomSuffix: false });
-  return NextResponse.json({ url: blob.url });
+  const optimized = await optimizeUploadedImage(file, "listing").catch((error) => {
+    console.error("Listing image optimization failed", error);
+    return null;
+  });
+  if (!optimized) return NextResponse.json({ error: "The picture could not be optimized" }, { status: 422 });
+  const blob = await put(`listing-images/${user.id}/${crypto.randomUUID()}.${optimized.extension}`, optimized.body, {
+    access: "private",
+    addRandomSuffix: false,
+    contentType: optimized.contentType,
+  });
+  return NextResponse.json({ url: blob.url, optimized: true, bytes: optimized.optimizedBytes });
 }
 
 export async function DELETE(request: Request) {

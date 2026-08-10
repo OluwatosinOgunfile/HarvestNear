@@ -54,8 +54,21 @@ const loadFarm = cache(async function loadFarm(id: string) {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const data = await loadFarm((await params).id);
-  if (!data) return { title: "Farm not found | HarvestNearU" };
-  return { title: `${data.farm.name} | HarvestNearU`, description: `Shop fresh produce and read verified buyer reviews for ${data.farm.name}.` };
+  if (!data) return { title: "Farm not found | HarvestNearU", robots: { index: false, follow: false } };
+  const farm = data.farm;
+  const title = `${farm.name} - Fresh Produce in ${farm.city} | HarvestNearU`;
+  const description = `Shop ${data.listings.length} available ${data.listings.length === 1 ? "harvest" : "harvests"} from verified ${farm.name} in ${farm.city}, ${farm.state}. Read verified buyer ratings and view pickup or delivery options.`;
+  const canonical = `/farms/${farm.id}`;
+  const image = data.listings[0]?.image_url ? listingImageUrl(String(data.listings[0].id), data.listings[0].image_url) : "/og-harvestnearu.jpg";
+  return {
+    title,
+    description,
+    keywords: [String(farm.name), `fresh produce ${farm.city}`, `farm in ${farm.state}`, "verified Nigerian farm", "local produce delivery"],
+    alternates: { canonical },
+    openGraph: { type: "website", locale: "en_NG", siteName: "HarvestNearU", url: canonical, title, description, images: [{ url: image, alt: `Fresh produce from ${farm.name}` }] },
+    twitter: { card: "summary_large_image", title, description, images: [image] },
+    robots: { index: true, follow: true },
+  };
 }
 
 function Stars({ rating }: { rating: number }) {
@@ -69,7 +82,29 @@ export default async function FarmStorePage({ params }: Props) {
   const data = await loadFarm((await params).id); if (!data) notFound();
   const { farm, listings, reviews, recommendations } = data; const rating=Number(farm.average_rating);
   const hero=listings[0]?.image_url?listingImageUrl(String(listings[0].id),listings[0].image_url):DEFAULT_LISTING_IMAGE;
+  const farmUrl = `https://www.harvestnearu.com/farms/${farm.id}`;
+  const farmStructuredData = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "LocalBusiness",
+        "@id": `${farmUrl}#farm`,
+        additionalType: "https://schema.org/Farm",
+        name: String(farm.name),
+        description: String(farm.description || `${farm.name} supplies fresh, locally grown produce to HarvestNearU customers.`),
+        url: farmUrl,
+        telephone: String(farm.phone),
+        email: farm.email ? String(farm.email) : undefined,
+        image: `https://www.harvestnearu.com${hero}`,
+        address: { "@type": "PostalAddress", streetAddress: String(farm.address_text), addressLocality: String(farm.city), addressRegion: String(farm.state), addressCountry: "NG" },
+        aggregateRating: Number(farm.review_count) > 0 ? { "@type": "AggregateRating", ratingValue: rating, reviewCount: Number(farm.review_count), bestRating: 5, worstRating: 1 } : undefined,
+        hasOfferCatalog: { "@type": "OfferCatalog", name: `Available produce from ${farm.name}`, itemListElement: listings.map((listing) => ({ "@type": "Offer", name: String(listing.title), price: Number(listing.unit_price_kobo) / 100, priceCurrency: "NGN", availability: "https://schema.org/InStock", url: farmUrl })) },
+      },
+      { "@type": "BreadcrumbList", itemListElement: [{ "@type": "ListItem", position: 1, name: "HarvestNearU", item: "https://www.harvestnearu.com/" }, { "@type": "ListItem", position: 2, name: "Shop produce", item: "https://www.harvestnearu.com/produce" }, { "@type": "ListItem", position: 3, name: String(farm.name), item: farmUrl }] },
+    ],
+  };
   return <FarmStoreTheme>
+    <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(farmStructuredData) }}/>
     <header className="topbar store-app-header"><Link className="brand brand-image" href="/" aria-label="HarvestNearU home"><Image className="brand-lockup" src="/brand/harvestnearu-opaque-seal-se2-lockup.png" width={190} height={44} alt="HarvestNearU" priority/></Link><nav className="main-nav" aria-label="Main navigation"><Link href="/">Home</Link><Link className="active" href="/produce">Shop produce</Link><Link href="/orders">My orders</Link></nav><div className="header-actions"><FarmStoreThemeToggle/><Link className="cart-button store-header-icon" href="/produce" aria-label="Open shop"><ShoppingBag size={18}/></Link><Link className="account-menu-trigger" href="/profile" aria-label="Open account"><span className="account-avatar"><UserRound size={17}/></span><ChevronDown size={15}/></Link></div></header>
     <nav className="mobile-nav store-mobile-nav" aria-label="Mobile navigation"><Link href="/"><House size={17}/><span>Home</span></Link><Link className="active" href="/produce"><ShoppingBag size={17}/><span>Shop</span></Link><Link href="/orders"><PackageCheck size={17}/><span>Orders</span></Link></nav>
     <main>

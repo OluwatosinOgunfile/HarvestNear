@@ -43,6 +43,7 @@ import {
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
+import { usePathname } from "next/navigation";
 import { readJsonResponse } from "@/lib/client-api";
 
 type Product = {
@@ -245,11 +246,12 @@ function FarmCoordinateFields({ defaultLatitude = "", defaultLongitude = "" }: {
 }
 
 export default function Home() {
+  const pathname = usePathname();
   const [products, setProducts] = useState<Product[]>([]);
   const [marketplaceStats, setMarketplaceStats] = useState<MarketplaceStats | null>(null);
   const [productsLoading, setProductsLoading] = useState(true);
   const [productsError, setProductsError] = useState(false);
-  const [view, setView] = useState<View>("landing");
+  const [view, setView] = useState<View>(() => viewFromPath(pathname));
   const [category, setCategory] = useState("All produce");
   const [query, setQuery] = useState("");
   const [cart, setCart] = useState<Record<string, number>>({});
@@ -839,7 +841,7 @@ export default function Home() {
         {!currentUser && <button onClick={() => openSignIn(false)}><LogIn size={17}/><span>Sign in</span></button>}
       </nav>}
 
-      {sessionLoading ? <DataLoading/> : view === "landing" ? <LandingPage stats={marketplaceStats} signedOut={!currentUser} onShop={() => navigate("market")} onFarmer={() => navigate("farmer")} onSignup={openSignup} /> : view === "market" ? (
+      {sessionLoading ? <DataLoading view={view}/> : view === "landing" ? <LandingPage stats={marketplaceStats} signedOut={!currentUser} onShop={() => navigate("market")} onFarmer={() => navigate("farmer")} onSignup={openSignup} /> : view === "market" ? (
         <main>
           <section className="market-intro">
             <div className="intro-copy">
@@ -910,7 +912,7 @@ export default function Home() {
 
           <section className="trust-band">
             <div><PackageCheck size={23} /><span><strong>Harvest checked</strong>Farmers confirm availability daily</span></div>
-            <div><Clock3 size={23} /><span><strong>Reserved for 10 minutes</strong>Your basket stays yours at checkout</span></div>
+            <div><Clock3 size={23} /><span><strong>Stock checked at checkout</strong>Orders cannot exceed live availability</span></div>
             <div><Truck size={23} /><span><strong>Flexible fulfilment</strong>Doorstep delivery or farm pickup</span></div>
           </section>
         </main>
@@ -927,7 +929,7 @@ export default function Home() {
               <div><h4>{product.name}</h4><p>{product.farmer}</p><strong>{money(product.price * cart[product.id])}</strong></div>
               <div className="stepper"><button onClick={() => update(product.id, -1)} aria-label={`Remove one ${product.name}`}><Minus size={14} /></button><span>{cart[product.id]}</span><button onClick={() => update(product.id, 1)} disabled={cart[product.id] >= product.stock} aria-label={cart[product.id] >= product.stock ? `All available ${product.name} is already in your basket` : `Add one ${product.name}`}><Plus size={14} /></button></div>
             </div>)}</div>
-            <div className="delivery-choice"><p>How would you like it?</p><button className={delivery === "door" ? "selected" : ""} onClick={() => setDelivery("door")}><Truck size={20} /><span><strong>Doorstep delivery</strong><small>Tomorrow, 9am–1pm</small></span><b>{money(1800)}</b></button><button className={delivery === "pickup" ? "selected" : ""} onClick={() => setDelivery("pickup")}><Store size={20} /><span><strong>Pickup from collection hub</strong><small title="2.1 km straight-line distance">Gudu Market · {walkingTime(2.1)}</small></span><b>Free</b></button></div>
+            <div className="delivery-choice"><p>How would you like it?</p><button className={delivery === "door" ? "selected" : ""} onClick={() => setDelivery("door")}><Truck size={20} /><span><strong>Doorstep delivery</strong><small>Handover timing is coordinated after payment</small></span><b>{money(1800)}</b></button><button className={delivery === "pickup" ? "selected" : ""} onClick={() => setDelivery("pickup")}><Store size={20} /><span><strong>Farm pickup</strong><small>Coordinate collection with the supplying farm</small></span><b>Free</b></button></div>
             <div className="cart-total"><p><span>Subtotal</span><strong>{money(subtotal)}</strong></p><p><span>Delivery</span><strong>{deliveryFee ? money(deliveryFee) : "Free"}</strong></p><p className="total"><span>Total</span><strong>{money(subtotal + deliveryFee)}</strong></p><button className="checkout-button" onClick={beginCheckout}>Continue to payment <ArrowRight size={18} /></button><small>Secure payment powered by Paystack</small></div>
           </> : <div className="empty-cart"><div className="empty-cart-visual" aria-hidden="true"><span><ShoppingBag size={34}/></span><i><Leaf size={16}/></i><b><MapPin size={15}/></b></div><span className="empty-cart-kicker">READY WHEN YOU ARE</span><h3>Your next harvest starts here.</h3><p>Your basket is empty. Browse fresh produce available from trusted farms near you.</p><button onClick={() => setCartOpen(false)}><Leaf size={15}/> Explore harvests <ArrowRight size={16}/></button><div className="empty-cart-points"><span><Check size={12}/> Local farms</span><span><Clock3 size={12}/> Daily availability</span></div></div>}
         </aside>
@@ -1147,16 +1149,18 @@ function SupportPage({ page, onNavigate, user, onSignIn }: { page: "help" | "del
     ["Do I need an account to place an order?", "You can browse produce without signing in, but you must create an account or sign in before checkout. Both consumer and farmer accounts can purchase produce and access My orders."],
     ["How do I place an order?", "Open Shop produce, add the quantities you need to your basket, choose doorstep delivery or an available pickup option, and continue to payment. Your order will appear in My orders after it is submitted."],
     ["How are nearby harvests ranked?", "Active produce is shown without a default category or distance filter and is ranked by proximity when you choose Shortest walk first. Walking times are estimates based on the farm's location; the underlying distance is retained for filtering."],
-    ["How is produce availability confirmed?", "Farmers publish available quantities and harvest dates from their workspace. Quantities are reduced as orders are placed, and farmers update each order as it moves through preparation and fulfilment."],
+    ["How is produce availability confirmed?", "Farmers publish quantities and harvest dates from their workspace. Optional Available from and Available until dates restrict a listing only when both are supplied. Stock is reserved during checkout, reduced when orders are created, and marked out of stock when exhausted."],
+    ["Can I view a farm before ordering?", "Yes. Select the farm name on any produce card to open its storefront. You can review its address, verified buyer ratings and feedback, current produce, and related recommendations."],
     ["Can I order produce from more than one farm?", "Yes. A basket can contain produce from multiple farms. Each order keeps the farm and item breakdown, while delivery or pickup availability is shown before payment."],
-    ["How do manual bank-transfer payments work?", "At checkout, transfer the displayed amount to the company bank account and upload a JPG, PNG, WebP, or PDF receipt. Your order remains pending while an administrator verifies the transfer. You will receive a notification when payment is confirmed."],
+    ["How do payments work?", "Paystack is the primary secure payment option. When administrators enable manual bank transfer, checkout displays the company account details and accepts a JPG, PNG, WebP, or PDF receipt. Manual-payment orders remain pending until an administrator verifies the receipt."],
     ["Can I pay with my account credit?", "Yes. Available account credit is applied during checkout. If it covers the full order, no bank transfer or receipt is required. You can see your current balance in the account menu and on your profile."],
     ["Can I cancel an order after submitting payment?", "You can cancel a pending-payment order before an administrator confirms it. Choose full account credit for a future purchase or request a bank refund. Bank refunds include the displayed cancellation fee and require administrator review."],
     ["How do I track and confirm receipt of an order?", "Open My orders to follow every product separately. Confirm each product only after it is delivered or ready for collection. You can rate its farm immediately, while the overall order completes after every product has been acknowledged."],
     ["How do farm ratings work?", "After confirming an individual product, you will be invited to rate the farm that supplied it. You can give one to five stars, add a comment, and update the rating later from the completed order."],
     ["Can a consumer account become a farmer account?", "Yes. Open your profile and choose Become a farmer. Your existing orders, saved produce, and customer history remain on the account while you add farm information for verification."],
     ["Can a farmer manage more than one farm?", "Yes. Farmers can add multiple farms, switch the active farm in the workspace and profile, and manage separate verification, listings, orders, delivery settings, and earnings for each farm."],
-    ["How do I report a problem and follow the response?", "Sign in and open the Help Centre, then create a support ticket with the issue category and relevant details. You can read staff replies and continue the conversation from your ticket history."],
+    ["How do I report a problem and follow the response?", "Sign in and open the Help Centre, then create a support ticket with the category, order number, affected item, and a clear description. You can read staff replies and continue the conversation from your ticket history. Support may ask you to email supporting photographs."],
+    ["How do notifications work?", "The notification bell shows payment, order, delivery, farm verification, and harvest updates. Opening an update marks it as read; reviewed notifications are cleaned up automatically after you have had time to read them."],
     ["How can I suggest an improvement to HarvestNearU?", "Use Product feedback in the Help Centre to rate your experience, select the affected area, and describe what worked or should improve. The feedback enters the support team's review queue and remains visible in your history."],
   ];
   const visibleFaqs = faqs.filter(([question, answer]) => `${question} ${answer}`.toLowerCase().includes(query.toLowerCase()));
@@ -1184,9 +1188,9 @@ function SupportPage({ page, onNavigate, user, onSignIn }: { page: "help" | "del
     {page === "delivery" && <section className="support-content">
       <div className="support-intro"><div><h2>Current delivery coverage</h2><p>Availability depends on your address and the farm supplying each item. Your exact options appear in the basket.</p></div></div>
       <div className="coverage-grid">
-        <article className="coverage-card"><span><Truck size={20}/></span><h3>Central Abuja</h3><p>Doorstep delivery across our primary service area.</p><ul><li><span>Gudu, Wuse, Jabi</span><strong>Same or next day</strong></li><li><span>Maitama, Asokoro</span><strong>Next day</strong></li><li><span>Lugbe, Gwarinpa</span><strong>Next day</strong></li></ul></article>
-        <article className="coverage-card"><span><MapPin size={20}/></span><h3>Greater Abuja</h3><p>Scheduled routes connect farms and collection points.</p><ul><li><span>Kuje, Bwari</span><strong>Tue, Thu, Sat</strong></li><li><span>Gwagwalada, Kwali</span><strong>Wed & Sat</strong></li><li><span>Karu, Mararaba</span><strong>Tue–Sat</strong></li></ul></article>
-        <article className="coverage-card"><span><Store size={20}/></span><h3>Collection hubs</h3><p>Free pickup from convenient community locations.</p><ul><li><span>Gudu Market</span><strong>Daily</strong></li><li><span>Jabi Lake hub</span><strong>Mon–Sat</strong></li><li><span>Kubwa village market</span><strong>Tue–Sun</strong></li></ul></article>
+        <article className="coverage-card"><span><Truck size={20}/></span><h3>Central Abuja</h3><p>Doorstep delivery may be offered by farms serving these areas.</p><ul><li><span>Gudu, Wuse, Jabi</span><strong>Check at checkout</strong></li><li><span>Maitama, Asokoro</span><strong>Farm dependent</strong></li><li><span>Lugbe, Gwarinpa</span><strong>Farm dependent</strong></li></ul></article>
+        <article className="coverage-card"><span><MapPin size={20}/></span><h3>Greater Abuja</h3><p>Availability depends on each farm&apos;s location, delivery radius, and current circumstances.</p><ul><li><span>Kuje, Bwari</span><strong>Check at checkout</strong></li><li><span>Gwagwalada, Kwali</span><strong>Farm dependent</strong></li><li><span>Karu, Mararaba</span><strong>Farm dependent</strong></li></ul></article>
+        <article className="coverage-card"><span><Store size={20}/></span><h3>Farm pickup</h3><p>Pickup is available only from farms that enable it for their listings.</p><ul><li><span>Pickup location</span><strong>Shown in order</strong></li><li><span>Handover timing</span><strong>Coordinate with farm</strong></li><li><span>Receipt</span><strong>Confirm per item</strong></li></ul></article>
       </div>
       <div className="support-note"><LocateFixed size={24}/><div><strong>Is your area not listed?</strong><span>Coverage is expanding based on demand. Tell us your neighbourhood so we can plan the next route.</span></div><button onClick={() => window.location.href = "mailto:hello@harvestnearu.com?subject=Delivery area request"}>Request my area</button></div>
     </section>}
@@ -1196,10 +1200,10 @@ function SupportPage({ page, onNavigate, user, onSignIn }: { page: "help" | "del
       <div className="policy-grid">
         <article className="policy-card"><span><Check size={20}/></span><h3>Eligible issues</h3><p>Items that arrive spoiled, damaged, materially different from the listing, or missing from a paid order.</p></article>
         <article className="policy-card"><span><Clock3 size={20}/></span><h3>Report within 6 hours</h3><p>Contact us within six hours of delivery or pickup. Include clear photos and your HarvestNearU order number.</p></article>
-        <article className="policy-card"><span><RotateCcw size={20}/></span><h3>Refund timing</h3><p>Approved refunds are initiated within 24 hours and usually reach the original payment method in 3–7 business days.</p></article>
+        <article className="policy-card"><span><RotateCcw size={20}/></span><h3>Refund review</h3><p>Administrators review each request and record its progress. Bank processing time begins after approval and varies by provider.</p></article>
       </div>
-      <div className="refund-steps"><div><strong>Open your order</strong><p>Find the affected purchase under My orders.</p></div><div><strong>Report the issue</strong><p>Describe the problem and select the affected item.</p></div><div><strong>Add clear photos</strong><p>Show the condition of the produce and packaging.</p></div><div><strong>Receive a resolution</strong><p>We review the request and confirm replacement or refund.</p></div></div>
-      <div className="support-note"><PackageCheck size={24}/><div><strong>Need to report an order?</strong><span>Have your order number and photos ready so we can resolve it quickly.</span></div><button onClick={() => onNavigate("orders")}>Go to my orders</button></div>
+      <div className="refund-steps"><div><strong>Open your order</strong><p>Find the affected purchase under My orders.</p></div><div><strong>Create a ticket</strong><p>Include the order number, farm, and affected item.</p></div><div><strong>Share evidence if asked</strong><p>Support will explain how to provide photographs when needed.</p></div><div><strong>Follow the resolution</strong><p>Track replies and the recorded refund status in your account.</p></div></div>
+      <div className="support-note"><PackageCheck size={24}/><div><strong>Need to report an order?</strong><span>Have your order number, farm name, affected item, and a clear description ready.</span></div><button onClick={() => onNavigate(user ? "help" : "orders")}>{user ? "Create support ticket" : "Go to my orders"}</button></div>
     </section>}
   </main>;
 }
@@ -1658,8 +1662,17 @@ function formatEntityValue(key: string, value: unknown) {
   return String(value);
 }
 
-function DataLoading() {
-  return <main className="profile-page loading-page"><HarvestSpinner label="Loading marketplace data"/></main>;
+function DataLoading({ view = "landing" }: { view?: View }) {
+  const content = view === "market"
+    ? ["Fresh produce near you", "Loading available harvests from verified Nigerian farms."]
+    : view === "help"
+      ? ["HarvestNearU Help Centre", "Loading help for orders, payments, delivery, refunds, and accounts."]
+      : view === "delivery"
+        ? ["Fresh produce delivery areas", "Loading farm pickup and doorstep delivery information for Abuja."]
+        : view === "returns"
+          ? ["Returns and refunds", "Loading HarvestNearU cancellation, account credit, and refund guidance."]
+          : ["HarvestNearU", "Fresh local produce from verified farms near you."];
+  return <main className="profile-page loading-page"><div className="sr-only"><h1>{content[0]}</h1><p>{content[1]}</p></div><HarvestSpinner label="Loading marketplace data"/></main>;
 }
 
 function ProductGridSkeleton() {

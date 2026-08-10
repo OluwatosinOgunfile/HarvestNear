@@ -1,0 +1,61 @@
+
+> harvest-near@0.1.0 dev
+> next dev --hostname 127.0.0.1
+
+▲ Next.js 16.3.0 (Turbopack)
+- Local:         http://127.0.0.1:3000
+- Network:       http://127.0.0.1:3000
+- Environments: .env.local
+✓ Ready in 738ms
+✓ Running next.config.ts took 52ms
+Creating turbopack project { dir: 'C:\\code\\farmers-market', testMode: true }
+
+✓ Generated AGENTS.md for AI agents. Set `agentRules: false` in next.config to disable.
+ GET /campaign-kit 200 in 2.1s (next.js: 1606ms, application-code: 461ms)
+Turbopack build encountered 1 error:
+./src/app
+Error: Could not find the Next.js package (next/package.json)
+Resolved from: C:\code\farmers-market\src\app
+Filesystem root used for resolution: C:\code\farmers-market
+
+Possible causes:
+  - node_modules is being reorganized by a concurrent install (e.g. pnpm adding a package with a `next` peer dependency). This is transient and should clear once the install completes.
+  - node_modules/next was removed, renamed, or has a broken symlink.
+  - The workspace root is incorrect — see turbopack.root in the Next.js config docs for how to configure it.
+  - In a monorepo, the Next.js package may only exist in a directory above the closest directory containing a package manager lockfile. The workspace root is detected by locating the nearest package manager lockfile.
+  - Next.js is installed globally rather than as a project dependency. This is not supported; install it locally.
+
+Note: To ensure a hermetic build and a portable cache, files outside of the workspace root are not compiled.
+
+https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory
+
+
+⨯ ./node_modules/next/dist/esm/build/templates/app-page.js:1:1
+Error: Module not found: Can't resolve 'next/dist/server/app-render/module-loading/instrument-module-getter'
+Import map: aliased to module 'next' with subpath '/dist/server/app-render/module-loading/instrument-module-getter' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./node_modules/next/dist/esm/build/templates/app-page.js:1:1
+Error: Module not found: Can't resolve 'next/dist/server/app-render/module-loading/instrument-module-getter'
+Import map: aliased to module 'next' with subpath '/dist/server/app-render/module-loading/instrument-module-getter' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+  Reload env: .env.local
+⨯ ./node_modules/next/dist/esm/build/templates/app-page.js:1:1
+Error: Module not found: Can't resolve 'next/dist/server/app-render/module-loading/instrument-module-getter'
+Import map: aliased to module 'next' with subpath '/dist/server/app-render/module-loading/instrument-module-getter' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET /produce 500 in 3.8s (next.js: 3.6s, application-code: 162ms)
+ GET /robots.txt 500 in 280ms (next.js: 269ms, application-code: 11ms)
+ GET /sitemap.xml 500 in 123ms (next.js: 111ms, application-code: 12ms)
+[?25h

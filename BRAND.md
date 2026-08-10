@@ -30,7 +30,7 @@ Green communicates trust and locality. Gold expresses harvest quality and sunlig
 
 ## Typography
 
-- **Brand and UI:** Arial/Helvetica system sans-serif, bold and direct.
+- **Brand and UI:** Manrope, with system sans-serif fallback, for clear modern interfaces and numerals.
 - **Editorial headings:** Georgia, medium weight, for warmth and produce storytelling.
 - **Operational text:** Compact sans-serif for prices, inventory, delivery, and order states.
 
@@ -40,7 +40,7 @@ Avoid oversized type inside dashboards and operational panels. Letter spacing re
 
 - Clear before clever.
 - Warm, local, and specific.
-- Focus on freshness, distance, farmer identity, and delivery certainty.
+- Focus on freshness, estimated travel time, farmer identity, live availability, and clear fulfilment status.
 - Prefer “harvest”, “nearby farmer”, and “ready today” over generic ecommerce language.
 - Never imply that all produce is organic unless a listing is verified as organic.
 
@@ -49,9 +49,9 @@ Avoid oversized type inside dashboards and operational panels. Letter spacing re
 - **Hero:** HarvestNearU. Fresh starts here.
 - **Brand promise:** Fresh Local Produce, Found Here.
 - **Marketplace:** Harvests near you.
-- **Checkout:** Your produce is reserved for 10 minutes.
+- **Checkout:** Pay securely and follow every item.
 - **Farmer invitation:** Sell today's harvest to customers nearby.
-- **Delivery:** From farm gate to your doorstep.
+- **Fulfilment:** Pickup or doorstep delivery where the farm supports it.
 
 ## Photography
 

@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
 import { canMutateAs, checkRateLimit, validImageFile } from "@/lib/security";
+import { optimizeUploadedImage } from "@/lib/image-processing";
 
 export async function POST(request: Request) {
   const session = await getSessionUser();
@@ -17,10 +18,18 @@ export async function POST(request: Request) {
   if (!await validImageFile(file)) return NextResponse.json({ error: "The file content does not match a supported image format" }, { status: 400 });
   const sql = getDatabase();
   const [current] = await sql`SELECT avatar_url FROM users WHERE id = ${session.id}`;
-  const extension = file.type === "image/jpeg" ? "jpg" : file.type.split("/")[1];
-  const blob = await put(`profile-images/${session.id}/${crypto.randomUUID()}.${extension}`, file, { access: "private", addRandomSuffix: false });
+  const optimized = await optimizeUploadedImage(file, "profile").catch((error) => {
+    console.error("Profile image optimization failed", error);
+    return null;
+  });
+  if (!optimized) return NextResponse.json({ error: "The profile picture could not be optimized" }, { status: 422 });
+  const blob = await put(`profile-images/${session.id}/${crypto.randomUUID()}.${optimized.extension}`, optimized.body, {
+    access: "private",
+    addRandomSuffix: false,
+    contentType: optimized.contentType,
+  });
   await sql`UPDATE users SET avatar_url = ${blob.url}, updated_at = now() WHERE id = ${session.id}`;
   if (current?.avatar_url && String(current.avatar_url).includes(".blob.vercel-storage.com")) await del(String(current.avatar_url)).catch((error) => console.error("Old avatar cleanup failed", error));
   const version = encodeURIComponent(new URL(blob.url).pathname.split("/").pop() || crypto.randomUUID());
-  return NextResponse.json({ avatarUrl: `/api/images/profiles/${session.id}?v=${version}` });
+  return NextResponse.json({ avatarUrl: `/api/images/profiles/${session.id}?v=${version}`, optimized: true, bytes: optimized.optimizedBytes });
 }
