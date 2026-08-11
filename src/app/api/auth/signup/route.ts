@@ -4,11 +4,15 @@ import { randomUUID } from "node:crypto";
 import { createSession } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
 import { checkRateLimit, validText } from "@/lib/security";
+import { isMobileClient, mobileCorsHeaders, mobileOptions } from "@/lib/mobile-cors";
 
 type SignupBody = { firstName?: string; lastName?: string; phone?: string; email?: string; password?: string; confirmPassword?: string; role?: string; farmName?: string; farmLocation?: string; latitude?: string; longitude?: string };
 
+export const OPTIONS = mobileOptions;
+
 export async function POST(request: Request) {
-  if (!await checkRateLimit(request, "auth.signup", 5, 60 * 60)) return NextResponse.json({ error: "Too many account creation attempts. Try again later." }, { status: 429 });
+  const headers = mobileCorsHeaders(request);
+  if (!await checkRateLimit(request, "auth.signup", 5, 60 * 60)) return NextResponse.json({ error: "Too many account creation attempts. Try again later." }, { status: 429, headers });
   const body = await request.json().catch(() => null) as SignupBody | null;
   const role = body?.role === "farmer" ? "farmer" : body?.role === "consumer" ? "consumer" : null;
   const email = body?.email?.trim().toLowerCase();
@@ -63,8 +67,8 @@ export async function POST(request: Request) {
         SELECT * FROM new_user
       `;
     }
-    await createSession(String(user.id));
-    return NextResponse.json({ user: { id: user.id, email: user.email, firstName: user.first_name, lastName: user.last_name, role: user.role }, farmId }, { status: 201 });
+    const session = await createSession(String(user.id));
+    return NextResponse.json({ ...(isMobileClient(request) ? { sessionToken: session.token } : {}), user: { id: user.id, email: user.email, firstName: user.first_name, lastName: user.last_name, role: user.role }, farmId }, { status: 201, headers });
   } catch (error) {
     const databaseError = error as { code?: string };
     if (databaseError.code === "23505") return NextResponse.json({ error: "An account already uses that email or phone number" }, { status: 409 });

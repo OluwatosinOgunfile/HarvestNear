@@ -9,6 +9,37 @@ export const dynamic = "force-dynamic";
 const DEFAULT_LATITUDE = 9.0019;
 const DEFAULT_LONGITUDE = 7.4534;
 
+const DEVELOPMENT_ORIGINS = new Set([
+  "http://localhost:8081",
+  "http://127.0.0.1:8081",
+  "http://localhost:8082",
+  "http://127.0.0.1:8082",
+  "http://localhost:19006",
+  "http://127.0.0.1:19006",
+]);
+
+function corsHeaders(request: NextRequest): Record<string, string> {
+  const origin = request.headers.get("origin");
+  const configuredOrigins = new Set(
+    (process.env.MOBILE_WEB_ORIGINS ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+  if (!origin || (!DEVELOPMENT_ORIGINS.has(origin) && !configuredOrigins.has(origin))) return {};
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Accept, Content-Type",
+    Vary: "Origin",
+  };
+}
+
+export async function OPTIONS(request: NextRequest) {
+  return new NextResponse(null, { status: 204, headers: corsHeaders(request) });
+}
+
 export async function GET(request: NextRequest) {
   try {
     const sql = getDatabase();
@@ -38,7 +69,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
-      return NextResponse.json({ error: "Invalid coordinates" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid coordinates" }, { status: 400, headers: corsHeaders(request) });
     }
 
     const [rows, statsRows] = await Promise.all([sql`
@@ -132,9 +163,9 @@ export async function GET(request: NextRequest) {
         consumers: Number(stats.consumers),
         farmers: Number(stats.farmers),
       },
-    }, { headers: { "Cache-Control": "private, max-age=15, stale-while-revalidate=30" } });
+    }, { headers: { "Cache-Control": "private, max-age=15, stale-while-revalidate=30", ...corsHeaders(request) } });
   } catch (error) {
     console.error("Could not load produce", error);
-    return NextResponse.json({ error: "Could not load produce" }, { status: 500 });
+    return NextResponse.json({ error: "Could not load produce" }, { status: 500, headers: corsHeaders(request) });
   }
 }

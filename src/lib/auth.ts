@@ -45,11 +45,19 @@ export async function createSession(userId: string) {
     priority: "high",
     expires: expiresAt,
   });
+  return { token, expiresAt };
+}
+
+async function requestSessionToken() {
+  const requestHeaders = await headers();
+  const authorization = requestHeaders.get("authorization");
+  if (authorization?.toLowerCase().startsWith("bearer ")) return authorization.slice(7).trim();
+  return (await cookies()).get(COOKIE_NAME)?.value;
 }
 
 export async function deleteSession() {
   const cookieStore = await cookies();
-  const token = cookieStore.get(COOKIE_NAME)?.value;
+  const token = await requestSessionToken();
   if (token) {
     const sql = getDatabase();
     await sql`DELETE FROM user_sessions WHERE token_hash = ${hashToken(token)}`;
@@ -58,7 +66,7 @@ export async function deleteSession() {
 }
 
 export async function getSessionUser(): Promise<SessionUser | null> {
-  const token = (await cookies()).get(COOKIE_NAME)?.value;
+  const token = await requestSessionToken();
   if (!token) return null;
 
   const sql = getDatabase();
