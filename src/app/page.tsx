@@ -22,6 +22,7 @@ import {
   LoaderCircle,
   MapPin,
   Mail,
+  Maximize2,
   Minus,
   Moon,
   PackageCheck,
@@ -308,10 +309,25 @@ export default function Home() {
   const [todayOnly, setTodayOnly] = useState(false);
   const [hideLowStock, setHideLowStock] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [previewProduct, setPreviewProduct] = useState<Product | null>(null);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
   }, [view]);
+
+  useEffect(() => {
+    if (!previewProduct) return;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPreviewProduct(null);
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [previewProduct]);
 
   useEffect(() => {
     const syncView = () => setView(viewFromPath(window.location.pathname));
@@ -880,9 +896,10 @@ export default function Home() {
 
             {productsLoading ? <ProductGridSkeleton/> : productsError ? <div className="empty-state"><RotateCcw size={28} /><h3>Could not load harvests</h3><p>Please refresh the page to try again.</p></div> : visible.length ? <div className="product-grid">
               {paginatedProducts.map((product) => (
-                <article className="product-card" key={product.id}>
+                <article className="product-card" key={product.id} onClick={(event) => { if (!(event.target as HTMLElement).closest("button, a")) setPreviewProduct(product); }}>
                   <div className="product-image">
                     <Image src={product.image} alt={product.name} fill sizes="(max-width: 620px) calc(100vw - 28px), (max-width: 800px) 50vw, (max-width: 1100px) 33vw, 25vw" />
+                    <button className="product-image-preview-trigger" onClick={() => setPreviewProduct(product)} aria-label={`View full image of ${product.name}`}><Maximize2 size={17}/><span>View full image</span></button>
                     <span className="distance" title={`${product.distance} km straight-line distance`}><MapPin size={13} /> {walkingTime(product.distance)}</span>
                     <button className={`heart ${liked.includes(product.id) ? "liked" : ""}`} onClick={() => toggleFavourite(product.id)} aria-label={liked.includes(product.id) ? "Remove saved product" : "Save product"}><Heart size={18} fill={liked.includes(product.id) ? "currentColor" : "none"} /></button>
                     {product.badge && <span className="product-badge">{product.badge}</span>}
@@ -919,6 +936,14 @@ export default function Home() {
       ) : view === "orders" && canPurchase ? <DatabaseOrdersPage onShop={() => navigate("market")} onHelp={() => navigate("help")} /> : view === "profile" && (isConsumer || isFarmer) ? <DatabaseProfilePage role={isFarmer ? "farmer" : "consumer"} onShop={() => navigate("market")} onFarmer={() => navigate("farmer")} onUpgraded={(user) => { setCurrentUser(user); window.history.pushState({}, "", viewPaths.farmer); setView("farmer"); }} /> : view === "admin" && isAdmin ? <AdminPage readOnly={role === "support" || Boolean(currentUser?.impersonating)} supportAccess={role === "support"} onImpersonated={enterImpersonatedView} /> : view === "help" || view === "delivery" || view === "returns" ? <SupportPage page={view} onNavigate={navigate} user={currentUser} onSignIn={() => openSignIn(false)} /> : view === "farmer" && isFarmer ? <FarmerWorkspace onShop={() => navigate("market")} /> : <LandingPage stats={marketplaceStats} signedOut={!currentUser} onShop={() => navigate("market")} onFarmer={() => navigate("farmer")} onSignup={openSignup} />}
 
       {!sessionLoading && <SiteFooter view={view} user={currentUser} onNavigate={navigate} />}
+
+      {previewProduct && <div className="modal-overlay product-preview-overlay" onMouseDown={() => setPreviewProduct(null)} role="presentation">
+        <section className="product-preview-modal" role="dialog" aria-modal="true" aria-labelledby="product-preview-title" onMouseDown={(event) => event.stopPropagation()}>
+          <button className="product-preview-close" onClick={() => setPreviewProduct(null)} aria-label="Close full image"><X size={22}/></button>
+          <div className="product-preview-canvas"><Image src={previewProduct.image} alt={previewProduct.name} fill sizes="(max-width: 700px) calc(100vw - 32px), 75vw" priority/></div>
+          <div className="product-preview-details"><div><span>{previewProduct.available} · {previewProduct.category}</span><h2 id="product-preview-title">{previewProduct.name}</h2><a href={`/farms/${previewProduct.farmId}`}><Store size={15}/>{previewProduct.farmer}<VerificationSeal label="Verified farm"/></a></div><div className="product-preview-action"><strong>{money(previewProduct.price)} <small>/ {previewProduct.unit}</small></strong><button onClick={() => { add(previewProduct); setPreviewProduct(null); }} disabled={cart[previewProduct.id] >= previewProduct.stock}><Plus size={17}/>{cart[previewProduct.id] >= previewProduct.stock ? "Maximum in basket" : "Add to basket"}</button></div></div>
+        </section>
+      </div>}
 
       {cartOpen && <div className="overlay" onMouseDown={() => setCartOpen(false)}>
         <aside className="cart-drawer" onMouseDown={(e) => e.stopPropagation()}>
