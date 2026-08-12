@@ -43,6 +43,8 @@ import {
   X,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+
+function playNotificationChime(){try{const AudioContextClass=window.AudioContext||(window as typeof window & {webkitAudioContext?:typeof AudioContext}).webkitAudioContext;if(!AudioContextClass)return;const context=new AudioContextClass();const oscillator=context.createOscillator();const gain=context.createGain();oscillator.frequency.value=740;gain.gain.setValueAtTime(.0001,context.currentTime);gain.gain.exponentialRampToValueAtTime(.12,context.currentTime+.02);gain.gain.exponentialRampToValueAtTime(.0001,context.currentTime+.28);oscillator.connect(gain);gain.connect(context.destination);oscillator.start();oscillator.stop(context.currentTime+.3);oscillator.addEventListener("ended",()=>void context.close());}catch{}}
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { readJsonResponse } from "@/lib/client-api";
@@ -301,6 +303,7 @@ export default function Home() {
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notificationFilter, setNotificationFilter] = useState<"all" | "unread">("all");
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const notificationIdsRef = useRef<Set<string>>(new Set());
   const [showSigninPassword, setShowSigninPassword] = useState(false);
   const [showSignupPassword, setShowSignupPassword] = useState(false);
   const [sortBy, setSortBy] = useState<"nearest" | "price-low" | "price-high" | "rating" | "stock">("nearest");
@@ -450,16 +453,9 @@ export default function Home() {
 
   useEffect(() => {
     if (!notificationUserId) return;
-    let active = true;
-    async function refreshNotifications() {
-      const response = await fetch("/api/notifications", { cache: "no-store" });
-      if (!response.ok || !active) return;
-      const data = await readJsonResponse(response) as { notifications: Array<{ id: string; type: NotificationItem["type"]; title: string; message: string; action_url: string | null; read_at: string | null; created_at: string }> };
-      if (active) setNotifications(data.notifications.map((item) => ({ id: item.id, type: item.type, title: item.title, message: item.message, time: relativeTime(item.created_at), read: Boolean(item.read_at), target: notificationView(item.action_url) })));
-    }
-    const interval = window.setInterval(refreshNotifications, 30_000);
-    window.addEventListener("focus", refreshNotifications);
-    return () => { active = false; window.clearInterval(interval); window.removeEventListener("focus", refreshNotifications); };
+    const stream=new EventSource("/api/notifications/stream");
+    stream.addEventListener("notifications",(event)=>{const data=JSON.parse((event as MessageEvent).data) as {notifications:Array<{id:string;type:NotificationItem["type"];title:string;message:string;action_url:string|null;read_at:string|null;created_at:string}>};const next=data.notifications.map(item=>({id:item.id,type:item.type,title:item.title,message:item.message,time:relativeTime(item.created_at),read:Boolean(item.read_at),target:notificationView(item.action_url)}));const known=notificationIdsRef.current;if(known.size&&next.some(item=>!known.has(item.id)))playNotificationChime();notificationIdsRef.current=new Set(next.map(item=>item.id));setNotifications(next);});
+    return()=>stream.close();
   }, [notificationUserId]);
 
   const role = currentUser?.role;

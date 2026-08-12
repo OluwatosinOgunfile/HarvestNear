@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
 import { canMutateAs } from "@/lib/security";
+import { dispatchNotificationEmails } from "@/lib/notification-email";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,7 @@ export async function GET() {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const sql = getDatabase();
+  void dispatchNotificationEmails(10, user.id).catch((error)=>console.error("Notification email dispatch failed",error));
   const notifications = await sql`
     SELECT id, type, title, message, action_url, read_at, created_at
     FROM notifications
