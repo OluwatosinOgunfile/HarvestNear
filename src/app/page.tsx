@@ -284,6 +284,13 @@ export default function Home() {
   const [signinPassword, setSigninPassword] = useState("");
   const [signinError, setSigninError] = useState("");
   const [signinBusy, setSigninBusy] = useState(false);
+  const [recoveryStage, setRecoveryStage] = useState<"signin" | "request" | "reset" | "done">("signin");
+  const [recoveryEmail, setRecoveryEmail] = useState("");
+  const [recoveryCode, setRecoveryCode] = useState("");
+  const [recoveryPassword, setRecoveryPassword] = useState("");
+  const [recoveryConfirmPassword, setRecoveryConfirmPassword] = useState("");
+  const [recoveryMessage, setRecoveryMessage] = useState("");
+  const [showRecoveryPassword, setShowRecoveryPassword] = useState(false);
   const [pendingCheckout, setPendingCheckout] = useState(false);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const notificationUserId = currentUser?.id;
@@ -493,6 +500,13 @@ export default function Home() {
     setSigninPassword("");
     setSigninError("");
     setSigninComplete(false);
+    setRecoveryStage("signin");
+    setRecoveryEmail("");
+    setRecoveryCode("");
+    setRecoveryPassword("");
+    setRecoveryConfirmPassword("");
+    setRecoveryMessage("");
+    setShowRecoveryPassword(false);
     setShowSigninPassword(false);
     setPendingCheckout(resumeCheckout);
     setSigninOpen(true);
@@ -548,6 +562,32 @@ export default function Home() {
     } finally {
       setSigninBusy(false);
     }
+  }
+
+  async function requestPasswordReset(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSigninBusy(true); setSigninError("");
+    try {
+      const response = await fetch("/api/auth/forgot-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: recoveryEmail }) });
+      const data = await readJsonResponse(response) as { message?: string; error?: string };
+      if (!response.ok) throw new Error(data.error || "Could not send the reset code");
+      setRecoveryMessage(data.message || "Check your email for a six-digit reset code.");
+      setRecoveryStage("reset");
+    } catch (error) { setSigninError((error as Error).message); }
+    finally { setSigninBusy(false); }
+  }
+
+  async function resetPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSigninBusy(true); setSigninError("");
+    try {
+      const response = await fetch("/api/auth/reset-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: recoveryEmail, code: recoveryCode, password: recoveryPassword, confirmPassword: recoveryConfirmPassword }) });
+      const data = await readJsonResponse(response) as { message?: string; error?: string };
+      if (!response.ok) throw new Error(data.error || "Could not update the password");
+      setRecoveryMessage(data.message || "Password updated. You can now sign in.");
+      setRecoveryPassword(""); setRecoveryConfirmPassword(""); setRecoveryStage("done");
+    } catch (error) { setSigninError((error as Error).message); }
+    finally { setSigninBusy(false); }
   }
 
   async function signOut() {
@@ -1013,7 +1053,7 @@ export default function Home() {
 
       {signinOpen && <div className="modal-overlay" onMouseDown={closeSignIn}><div className="signin-modal" onMouseDown={(event) => event.stopPropagation()}>
         <button className="close-modal" onClick={closeSignIn}><X size={20} /></button>
-        {!signinComplete ? <>
+        {!signinComplete && recoveryStage === "signin" ? <>
           <div className="auth-logo-lockup signin-brand"><img className="auth-approved-lockup" src="/brand/harvestnearu-opaque-seal-se2-lockup.png" alt="HarvestNearU" /></div>
           <p className="auth-kicker">WELCOME BACK</p>
           <h2>Sign in to HarvestNearU</h2>
@@ -1022,7 +1062,7 @@ export default function Home() {
             <label>Email or phone number<input required autoComplete="username" value={signinIdentifier} onChange={(event) => setSigninIdentifier(event.target.value)} placeholder="you@example.com or +234..." /></label>
             <label>Password<div className="password-field"><input required autoComplete="current-password" value={signinPassword} onChange={(event) => setSigninPassword(event.target.value)} type={showSigninPassword ? "text" : "password"} placeholder="Enter your password"/><button type="button" onClick={() => setShowSigninPassword((value) => !value)} aria-label={showSigninPassword ? "Hide password" : "Show password"} aria-pressed={showSigninPassword} title={showSigninPassword ? "Hide password" : "Show password"}>{showSigninPassword ? <EyeOff size={17}/> : <Eye size={17}/>}</button></div></label>
             {signinError && <p className="auth-error" role="alert">{signinError}</p>}
-            <div className="signin-options"><label><input type="checkbox" /> Keep me signed in</label><button type="button">Forgot password?</button></div>
+            <div className="signin-options"><label><input type="checkbox" /> Keep me signed in</label><button type="button" onClick={() => { setSigninError(""); setRecoveryEmail(signinIdentifier.includes("@") ? signinIdentifier : ""); setRecoveryStage("request"); }}>Forgot password?</button></div>
             <button className={`signin-submit${signinBusy ? " is-loading" : ""}`} type="submit" disabled={signinBusy} aria-busy={signinBusy}>
               {signinBusy ? <><LoaderCircle className="signin-spinner" size={18}/> <span>Signing in...</span></> : <><span>Sign in securely</span> <ArrowRight size={17}/></>}
             </button>
@@ -1030,7 +1070,26 @@ export default function Home() {
           <div className="auth-divider"><span>or</span></div>
           <a className="google-auth-button" href={`/api/auth/google?returnTo=${encodeURIComponent(viewPaths[view])}`}><GoogleIcon/><span>Continue with Google</span></a>
           <p className="signin-copy">New to HarvestNearU? <button onClick={() => { setSigninOpen(false); openSignup(); }}>Create an account</button></p>
-        </> : <div className="signup-success"><span><Check size={30} /></span><p>SIGNED IN</p><h2>Good to have you back.</h2><p>Your {currentUser ? roleLabel(currentUser.role) : "account"} is ready.</p><button onClick={() => { closeSignIn(); navigate(isAdmin ? "admin" : isFarmer ? "farmer" : "market"); }}>Continue to my workspace <ArrowRight size={17} /></button></div>}
+        </> : signinComplete ? <div className="signup-success"><span><Check size={30} /></span><p>SIGNED IN</p><h2>Good to have you back.</h2><p>Your {currentUser ? roleLabel(currentUser.role) : "account"} is ready.</p><button onClick={() => { closeSignIn(); navigate(isAdmin ? "admin" : isFarmer ? "farmer" : "market"); }}>Continue to my workspace <ArrowRight size={17} /></button></div> : <div className="recovery-panel">
+          <div className="auth-logo-lockup signin-brand"><img className="auth-approved-lockup" src="/brand/harvestnearu-opaque-seal-se2-lockup.png" alt="HarvestNearU" /></div>
+          <p className="auth-kicker">{recoveryStage === "request" ? "ACCOUNT RECOVERY" : recoveryStage === "reset" ? "CHECK YOUR EMAIL" : "PASSWORD UPDATED"}</p>
+          <h2>{recoveryStage === "request" ? "Reset your password" : recoveryStage === "reset" ? "Enter your reset code" : "You can sign in again"}</h2>
+          <p className="auth-intro">{recoveryStage === "request" ? "We will email a six-digit code to the address on your account." : recoveryStage === "reset" ? recoveryMessage : "Your old sessions have been signed out to protect your account."}</p>
+          {recoveryStage === "request" ? <form className="signin-form" onSubmit={requestPasswordReset}>
+            <label>Email address<input required type="email" autoComplete="email" value={recoveryEmail} onChange={(event) => setRecoveryEmail(event.target.value)} placeholder="you@example.com" /></label>
+            {signinError && <p className="auth-error" role="alert">{signinError}</p>}
+            <button className={`signin-submit${signinBusy ? " is-loading" : ""}`} disabled={signinBusy}>{signinBusy ? <><LoaderCircle className="signin-spinner" size={18}/> Sending code...</> : <>Send reset code <ArrowRight size={17}/></>}</button>
+          </form> : recoveryStage === "reset" ? <form className="signin-form" onSubmit={resetPassword}>
+            <label>Email address<input required type="email" autoComplete="email" value={recoveryEmail} onChange={(event) => setRecoveryEmail(event.target.value)} /></label>
+            <label>Six-digit code<input required inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code" value={recoveryCode} onChange={(event) => setRecoveryCode(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" /></label>
+            <label>New password<div className="password-field"><input required minLength={8} maxLength={128} autoComplete="new-password" type={showRecoveryPassword ? "text" : "password"} value={recoveryPassword} onChange={(event) => setRecoveryPassword(event.target.value)} placeholder="At least 8 characters"/><button type="button" onClick={() => setShowRecoveryPassword((value) => !value)} aria-label={showRecoveryPassword ? "Hide passwords" : "Show passwords"}>{showRecoveryPassword ? <EyeOff size={17}/> : <Eye size={17}/>}</button></div></label>
+            <label>Confirm new password<div className="password-field"><input required minLength={8} maxLength={128} autoComplete="new-password" type={showRecoveryPassword ? "text" : "password"} value={recoveryConfirmPassword} onChange={(event) => setRecoveryConfirmPassword(event.target.value)} placeholder="Enter the password again"/><button type="button" onClick={() => setShowRecoveryPassword((value) => !value)} aria-label={showRecoveryPassword ? "Hide passwords" : "Show passwords"}>{showRecoveryPassword ? <EyeOff size={17}/> : <Eye size={17}/>}</button></div></label>
+            {signinError && <p className="auth-error" role="alert">{signinError}</p>}
+            <button className={`signin-submit${signinBusy ? " is-loading" : ""}`} disabled={signinBusy}>{signinBusy ? <><LoaderCircle className="signin-spinner" size={18}/> Updating password...</> : <>Update password <ArrowRight size={17}/></>}</button>
+            <button className="recovery-resend" type="button" disabled={signinBusy} onClick={(event) => void requestPasswordReset(event as unknown as FormEvent<HTMLFormElement>)}>Send a new code</button>
+          </form> : <div className="signup-success recovery-success"><span><Check size={30}/></span><p>{recoveryMessage}</p><button onClick={() => { setSigninError(""); setSigninIdentifier(recoveryEmail); setRecoveryStage("signin"); }}>Return to sign in <ArrowRight size={17}/></button></div>}
+          {recoveryStage !== "done" && <button className="recovery-back" type="button" onClick={() => { setSigninError(""); setRecoveryStage("signin"); }}><ArrowLeft size={15}/> Back to sign in</button>}
+        </div>}
       </div></div>}
     </div>
   );

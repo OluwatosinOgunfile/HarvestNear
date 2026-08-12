@@ -165,3 +165,5 @@ button { color:inherit; cursor:pointer; }
 .app-shell[data-theme="dark"] .admin-add-modal input[type="file"]{color:#cbd4cd;background:#1c2821;border-color:#708578}
 .app-shell[data-theme="dark"] .admin-add-modal input[type="file"]:hover{background:#223128;border-color:#75b488}
 .app-shell[data-theme="dark"] .admin-add-modal input[type="file"]::file-selector-button{color:#102218;background:#75b488}
+/* Password recovery shares the authentication modal's visual language. */
+.recovery-panel>h2{margin:0;text-align:center;font-family:Georgia,serif;font-size:26px;font-weight:500}.recovery-resend,.recovery-back{color:var(--green);background:transparent;border:0;font-size:10px;font-weight:800}.recovery-resend{justify-self:center}.recovery-back{margin:18px auto 0;display:flex;align-items:center;gap:6px}.recovery-success{margin-top:18px}
