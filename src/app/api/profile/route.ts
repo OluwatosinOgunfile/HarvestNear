@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const session = await getSessionUser();
-  if (!session || !["consumer", "farmer"].includes(session.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const sql = getDatabase();
   const [user] = await sql`SELECT id, first_name, last_name, email, phone, avatar_url, role, email_verified_at, phone_verified_at, created_at FROM users WHERE id = ${session.id}`;
   const addresses = await sql`SELECT id, label, recipient_name, recipient_phone, line1, line2, city, state, landmark, latitude, longitude, is_default FROM addresses WHERE user_id = ${session.id} ORDER BY is_default DESC, created_at`;
@@ -25,6 +25,9 @@ export async function GET(request: Request) {
   const storeCredit = { balance_kobo: Number(creditAccount[0]?.balance_kobo || 0), updated_at: creditAccount[0]?.updated_at || null, transactions: creditTransactions };
   const [emailPreferences] = await sql`SELECT delivery_updates, support_updates, farm_updates, rating_updates, nearby_produce, offers_and_promotions, weekly_digest FROM user_email_preferences WHERE user_id=${session.id}`;
   const defaultEmailPreferences = { delivery_updates: true, support_updates: true, farm_updates: true, rating_updates: true, nearby_produce: false, offers_and_promotions: false, weekly_digest: false };
+  if (["admin", "support"].includes(session.role)) {
+    return NextResponse.json({ user: { ...user, avatar_url: user.avatar_url ? profileImageUrl(String(user.id), user.avatar_url) : null }, addresses, stats, storeCredit, emailPreferences: emailPreferences ?? defaultEmailPreferences });
+  }
   if (session.role === "consumer") {
     const [preferences] = await sql`SELECT preferred_radius_km, dietary_preferences, marketing_consent FROM consumer_profiles WHERE user_id = ${session.id}`;
     return NextResponse.json({ user: { ...user, avatar_url: user.avatar_url ? profileImageUrl(String(user.id), user.avatar_url) : null }, addresses, stats, storeCredit, emailPreferences: emailPreferences ?? defaultEmailPreferences, preferences: preferences ?? { preferred_radius_km: 20, dietary_preferences: [], marketing_consent: false } });
@@ -69,7 +72,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   const session = await getSessionUser();
-  if (!session || !["consumer", "farmer"].includes(session.role) || !canMutateAs(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!session || !canMutateAs(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await request.json().catch(() => null) as Record<string, string | boolean> | null;
   if (body?.type === "emailPreferences") {
     const sql = getDatabase();

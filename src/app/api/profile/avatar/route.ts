@@ -8,7 +8,7 @@ import { optimizeUploadedImage } from "@/lib/image-processing";
 
 export async function POST(request: Request) {
   const session = await getSessionUser();
-  if (!session || !["consumer", "farmer"].includes(session.role) || !canMutateAs(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!session || !["consumer", "farmer", "admin", "support"].includes(session.role) || !canMutateAs(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   if (!await checkRateLimit(request, "upload.avatar", 10, 60 * 60, session.id)) return NextResponse.json({ error: "Upload limit reached. Try again later." }, { status: 429 });
   const form = await request.formData().catch(() => null);
   const file = form?.get("file");
