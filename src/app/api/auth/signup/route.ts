@@ -5,6 +5,7 @@ import { createSession } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
 import { checkRateLimit, validText } from "@/lib/security";
 import { isMobileClient, mobileCorsHeaders, mobileOptions } from "@/lib/mobile-cors";
+import { dispatchNotificationEmails } from "@/lib/notification-email";
 
 type SignupBody = { firstName?: string; lastName?: string; phone?: string; email?: string; password?: string; confirmPassword?: string; role?: string; farmName?: string; farmLocation?: string; latitude?: string; longitude?: string };
 
@@ -67,6 +68,13 @@ export async function POST(request: Request) {
         SELECT * FROM new_user
       `;
     }
+    const welcomeTitle = role === "farmer" ? "Welcome to HarvestNearU, farmer" : "Welcome to HarvestNearU";
+    const welcomeMessage = role === "farmer"
+      ? "Your account is ready. Complete your farm profile and submit your first produce listing while your farm is reviewed."
+      : "Your account is ready. Set your delivery location to discover fresh produce from verified farms near you.";
+    await sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata)
+      VALUES (${user.id}, 'account', ${welcomeTitle}, ${welcomeMessage}, ${role === "farmer" ? "/farmer" : "/profile"}, ${JSON.stringify({ lifecycle: "welcome", role })}::jsonb)`;
+    await dispatchNotificationEmails(5, String(user.id)).catch((error) => console.error("Welcome email dispatch failed", error));
     const session = await createSession(String(user.id));
     return NextResponse.json({ ...(isMobileClient(request) ? { sessionToken: session.token } : {}), user: { id: user.id, email: user.email, firstName: user.first_name, lastName: user.last_name, role: user.role }, farmId }, { status: 201, headers });
   } catch (error) {

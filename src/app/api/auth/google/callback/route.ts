@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { createSession } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
 import { GOOGLE_OAUTH_RETURN_COOKIE, GOOGLE_OAUTH_STATE_COOKIE, GOOGLE_OAUTH_VERIFIER_COOKIE, googleAuthConfigured, validReturnPath } from "@/lib/google-auth";
+import { dispatchNotificationEmails } from "@/lib/notification-email";
 
 type GoogleUser = { sub?: string; email?: string; email_verified?: boolean; given_name?: string; family_name?: string; name?: string; picture?: string };
 
@@ -45,6 +46,7 @@ export async function GET(request: Request) {
     if (!profileResponse.ok || !profile?.sub || !email || !profile.email_verified) throw new Error("unverified_google_account");
 
     const sql = getDatabase();
+    let created = false;
     let [user] = await sql`
       SELECT users.id, users.is_active
       FROM oauth_accounts account JOIN users ON users.id = account.user_id
@@ -55,6 +57,7 @@ export async function GET(request: Request) {
     if (!user) {
       [user] = await sql`SELECT id, is_active FROM users WHERE lower(email) = ${email} LIMIT 1`;
       if (!user) {
+        created = true;
         const fullName = (profile.name || "Google User").trim().split(/\s+/);
         const firstName = (profile.given_name || fullName[0] || "Google").slice(0, 80);
         const lastName = (profile.family_name || fullName.slice(1).join(" ") || "User").slice(0, 80);
@@ -74,6 +77,11 @@ export async function GET(request: Request) {
         VALUES (${user.id}, 'google', ${profile.sub}, ${email}, ${profile.picture || null})
         ON CONFLICT (user_id, provider) DO UPDATE SET provider_account_id = EXCLUDED.provider_account_id, provider_email = EXCLUDED.provider_email, picture_url = EXCLUDED.picture_url, updated_at = now()
       `;
+      if (created) {
+        await sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata)
+          VALUES (${user.id}, 'account', 'Welcome to HarvestNearU', 'Your account is ready. Set your delivery location to discover fresh produce from verified farms near you.', '/profile', ${JSON.stringify({ lifecycle: "welcome", role: "consumer", provider: "google" })}::jsonb)`;
+        await dispatchNotificationEmails(5, String(user.id)).catch((error) => console.error("Welcome email dispatch failed", error));
+      }
     } else {
       await sql`UPDATE oauth_accounts SET provider_email = ${email}, picture_url = ${profile.picture || null}, updated_at = now() WHERE user_id = ${user.id} AND provider = 'google'`;
     }
