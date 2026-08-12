@@ -13,7 +13,7 @@ HarvestNearU uses the Next.js App Router. Public and role-specific paths render 
 | Vercel Blob | Private listing images, profile pictures, and manual-payment receipts |
 | Paystack | Hosted payment authorization and transaction verification |
 | Google OAuth | Optional Google account authentication |
-| Capacitor | Android and iOS wrappers around the production web application |
+| Expo / React Native | Separate Android and iOS application sharing this backend API |
 
 ## Roles and access
 

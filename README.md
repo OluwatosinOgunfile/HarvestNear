@@ -17,7 +17,7 @@ HarvestNearU is a Nigerian farm-to-consumer marketplace built with Next.js. Cust
 - Item-level fulfilment, tracking, customer receipt acknowledgement, and farm ratings
 - Administrator management, audit activity, refunds, moderation, and read-only impersonation
 - Support tickets, staff assignment, internal notes, replies, and product feedback
-- Responsive web experience plus Capacitor Android and iOS shells
+- Responsive web experience plus a separate Expo/React Native mobile application
 
 ## Local development
 
@@ -84,4 +84,4 @@ Before release, test checkout, Paystack return handling, manual receipt review, 
 
 ## Mobile packaging
 
-See [MOBILE.md](./MOBILE.md) for Capacitor configuration and store-release requirements.
+The native application is maintained separately at [HarvestNearU-mobile](https://github.com/OluwatosinOgunfile/HarvestNearU-mobile).

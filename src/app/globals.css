@@ -4,8 +4,6 @@
 * { box-sizing:border-box; }
 html { background:var(--paper); }
 body { margin:0; color:var(--ink); background:var(--paper); font-family:var(--font-manrope), "Segoe UI", sans-serif; letter-spacing:0; }
-html[data-native-app] body { min-height:100dvh; padding-bottom:env(safe-area-inset-bottom); overscroll-behavior-y:none; }
-html[data-native-app] .topbar { padding-top:env(safe-area-inset-top); height:calc(72px + env(safe-area-inset-top)); }
 button,input { font:inherit; }
 button { color:inherit; cursor:pointer; }
 .app-shell { min-height:100vh; }

@@ -10,17 +10,9 @@
     "db:migrate": "node --env-file=.env.local scripts/migrate.mjs",
     "db:status": "node --env-file=.env.local scripts/db-status.mjs",
     "blob:migrate-images": "node --env-file=.env.local scripts/migrate-listing-images-to-blob.mjs",
-    "blob:optimize-images": "node --env-file=.env.local scripts/optimize-blob-images.mjs",
-    "mobile:sync": "cap sync",
-    "mobile:android": "cap open android",
-    "mobile:ios": "cap open ios",
-    "mobile:doctor": "cap doctor"
+    "blob:optimize-images": "node --env-file=.env.local scripts/optimize-blob-images.mjs"
   },
   "dependencies": {
-    "@capacitor/app": "^8.1.1",
-    "@capacitor/core": "^8.5.0",
-    "@capacitor/splash-screen": "^8.0.2",
-    "@capacitor/status-bar": "^8.0.3",
     "@neondatabase/serverless": "^1.1.0",
     "@vercel/blob": "^2.6.1",
     "lucide-react": "^1.25.0",
@@ -30,9 +22,6 @@
     "sharp": "0.35.0"
   },
   "devDependencies": {
-    "@capacitor/android": "^8.5.0",
-    "@capacitor/cli": "^8.5.0",
-    "@capacitor/ios": "^8.5.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

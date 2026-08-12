@@ -20,6 +20,11 @@
 # production
 /build
 
+# native wrappers live in the separate mobile application repository
+/android/
+/ios/
+/mobile-shell/
+
 # misc
 .DS_Store
 *.pem
