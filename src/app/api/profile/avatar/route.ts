@@ -4,7 +4,12 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
 import { canMutateAs, checkRateLimit, validImageFile } from "@/lib/security";
-import { optimizeUploadedImage } from "@/lib/image-processing";
+
+const IMAGE_FORMATS: Record<string, { extension: string; contentType: string }> = {
+  "image/jpeg": { extension: "jpg", contentType: "image/jpeg" },
+  "image/png": { extension: "png", contentType: "image/png" },
+  "image/webp": { extension: "webp", contentType: "image/webp" },
+};
 
 export async function POST(request: Request) {
   const session = await getSessionUser().catch((error) => {
@@ -28,22 +33,19 @@ export async function POST(request: Request) {
     file = form?.get("file") || null;
   }
   if (!(file instanceof File) || !file.size) return NextResponse.json({ error: "Select a profile picture" }, { status: 400 });
-  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) return NextResponse.json({ error: "Upload a JPG, PNG, or WebP image" }, { status: 400 });
+  const format = IMAGE_FORMATS[file.type];
+  if (!format) return NextResponse.json({ error: "Upload a JPG, PNG, or WebP image" }, { status: 400 });
   if (file.size > 3 * 1024 * 1024) return NextResponse.json({ error: "Profile pictures must be 3 MB or smaller" }, { status: 413 });
   if (!await validImageFile(file)) return NextResponse.json({ error: "The file content does not match a supported image format" }, { status: 400 });
-  const optimized = await optimizeUploadedImage(file, "profile").catch((error) => {
-    console.error("Profile image optimization failed", error);
-    return null;
-  });
-  if (!optimized) return NextResponse.json({ error: "The profile picture could not be optimized" }, { status: 422 });
+  const imageBytes = Buffer.from(await file.arrayBuffer());
   const sql = getDatabase();
   let blobUrl: string | null = null;
   try {
     const [current] = await sql`SELECT avatar_url FROM users WHERE id = ${session.id}`;
-    const blob = await put(`profile-images/${session.id}/${crypto.randomUUID()}.${optimized.extension}`, optimized.body, {
+    const blob = await put(`profile-images/${session.id}/${crypto.randomUUID()}.${format.extension}`, imageBytes, {
       access: "private",
       addRandomSuffix: false,
-      contentType: optimized.contentType,
+      contentType: format.contentType,
     });
     blobUrl = blob.url;
     await sql`UPDATE users SET avatar_url = ${blob.url}, updated_at = now() WHERE id = ${session.id}`;
@@ -51,7 +53,7 @@ export async function POST(request: Request) {
       await del(String(current.avatar_url)).catch((error) => console.error("Old avatar cleanup failed", error));
     }
     const version = encodeURIComponent(blob.pathname.split("/").pop() || crypto.randomUUID());
-    return NextResponse.json({ avatarUrl: `/api/images/profiles/${session.id}?v=${version}`, optimized: true, bytes: optimized.optimizedBytes });
+    return NextResponse.json({ avatarUrl: `/api/images/profiles/${session.id}?v=${version}`, bytes: imageBytes.length });
   } catch (error) {
     if (blobUrl) await del(blobUrl).catch((cleanupError) => console.error("Failed avatar cleanup", cleanupError));
     console.error("Profile picture persistence failed", error);
