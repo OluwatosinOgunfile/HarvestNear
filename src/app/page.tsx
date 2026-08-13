@@ -1900,7 +1900,8 @@ function DatabaseProfilePage({ role, onShop, onFarmer, onUpgraded }: { role: "co
     } catch (reason) { setError((reason as Error).message); } finally { setBusy(false); }
   }
   async function updateAvatar(event: FormEvent<HTMLInputElement>) {
-    const file = event.currentTarget.files?.[0]; if (!file) return;
+    const input = event.currentTarget;
+    const file = input.files?.[0]; if (!file) return;
     setAvatarBusy(true); setError("");
     try {
       const form = new FormData(); form.set("file", file);
@@ -1909,7 +1910,7 @@ function DatabaseProfilePage({ role, onShop, onFarmer, onUpgraded }: { role: "co
       if (!response.ok) throw new Error(result.error || "Could not update profile picture");
       await loadProfile();
       window.dispatchEvent(new Event("harvestnearu-profile-updated"));
-    } catch (reason) { setError((reason as Error).message); } finally { setAvatarBusy(false); event.currentTarget.value = ""; }
+    } catch (reason) { setError((reason as Error).message); } finally { setAvatarBusy(false); input.value = ""; }
   }
   async function upgradeToFarmer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError("");
