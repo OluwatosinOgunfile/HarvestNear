@@ -35,11 +35,18 @@ export async function POST(request: Request) {
   const gross = orders.reduce((sum, order) => sum + Number(order.subtotal_kobo), 0);
   const fee = orders.reduce((sum, order) => sum + Number(order.platform_fee_kobo), 0);
   const net = orders.reduce((sum, order) => sum + Number(order.farmer_net_kobo), 0);
-  await sql.transaction([
-    sql`INSERT INTO payout_requests (id, farm_id, requested_by, gross_amount_kobo, platform_fee_kobo, net_amount_kobo) VALUES (${requestId}, ${farm.id}, ${user.id}, ${gross}, ${fee}, ${net})`,
-    ...orders.map((order) => sql`INSERT INTO payout_request_orders (payout_request_id, farm_order_id) VALUES (${requestId}, ${order.id})`),
-    sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) SELECT id, 'payment', 'New farmer payout request', ${`${farm.name} requested a payout of NGN ${(net/100).toLocaleString("en-NG")}.`}, '/admin', ${JSON.stringify({ payoutRequestId: requestId, farmId: String(farm.id), netAmountKobo: net })}::jsonb FROM users WHERE role='admin' AND status='active'`,
-    sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) VALUES (${user.id}, 'payment', 'Payout request submitted', ${`Your payout request for ${farm.name} has been submitted for review.`}, '/farmer', ${JSON.stringify({ payoutRequestId: requestId, farmId: String(farm.id), netAmountKobo: net })}::jsonb)`,
-  ]);
+  try {
+    await sql.transaction([
+      sql`INSERT INTO payout_requests (id, farm_id, requested_by, gross_amount_kobo, platform_fee_kobo, net_amount_kobo) VALUES (${requestId}, ${farm.id}, ${user.id}, ${gross}, ${fee}, ${net})`,
+      ...orders.map((order) => sql`INSERT INTO payout_request_orders (payout_request_id, farm_order_id) VALUES (${requestId}, ${order.id})`),
+      sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) SELECT id, 'payment', 'New farmer payout request', ${`${farm.name} requested a payout of NGN ${(net/100).toLocaleString("en-NG")}.`}, '/admin', ${JSON.stringify({ payoutRequestId: requestId, farmId: String(farm.id), netAmountKobo: net })}::jsonb FROM users WHERE role='admin'`,
+      sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) VALUES (${user.id}, 'payment', 'Payout request submitted', ${`Your payout request for ${farm.name} has been submitted for review.`}, '/farmer', ${JSON.stringify({ payoutRequestId: requestId, farmId: String(farm.id), netAmountKobo: net })}::jsonb)`,
+    ]);
+  } catch (error) {
+    console.error("Could not create payout request", error);
+    const code = typeof error === "object" && error && "code" in error ? String(error.code) : "";
+    if (code === "23505") return NextResponse.json({ error: "These earnings are already included in a payout request" }, { status: 409 });
+    return NextResponse.json({ error: "Could not submit the payout request. Please try again." }, { status: 500 });
+  }
   return NextResponse.json({ request: { id: requestId, status: "requested", gross_amount_kobo: gross, platform_fee_kobo: fee, net_amount_kobo: net, order_count: orders.length } }, { status: 201 });
 }
