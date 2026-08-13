@@ -10,8 +10,20 @@ export async function POST(request: Request) {
   const session = await getSessionUser();
   if (!session || !["consumer", "farmer", "admin", "support"].includes(session.role) || !canMutateAs(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   if (!await checkRateLimit(request, "upload.avatar", 10, 60 * 60, session.id)) return NextResponse.json({ error: "Upload limit reached. Try again later." }, { status: 429 });
-  const form = await request.formData().catch(() => null);
-  const file = form?.get("file");
+  const contentType = request.headers.get("content-type") || "";
+  let file: FormDataEntryValue | null = null;
+  if (contentType.includes("application/json")) {
+    const body = await request.json().catch(() => null) as { imageBase64?: string; mimeType?: string; fileName?: string } | null;
+    if (body?.imageBase64 && body.mimeType) {
+      const bytes = Buffer.from(body.imageBase64, "base64");
+      if (bytes.length && bytes.length <= 3 * 1024 * 1024) {
+        file = new File([bytes], body.fileName || "profile-picture", { type: body.mimeType });
+      }
+    }
+  } else {
+    const form = await request.formData().catch(() => null);
+    file = form?.get("file") || null;
+  }
   if (!(file instanceof File) || !file.size) return NextResponse.json({ error: "Select a profile picture" }, { status: 400 });
   if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) return NextResponse.json({ error: "Upload a JPG, PNG, or WebP image" }, { status: 400 });
   if (file.size > 3 * 1024 * 1024) return NextResponse.json({ error: "Profile pictures must be 3 MB or smaller" }, { status: 413 });
