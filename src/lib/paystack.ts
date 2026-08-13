@@ -28,6 +28,23 @@ export function paystackEnabled() {
   return Boolean(process.env.PAYSTACK_SECRET_KEY);
 }
 
+async function paystackRequest<T>(path: string, init?: RequestInit) {
+  const response = await fetch(`${PAYSTACK_API}${path}`, { ...init, headers: { Authorization: `Bearer ${secretKey()}`, "Content-Type": "application/json", ...init?.headers }, cache: "no-store" });
+  const result = await response.json().catch(() => null) as { status?: boolean; message?: string; data?: T } | null;
+  if (!response.ok || !result?.status || !result.data) throw new Error(result?.message || "Paystack could not complete the request");
+  return result.data;
+}
+
+export async function listNigerianBanks() {
+  return paystackRequest<Array<{ name: string; code: string }>>("/bank?country=nigeria&currency=NGN&perPage=100");
+}
+
+export async function createPayoutRecipient(input: { farmName: string; accountNumber: string; bankCode: string }) {
+  const account = await paystackRequest<{ account_name: string; account_number: string }>(`/bank/resolve?account_number=${encodeURIComponent(input.accountNumber)}&bank_code=${encodeURIComponent(input.bankCode)}`);
+  const recipient = await paystackRequest<{ recipient_code: string }>("/transferrecipient", { method: "POST", body: JSON.stringify({ type: "nuban", name: account.account_name || input.farmName, account_number: input.accountNumber, bank_code: input.bankCode, currency: "NGN", description: `${input.farmName} HarvestNearU payout account` }) });
+  return { accountName: account.account_name, accountLast4: input.accountNumber.slice(-4), recipientCode: recipient.recipient_code };
+}
+
 export async function initializePaystackTransaction(input: { email: string; amount: number; reference: string; callbackUrl: string; orderId: string; orderNumber: string }) {
   const response = await fetch(`${PAYSTACK_API}/transaction/initialize`, {
     method: "POST",

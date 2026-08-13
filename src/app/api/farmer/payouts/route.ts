@@ -8,7 +8,19 @@ export async function GET(request: Request) {
   const user = await getSessionUser();
   if (!user || user.role !== "farmer") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const farmId = new URL(request.url).searchParams.get("farmId");
+  const requestId = new URL(request.url).searchParams.get("id");
   const sql = getDatabase();
+  if (requestId) {
+    const rows = await sql`SELECT request.*, farm.name AS farm_name, account.bank_name, account.account_name, account.account_last4,
+      count(link.farm_order_id)::int AS order_count,
+      coalesce(json_agg(json_build_object('order_number', orders.order_number, 'gross_kobo', farm_order.subtotal_kobo, 'fee_kobo', farm_order.platform_fee_kobo, 'net_kobo', farm_order.farmer_net_kobo) ORDER BY orders.placed_at) FILTER (WHERE farm_order.id IS NOT NULL), '[]') AS orders
+      FROM payout_requests request JOIN farms farm ON farm.id=request.farm_id
+      LEFT JOIN farmer_payout_accounts account ON account.farm_id=farm.id AND account.is_default
+      LEFT JOIN payout_request_orders link ON link.payout_request_id=request.id LEFT JOIN farm_orders farm_order ON farm_order.id=link.farm_order_id LEFT JOIN orders ON orders.id=farm_order.order_id
+      WHERE request.id=${requestId} AND farm.owner_id=${user.id} GROUP BY request.id, farm.name, account.bank_name, account.account_name, account.account_last4 LIMIT 1`;
+    if (!rows[0]) return NextResponse.json({ error: "Payout request not found" }, { status: 404 });
+    return NextResponse.json({ request: rows[0] });
+  }
   const requests = await sql`SELECT request.id, request.farm_id, request.gross_amount_kobo, request.platform_fee_kobo, request.net_amount_kobo, request.status, request.review_note, request.requested_at, request.reviewed_at, request.paid_at, count(link.farm_order_id)::int AS order_count
     FROM payout_requests request JOIN farms farm ON farm.id=request.farm_id LEFT JOIN payout_request_orders link ON link.payout_request_id=request.id
     WHERE farm.owner_id=${user.id} AND (${farmId}::uuid IS NULL OR request.farm_id=${farmId}::uuid)
