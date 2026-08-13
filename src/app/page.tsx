@@ -13,6 +13,7 @@ import {
   Clock3,
   CreditCard,
   Heart,
+  Handshake,
   Headphones,
   House,
   AtSign,
@@ -272,7 +273,8 @@ export default function Home() {
   const [storeCreditKobo, setStoreCreditKobo] = useState(0);
   const [confirmedOrderNumber, setConfirmedOrderNumber] = useState("");
   const [orderAwaitingReview, setOrderAwaitingReview] = useState(true);
-  const [delivery, setDelivery] = useState<"door" | "pickup">("door");
+  const [delivery, setDelivery] = useState<"doorstep" | "farm_pickup" | "farmer_delivery">("doorstep");
+  const [deliveryQuote, setDeliveryQuote] = useState<{ available: boolean; feeKobo: number | null; distanceKm: number; unavailableReason: string | null } | null>(null);
   const [liked, setLiked] = useState<string[]>([]);
   const theme = useSyncExternalStore(subscribeToTheme, getThemeSnapshot, () => "light");
   const [signupOpen, setSignupOpen] = useState(false);
@@ -633,6 +635,10 @@ export default function Home() {
       }
       setCurrentUser(data.user);
       await hydrateShoppingState(data.user);
+      const quoteResponse = await fetch("/api/orders/delivery-quote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: items.map((item) => ({ listingId: item.id })) }) });
+      const quoteResult = await readJsonResponse<{ doorstep?: { available: boolean; feeKobo: number | null; distanceKm: number; unavailableReason: string | null }; error?: string }>(quoteResponse);
+      if (quoteResponse.ok && quoteResult.doorstep) setDeliveryQuote(quoteResult.doorstep);
+      if (delivery === "doorstep" && (!quoteResponse.ok || !quoteResult.doorstep?.available)) throw new Error(quoteResult.error || quoteResult.doorstep?.unavailableReason || "Doorstep delivery is unavailable");
       const settingsResponse = await fetch("/api/payments/manual/settings", { cache: "no-store" });
       const settingsResult = await readJsonResponse(settingsResponse) as { settings?: ManualPaymentSettings; storeCreditKobo?: number; manualPaymentAvailable?: boolean; paystackAvailable?: boolean; error?: string };
       setManualPaymentSettings(settingsResponse.ok && settingsResult.settings ? settingsResult.settings : null);
@@ -752,7 +758,7 @@ export default function Home() {
   const items = products.filter((p) => cart[p.id]);
   const itemCount = Object.values(cart).reduce((sum, n) => sum + n, 0);
   const subtotal = items.reduce((sum, p) => sum + p.price * cart[p.id], 0);
-  const deliveryFee = delivery === "door" ? 1800 : 0;
+  const deliveryFee = delivery === "doorstep" ? Number(deliveryQuote?.feeKobo || 0) / 100 : 0;
   const checkoutCredit = Math.min(subtotal + deliveryFee, storeCreditKobo / 100);
   const checkoutAmount = Math.max(0, subtotal + deliveryFee - checkoutCredit);
   const paymentUnavailable = checkoutAmount > 0 && !paystackAvailable && !manualPaymentAvailable;
@@ -990,7 +996,7 @@ export default function Home() {
               <div><h4>{product.name}</h4><p>{product.farmer}</p><strong>{money(product.price * cart[product.id])}</strong></div>
               <div className="stepper"><button onClick={() => update(product.id, -1)} aria-label={`Remove one ${product.name}`}><Minus size={14} /></button><span>{cart[product.id]}</span><button onClick={() => update(product.id, 1)} disabled={cart[product.id] >= product.stock} aria-label={cart[product.id] >= product.stock ? `All available ${product.name} is already in your basket` : `Add one ${product.name}`}><Plus size={14} /></button></div>
             </div>)}</div>
-            <div className="delivery-choice"><p>How would you like it?</p><button className={delivery === "door" ? "selected" : ""} onClick={() => setDelivery("door")}><Truck size={20} /><span><strong>Doorstep delivery</strong><small>Handover timing is coordinated after payment</small></span><b>{money(1800)}</b></button><button className={delivery === "pickup" ? "selected" : ""} onClick={() => setDelivery("pickup")}><Store size={20} /><span><strong>Farm pickup</strong><small>Coordinate collection with the supplying farm</small></span><b>Free</b></button></div>
+            <div className="delivery-choice"><p>How would you like it?</p><button className={delivery === "doorstep" ? "selected" : ""} onClick={() => setDelivery("doorstep")}><Truck size={20} /><span><strong>Doorstep delivery</strong><small>{deliveryQuote?.available ? `${deliveryQuote.distanceKm} km from the farthest farm` : "Calculated from your saved location"}</small></span><b>{deliveryQuote?.feeKobo != null ? money(deliveryQuote.feeKobo / 100) : "At checkout"}</b></button><button className={delivery === "farm_pickup" ? "selected" : ""} onClick={() => setDelivery("farm_pickup")}><Store size={20} /><span><strong>Farm pickup</strong><small>Collect directly from each supplying farm</small></span><b>Free</b></button><button className={delivery === "farmer_delivery" ? "selected" : ""} onClick={() => setDelivery("farmer_delivery")}><Handshake size={20}/><span><strong>Arrange with farmer</strong><small>Agree timing and any delivery charge directly</small></span><b>Arrange</b></button></div>
             <div className="cart-total"><p><span>Subtotal</span><strong>{money(subtotal)}</strong></p><p><span>Delivery</span><strong>{deliveryFee ? money(deliveryFee) : "Free"}</strong></p><p className="total"><span>Total</span><strong>{money(subtotal + deliveryFee)}</strong></p><button className="checkout-button" onClick={beginCheckout}>Continue to payment <ArrowRight size={18} /></button><small>Secure payment powered by Paystack</small></div>
           </> : <div className="empty-cart"><div className="empty-cart-visual" aria-hidden="true"><span><ShoppingBag size={34}/></span><i><Leaf size={16}/></i><b><MapPin size={15}/></b></div><span className="empty-cart-kicker">READY WHEN YOU ARE</span><h3>Your next harvest starts here.</h3><p>Your basket is empty. Browse fresh produce available from trusted farms near you.</p><button onClick={() => setCartOpen(false)}><Leaf size={15}/> Explore harvests <ArrowRight size={16}/></button><div className="empty-cart-points"><span><Check size={12}/> Local farms</span><span><Clock3 size={12}/> Daily availability</span></div></div>}
         </aside>
@@ -2069,6 +2075,7 @@ type FarmerWorkspaceData = {
   farm: { id: string; name: string; verification_status: string; average_rating: number; review_count: number };
   farms: Array<{ id: string; name: string; verification_status: string; city: string; state: string; average_rating: number; review_count: number }>;
   metrics: { today_sales_kobo: number; open_orders: number; available_stock: number; active_listings: number; payout_gross_kobo: number; payout_fee_kobo: number; next_payout_kobo: number; cumulative_gross_kobo: number; cumulative_fee_kobo: number; cumulative_net_kobo: number };
+  payoutRequests: Array<{ id: string; net_amount_kobo: number; status: string; requested_at: string }>;
   orders: Array<{ id: string; order_number: string; status: string; placed_at: string; subtotal_kobo: number; farmer_net_kobo: number; customer: string; customer_email: string; customer_phone: string | null; customer_avatar: string | null; items: string; itemTracking: Array<{ id: string; name: string; quantity: number; unit: string; status: string; preparing_at: string | null; ready_at: string | null; dispatched_at: string | null; received_at: string | null; updated_at: string }>; fulfilment_method: string; delivery_address_snapshot: { line1?: string; city?: string; state?: string; landmark?: string } | null; customer_note: string | null; tracking_code: string | null; delivery_status: string | null }>;
   listings: Array<{ id: string; title: string; unit: string; unit_price_kobo: number; quantity_available: number; quantity_reserved: number; quantity_sold: number; last_restock_total: number; last_restocked_at: string; status: string; harvest_date: string; available_from: string | null; available_until: string | null; category_id: string; image_url: string | null; stored_image_url: string | null; badge?: string | null }>;
   categories: Array<{ id: string; name: string }>;
@@ -2170,6 +2177,17 @@ function FarmerWorkspace({ onShop }: { onShop: () => void }) {
     } catch (reason) { setError((reason as Error).message); } finally { setBusy(false); }
   }
 
+  async function requestPayout() {
+    if (!data || Number(data.metrics.next_payout_kobo) <= 0) return;
+    setBusy(true); setError("");
+    try {
+      const response = await fetch("/api/farmer/payouts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ farmId: data.farm.id }) });
+      const result = await readJsonResponse<{ error?: string }>(response);
+      if (!response.ok) throw new Error(result.error || "Could not request payout");
+      await refresh(data.farm.id);
+    } catch (reason) { setError((reason as Error).message); } finally { setBusy(false); }
+  }
+
   async function updateInventory(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!manageListing) return;
     setBusy(true); setError("");
@@ -2199,7 +2217,7 @@ function FarmerWorkspace({ onShop }: { onShop: () => void }) {
     {data.user.impersonating && <div className="farmer-readonly-notice"><Eye size={18}/><span><strong>Read-only administrator preview</strong>Fulfilment, listings, and farm changes are disabled while viewing another user&apos;s account.</span></div>}
     {data.farm.verification_status !== "verified" && <div className="farmer-notice"><Clock3 size={18}/><span><strong>Farm verification required</strong>Your farm must be verified before produce can be published.</span></div>}
     {error && <p className="admin-error" role="alert">{error}</p>}
-    <div className="metric-grid"><div><span>Today&apos;s sales</span><strong>{money(Number(data.metrics.today_sales_kobo) / 100)}</strong><small>Net earnings from paid orders</small></div><div><span>Open orders</span><strong>{data.metrics.open_orders}</strong><small>Orders requiring fulfilment</small></div><div><span>Produce listed</span><strong>{Number(data.metrics.available_stock)} <i>units</i></strong><small>Across {data.metrics.active_listings} active listings</small></div><div className="payout-metric"><span>Next payout</span><strong>{money(Number(data.metrics.next_payout_kobo) / 100)}</strong><div className="payout-breakdown"><p><span>Gross sales</span><b>{money(Number(data.metrics.payout_gross_kobo) / 100)}</b></p><p><span>Platform fee (10%)</span><b>{deductionMoney(Number(data.metrics.payout_fee_kobo) / 100)}</b></p><p><span>Net payout</span><b>{money(Number(data.metrics.next_payout_kobo) / 100)}</b></p></div><small>Fulfilled orders awaiting settlement</small></div></div>
+    <div className="metric-grid"><div><span>Today&apos;s sales</span><strong>{money(Number(data.metrics.today_sales_kobo) / 100)}</strong><small>Net earnings from paid orders</small></div><div><span>Open orders</span><strong>{data.metrics.open_orders}</strong><small>Orders requiring fulfilment</small></div><div><span>Produce listed</span><strong>{Number(data.metrics.available_stock)} <i>units</i></strong><small>Across {data.metrics.active_listings} active listings</small></div><div className="payout-metric"><span>Available payout</span><strong>{money(Number(data.metrics.next_payout_kobo) / 100)}</strong><div className="payout-breakdown"><p><span>Gross sales</span><b>{money(Number(data.metrics.payout_gross_kobo) / 100)}</b></p><p><span>Platform fee (10%)</span><b>{deductionMoney(Number(data.metrics.payout_fee_kobo) / 100)}</b></p><p><span>Net payout</span><b>{money(Number(data.metrics.next_payout_kobo) / 100)}</b></p></div><button className="admin-submit" disabled={busy || Number(data.metrics.next_payout_kobo) <= 0} onClick={requestPayout}>{busy ? "Submitting..." : "Request payout"}</button><small>{data.payoutRequests?.[0] ? `Latest request: ${statusLabel(data.payoutRequests[0].status)}` : "Fulfilled orders awaiting settlement"}</small></div></div>
     <section className="cumulative-sales-card"><div className="cumulative-sales-heading"><span><AtSign size={19}/></span><div><small>CUMULATIVE EARNINGS</small><h2>Lifetime net sales</h2><p>Completed farm orders since joining HarvestNearU.</p></div></div><strong>{money(Number(data.metrics.cumulative_net_kobo) / 100)}</strong><div className="cumulative-sales-breakdown"><span><small>Gross sales processed</small><b>{money(Number(data.metrics.cumulative_gross_kobo) / 100)}</b></span><span className="fees"><small>Processing fees</small><b>{deductionMoney(Number(data.metrics.cumulative_fee_kobo) / 100)}</b></span><span className="net"><small>Net sales earned</small><b>{money(Number(data.metrics.cumulative_net_kobo) / 100)}</b></span></div></section>
     <div className="farmer-columns">
       <ExpandedFarmerOrders orders={fulfilmentOrders} busy={busy} readOnly={Boolean(data.user.impersonating)} onAdvance={advanceOrder}/>

@@ -148,7 +148,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ order
     sql`DELETE FROM manual_payment_receipts WHERE order_id = ${orderId}`,
     sql`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES (${administrator.id}, 'payment.manually_confirmed', 'order', ${orderId}, ${JSON.stringify({ amountKobo: Number(record.total_kobo) })}::jsonb)`,
   ];
-  if (record.fulfilment_method === "doorstep") {
+  if (["doorstep", "farmer_delivery"].includes(String(record.fulfilment_method))) {
     const deliveryId = randomUUID();
     const trackingCode = `TRK-${String(record.order_number).replace(/^HN-/, "")}`;
     queries.push(sql`INSERT INTO deliveries (id, order_id, status, tracking_code, notes) VALUES (${deliveryId}, ${orderId}, 'scheduled', ${trackingCode}, 'Awaiting farm preparation') ON CONFLICT (order_id) DO NOTHING`);

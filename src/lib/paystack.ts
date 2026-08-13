@@ -81,7 +81,7 @@ export async function confirmPaystackPayment(transaction: PaystackTransaction) {
     sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) SELECT DISTINCT farm.owner_id, 'order', 'New order to fulfil', ${`Order ${record.order_number} is paid and ready for fulfilment.`}, '/farmer', ${JSON.stringify({ orderId: String(record.order_id), orderNumber: String(record.order_number) })}::jsonb FROM farm_orders farm_order JOIN farms farm ON farm.id = farm_order.farm_id WHERE farm_order.order_id = ${record.order_id} AND ${record.order_status} = 'pending_payment'`,
     sql`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES (${record.customer_id}, 'payment.paystack_confirmed', 'order', ${record.order_id}, ${JSON.stringify({ reference: transaction.reference, amountKobo: transaction.amount, channel: transaction.channel })}::jsonb)`,
   ];
-  if (record.fulfilment_method === "doorstep") {
+  if (["doorstep", "farmer_delivery"].includes(String(record.fulfilment_method))) {
     const deliveryId = randomUUID();
     const trackingCode = `TRK-${String(record.order_number).replace(/^HN-/, "")}`;
     queries.push(sql`INSERT INTO deliveries (id, order_id, status, tracking_code, notes) VALUES (${deliveryId}, ${record.order_id}, 'scheduled', ${trackingCode}, 'Paystack payment confirmed; awaiting farm preparation') ON CONFLICT (order_id) DO NOTHING`);

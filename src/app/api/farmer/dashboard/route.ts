@@ -46,9 +46,9 @@ export async function GET(request: Request) {
       (SELECT count(*)::int FROM farm_orders WHERE farm_id = ${farm.id} AND status IN ('paid','confirmed','preparing','ready','dispatched')) AS open_orders,
       coalesce((SELECT sum(quantity_available - quantity_reserved) FROM produce_listings WHERE farm_id = ${farm.id} AND status = 'active'), 0) AS available_stock,
       (SELECT count(*)::int FROM produce_listings WHERE farm_id = ${farm.id} AND status = 'active') AS active_listings,
-      coalesce((SELECT sum(subtotal_kobo) FROM farm_orders fo WHERE fo.farm_id = ${farm.id} AND fo.status IN ('delivered','collected') AND NOT EXISTS (SELECT 1 FROM payouts WHERE payouts.farm_order_id = fo.id)), 0) AS payout_gross_kobo,
-      coalesce((SELECT sum(platform_fee_kobo) FROM farm_orders fo WHERE fo.farm_id = ${farm.id} AND fo.status IN ('delivered','collected') AND NOT EXISTS (SELECT 1 FROM payouts WHERE payouts.farm_order_id = fo.id)), 0) AS payout_fee_kobo,
-      coalesce((SELECT sum(farmer_net_kobo) FROM farm_orders fo WHERE fo.farm_id = ${farm.id} AND fo.status IN ('delivered','collected') AND NOT EXISTS (SELECT 1 FROM payouts WHERE payouts.farm_order_id = fo.id)), 0) AS next_payout_kobo,
+      coalesce((SELECT sum(subtotal_kobo) FROM farm_orders fo WHERE fo.farm_id = ${farm.id} AND fo.status IN ('delivered','collected') AND NOT EXISTS (SELECT 1 FROM payouts WHERE payouts.farm_order_id = fo.id) AND NOT EXISTS (SELECT 1 FROM payout_request_orders link JOIN payout_requests request ON request.id=link.payout_request_id WHERE link.farm_order_id=fo.id AND request.status IN ('requested','processing','paid'))), 0) AS payout_gross_kobo,
+      coalesce((SELECT sum(platform_fee_kobo) FROM farm_orders fo WHERE fo.farm_id = ${farm.id} AND fo.status IN ('delivered','collected') AND NOT EXISTS (SELECT 1 FROM payouts WHERE payouts.farm_order_id = fo.id) AND NOT EXISTS (SELECT 1 FROM payout_request_orders link JOIN payout_requests request ON request.id=link.payout_request_id WHERE link.farm_order_id=fo.id AND request.status IN ('requested','processing','paid'))), 0) AS payout_fee_kobo,
+      coalesce((SELECT sum(farmer_net_kobo) FROM farm_orders fo WHERE fo.farm_id = ${farm.id} AND fo.status IN ('delivered','collected') AND NOT EXISTS (SELECT 1 FROM payouts WHERE payouts.farm_order_id = fo.id) AND NOT EXISTS (SELECT 1 FROM payout_request_orders link JOIN payout_requests request ON request.id=link.payout_request_id WHERE link.farm_order_id=fo.id AND request.status IN ('requested','processing','paid'))), 0) AS next_payout_kobo,
       coalesce((SELECT sum(subtotal_kobo) FROM farm_orders WHERE farm_id = ${farm.id} AND status IN ('delivered','collected')), 0) AS cumulative_gross_kobo,
       coalesce((SELECT sum(platform_fee_kobo) FROM farm_orders WHERE farm_id = ${farm.id} AND status IN ('delivered','collected')), 0) AS cumulative_fee_kobo,
       coalesce((SELECT sum(farmer_net_kobo) FROM farm_orders WHERE farm_id = ${farm.id} AND status IN ('delivered','collected')), 0) AS cumulative_net_kobo`,
@@ -79,7 +79,8 @@ export async function GET(request: Request) {
       WHERE review.farm_id = ${farm.id} AND review.is_visible
       ORDER BY review.created_at DESC LIMIT 50`,
   ]);
-  return NextResponse.json({ user, farm, farms, metrics: metricRows[0], orders: orders.map((order) => {
+  const payoutRequests = await sql`SELECT id, gross_amount_kobo, platform_fee_kobo, net_amount_kobo, status, requested_at, paid_at FROM payout_requests WHERE farm_id=${farm.id} ORDER BY requested_at DESC LIMIT 10`;
+  return NextResponse.json({ user, farm, farms, metrics: metricRows[0], payoutRequests, orders: orders.map((order) => {
     const itemTracking = order.items as Array<{ id: string; name: string; quantity: number; unit: string; status: string; preparing_at: string | null; ready_at: string | null; dispatched_at: string | null; received_at: string | null; updated_at: string }>;
     return { ...order, items: itemTracking.map((item) => `${item.quantity} ${item.unit} · ${item.name} (${item.status.replaceAll("_", " ")})`).join(", "), itemTracking, customer_avatar: order.customer_avatar ? profileImageUrl(String(order.customer_id), order.customer_avatar) : null };
   }), listings: listings.map((listing) => ({ ...listing, stored_image_url: listing.image_url, image_url: listing.image_url ? listingImageUrl(String(listing.id), listing.image_url) : DEFAULT_LISTING_IMAGE })), categories, reviews });
@@ -148,7 +149,7 @@ export async function PATCH(request: Request) {
         AND farm_order.farm_id IN (SELECT id FROM farms WHERE owner_id = ${user.id})
     `;
     if (!item) return NextResponse.json({ error: "Order item not found" }, { status: 404 });
-    const expected = ["confirmed", "paid"].includes(String(item.status)) ? "preparing" : item.status === "preparing" ? "ready" : item.status === "ready" && item.fulfilment_method === "doorstep" ? "dispatched" : null;
+    const expected = ["confirmed", "paid"].includes(String(item.status)) ? "preparing" : item.status === "preparing" ? "ready" : item.status === "ready" && ["doorstep", "farmer_delivery"].includes(String(item.fulfilment_method)) ? "dispatched" : null;
     if (body.status !== expected) return NextResponse.json({ error: "This product cannot move to that tracking stage" }, { status: 409 });
 
     await sql.transaction([
@@ -158,7 +159,7 @@ export async function PATCH(request: Request) {
         dispatched_at = CASE WHEN ${body.status} = 'dispatched' THEN now() ELSE dispatched_at END,
         updated_at = now() WHERE id = ${item.id}`,
       sql`UPDATE farm_orders farm_order SET status = CASE
-        WHEN ${item.fulfilment_method} = 'doorstep' AND NOT EXISTS (SELECT 1 FROM order_items child WHERE child.farm_order_id = farm_order.id AND child.status NOT IN ('dispatched','delivered')) THEN 'dispatched'::order_status
+        WHEN ${item.fulfilment_method} IN ('doorstep','farmer_delivery') AND NOT EXISTS (SELECT 1 FROM order_items child WHERE child.farm_order_id = farm_order.id AND child.status NOT IN ('dispatched','delivered')) THEN 'dispatched'::order_status
         WHEN NOT EXISTS (SELECT 1 FROM order_items child WHERE child.farm_order_id = farm_order.id AND child.status NOT IN ('ready','dispatched','delivered','collected')) THEN 'ready'::order_status
         WHEN EXISTS (SELECT 1 FROM order_items child WHERE child.farm_order_id = farm_order.id AND child.status IN ('preparing','ready','dispatched')) THEN 'preparing'::order_status
         ELSE 'confirmed'::order_status END,
@@ -167,7 +168,7 @@ export async function PATCH(request: Request) {
         updated_at = now()
         WHERE farm_order.id = ${item.farm_order_id}`,
       sql`UPDATE orders customer_order SET status = CASE
-        WHEN ${item.fulfilment_method} = 'doorstep' AND NOT EXISTS (SELECT 1 FROM farm_orders child WHERE child.order_id = customer_order.id AND child.status NOT IN ('dispatched','delivered')) THEN 'dispatched'::order_status
+        WHEN ${item.fulfilment_method} IN ('doorstep','farmer_delivery') AND NOT EXISTS (SELECT 1 FROM farm_orders child WHERE child.order_id = customer_order.id AND child.status NOT IN ('dispatched','delivered')) THEN 'dispatched'::order_status
         WHEN NOT EXISTS (SELECT 1 FROM farm_orders child WHERE child.order_id = customer_order.id AND child.status NOT IN ('ready','dispatched','delivered','collected')) THEN 'ready'::order_status
         WHEN EXISTS (SELECT 1 FROM farm_orders child WHERE child.order_id = customer_order.id AND child.status IN ('preparing','ready','dispatched')) THEN 'preparing'::order_status
         ELSE 'confirmed'::order_status END,

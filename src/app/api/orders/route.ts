@@ -6,6 +6,7 @@ import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
 import { listingImageUrl } from "@/lib/images";
 import { paystackEnabled } from "@/lib/paystack";
+import { doorstepDeliveryFeeKobo } from "@/lib/delivery";
 import { canMutateAs, checkRateLimit } from "@/lib/security";
 
 export const dynamic = "force-dynamic";
@@ -56,7 +57,7 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null) as { items?: CheckoutItem[]; fulfilmentMethod?: string; paymentMethod?: "paystack" | "manual" } | null;
   if (!Array.isArray(body?.items) || body.items.length > 50) return NextResponse.json({ error: "Invalid basket" }, { status: 400 });
   const items = body.items.filter((item) => /^[0-9a-f-]{36}$/i.test(item.listingId) && Number.isInteger(item.quantity) && item.quantity > 0 && item.quantity <= 10_000);
-  const fulfilmentMethod = body?.fulfilmentMethod === "pickup" ? "farm_pickup" : "doorstep";
+  const fulfilmentMethod = body?.fulfilmentMethod === "pickup" || body?.fulfilmentMethod === "farm_pickup" ? "farm_pickup" : body?.fulfilmentMethod === "farmer_delivery" ? "farmer_delivery" : "doorstep";
   if (!items.length) return NextResponse.json({ error: "Your basket is empty" }, { status: 400 });
 
   const sql = getDatabase();
@@ -64,7 +65,7 @@ export async function POST(request: Request) {
   const listingIds = items.map((item) => item.listingId);
   const listings = await sql`
     SELECT listing.id, listing.title, listing.unit, listing.unit_price_kobo, listing.quantity_available, listing.quantity_reserved,
-      listing.farm_id, farm.owner_id AS farm_owner_id, farm.name AS farm_name, image.url AS image_url
+      listing.farm_id, farm.owner_id AS farm_owner_id, farm.name AS farm_name, farm.latitude, farm.longitude, farm.delivery_radius_km, farm.offers_pickup, farm.offers_delivery, image.url AS image_url
     FROM produce_listings listing JOIN farms farm ON farm.id = listing.farm_id
     LEFT JOIN LATERAL (SELECT url FROM listing_images WHERE listing_id = listing.id ORDER BY sort_order LIMIT 1) image ON true
     WHERE listing.id = ANY(${listingIds}::uuid[]) AND listing.status = 'active'
@@ -82,10 +83,19 @@ export async function POST(request: Request) {
     }
   }
 
+  const [deliveryAddress] = fulfilmentMethod === "farm_pickup" ? [] : await sql`SELECT line1, line2, city, state, postal_code, landmark, latitude, longitude FROM addresses WHERE user_id=${user.id} ORDER BY is_default DESC, created_at DESC LIMIT 1`;
+  if (fulfilmentMethod !== "farm_pickup" && !deliveryAddress) return NextResponse.json({ error: "Add a saved delivery location before selecting delivery" }, { status: 409 });
+  if (fulfilmentMethod === "farm_pickup" && listings.some((listing) => !listing.offers_pickup)) return NextResponse.json({ error: "One or more farms do not offer farm pickup" }, { status: 409 });
+  let maximumDistanceKm = 0;
+  if (fulfilmentMethod !== "farm_pickup") {
+    maximumDistanceKm = Math.max(...listings.map((listing) => 6371 * 2 * Math.asin(Math.sqrt(Math.sin((Number(listing.latitude)-Number(deliveryAddress.latitude))*Math.PI/360)**2 + Math.cos(Number(deliveryAddress.latitude)*Math.PI/180)*Math.cos(Number(listing.latitude)*Math.PI/180)*Math.sin((Number(listing.longitude)-Number(deliveryAddress.longitude))*Math.PI/360)**2))));
+  }
+  if (fulfilmentMethod === "doorstep" && listings.some((listing) => !listing.offers_delivery || !listing.delivery_radius_km || maximumDistanceKm > Number(listing.delivery_radius_km))) return NextResponse.json({ error: "Doorstep delivery is not available for every farm in this basket" }, { status: 409 });
+
   const orderId = randomUUID();
   const orderNumber = `HN-${Date.now().toString().slice(-8)}`;
   const subtotalKobo = listings.reduce((sum, listing) => sum + Number(listing.unit_price_kobo) * Number(requested.get(String(listing.id))), 0);
-  const deliveryFeeKobo = fulfilmentMethod === "doorstep" ? 180000 : 0;
+  const deliveryFeeKobo = fulfilmentMethod === "doorstep" ? doorstepDeliveryFeeKobo(maximumDistanceKm) : 0;
   const grossTotalKobo = subtotalKobo + deliveryFeeKobo;
   const [creditAccount] = await sql`SELECT balance_kobo FROM store_credit_accounts WHERE user_id = ${user.id}`;
   const creditAppliedKobo = Math.min(grossTotalKobo, Number(creditAccount?.balance_kobo || 0));
@@ -116,7 +126,7 @@ export async function POST(request: Request) {
     sql`
     INSERT INTO orders (id, order_number, customer_id, status, subtotal_kobo, delivery_fee_kobo, discount_kobo, total_kobo, fulfilment_method, delivery_address_snapshot, placed_at, paid_at)
     VALUES (${orderId}, ${orderNumber}, ${user.id}, ${paidWithCredit ? "confirmed" : "pending_payment"}::order_status, ${subtotalKobo}, ${deliveryFeeKobo}, ${creditAppliedKobo}, ${payableKobo}, ${fulfilmentMethod}::fulfilment_method,
-      ${fulfilmentMethod === "doorstep" ? JSON.stringify({ city: "Gudu", state: "FCT" }) : null}::jsonb, now(), ${paidWithCredit ? new Date() : null})
+      ${fulfilmentMethod !== "farm_pickup" ? JSON.stringify(deliveryAddress) : null}::jsonb, now(), ${paidWithCredit ? new Date() : null})
   `];
 
   for (const [farmId, farmListings] of farms) {
@@ -135,7 +145,7 @@ export async function POST(request: Request) {
   queries.push(sql`DELETE FROM cart_items WHERE cart_id IN (SELECT id FROM carts WHERE user_id = ${user.id})`);
   queries.push(sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) VALUES (${user.id}, 'order', ${paidWithCredit ? "Order confirmed with account credit" : paymentMethod === "paystack" ? "Complete your Paystack payment" : "Payment receipt required"}, ${paidWithCredit ? `Your account credit paid order ${orderNumber} in full.` : paymentMethod === "paystack" ? `Order ${orderNumber} is reserved while you complete secure payment with Paystack.` : `Order ${orderNumber} is reserved. Upload your bank-transfer receipt for administrator confirmation.`}, '/orders', ${JSON.stringify({ orderId, orderNumber, creditAppliedKobo, paymentMethod })}::jsonb)`);
   if (paidWithCredit) queries.push(sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) SELECT DISTINCT farm.owner_id, 'order', 'New order to fulfil', ${`Order ${orderNumber} is paid and ready for fulfilment.`}, '/farmer', ${JSON.stringify({ orderId, orderNumber })}::jsonb FROM farm_orders farm_order JOIN farms farm ON farm.id = farm_order.farm_id WHERE farm_order.order_id = ${orderId}`);
-  if (paidWithCredit && fulfilmentMethod === "doorstep") {
+  if (paidWithCredit && ["doorstep", "farmer_delivery"].includes(fulfilmentMethod)) {
     const deliveryId = randomUUID(); const trackingCode = `TRK-${orderNumber.slice(3)}`;
     queries.push(sql`INSERT INTO deliveries (id, order_id, status, tracking_code, notes) VALUES (${deliveryId}, ${orderId}, 'scheduled', ${trackingCode}, 'Paid with account credit; awaiting farm preparation')`);
     queries.push(sql`INSERT INTO delivery_events (delivery_id, status, message) VALUES (${deliveryId}, 'scheduled', 'Payment completed with account credit')`);
@@ -176,13 +186,13 @@ export async function PATCH(request: Request) {
     sql`UPDATE order_items SET status = ${finalStatus}::order_status, received_at = now(), updated_at = now() WHERE id = ${item.id}`,
     sql`UPDATE farm_orders farm_order SET status = CASE
       WHEN NOT EXISTS (SELECT 1 FROM order_items child WHERE child.farm_order_id = farm_order.id AND child.status NOT IN ('delivered','collected')) THEN ${finalStatus}::order_status
-      WHEN ${item.fulfilment_method} = 'doorstep' AND NOT EXISTS (SELECT 1 FROM order_items child WHERE child.farm_order_id = farm_order.id AND child.status NOT IN ('dispatched','delivered')) THEN 'dispatched'::order_status
+      WHEN ${item.fulfilment_method} IN ('doorstep','farmer_delivery') AND NOT EXISTS (SELECT 1 FROM order_items child WHERE child.farm_order_id = farm_order.id AND child.status NOT IN ('dispatched','delivered')) THEN 'dispatched'::order_status
       WHEN NOT EXISTS (SELECT 1 FROM order_items child WHERE child.farm_order_id = farm_order.id AND child.status NOT IN ('ready','dispatched','delivered','collected')) THEN 'ready'::order_status
       ELSE 'preparing'::order_status END,
       updated_at = now() WHERE farm_order.id = ${item.farm_order_id}`,
     sql`UPDATE orders customer_order SET status = CASE
       WHEN NOT EXISTS (SELECT 1 FROM order_items child WHERE child.order_id = customer_order.id AND child.status NOT IN ('delivered','collected')) THEN ${finalStatus}::order_status
-      WHEN ${item.fulfilment_method} = 'doorstep' AND NOT EXISTS (SELECT 1 FROM farm_orders child WHERE child.order_id = customer_order.id AND child.status NOT IN ('dispatched','delivered')) THEN 'dispatched'::order_status
+      WHEN ${item.fulfilment_method} IN ('doorstep','farmer_delivery') AND NOT EXISTS (SELECT 1 FROM farm_orders child WHERE child.order_id = customer_order.id AND child.status NOT IN ('dispatched','delivered')) THEN 'dispatched'::order_status
       WHEN NOT EXISTS (SELECT 1 FROM farm_orders child WHERE child.order_id = customer_order.id AND child.status NOT IN ('ready','dispatched','delivered','collected')) THEN 'ready'::order_status
       ELSE 'preparing'::order_status END,
       delivered_at = CASE WHEN NOT EXISTS (SELECT 1 FROM order_items child WHERE child.order_id = customer_order.id AND child.status NOT IN ('delivered','collected')) THEN now() ELSE delivered_at END,
