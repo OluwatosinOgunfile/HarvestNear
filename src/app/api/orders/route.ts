@@ -17,12 +17,16 @@ export async function GET() {
   if (!user || !["consumer", "farmer"].includes(user.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const sql = getDatabase();
   const orders = await sql`
-    SELECT orders.id, orders.order_number, orders.status, orders.total_kobo, orders.subtotal_kobo, orders.discount_kobo,
-      orders.delivery_fee_kobo, orders.fulfilment_method, orders.delivery_address_snapshot,
+    SELECT orders.id, orders.order_number, orders.status, orders.currency, orders.total_kobo, orders.subtotal_kobo, orders.discount_kobo,
+      orders.delivery_fee_kobo, orders.service_fee_kobo, orders.fulfilment_method, orders.delivery_address_snapshot,
       orders.placed_at, orders.paid_at, orders.delivered_at,
+      ${user.firstName}::text AS customer_first_name, ${user.lastName}::text AS customer_last_name,
+      ${user.email}::text AS customer_email, (SELECT phone FROM users WHERE id=${user.id}) AS customer_phone,
       EXISTS (SELECT 1 FROM manual_payment_receipts receipt WHERE receipt.order_id = orders.id) AS receipt_submitted,
       (SELECT payment.status FROM payments payment WHERE payment.order_id = orders.id ORDER BY payment.created_at DESC LIMIT 1) AS payment_status,
       (SELECT payment.provider FROM payments payment WHERE payment.order_id = orders.id ORDER BY payment.created_at DESC LIMIT 1) AS payment_provider,
+      (SELECT payment.provider_reference FROM payments payment WHERE payment.order_id = orders.id ORDER BY payment.created_at DESC LIMIT 1) AS payment_reference,
+      (SELECT payment.payment_channel FROM payments payment WHERE payment.order_id = orders.id ORDER BY payment.created_at DESC LIMIT 1) AS payment_channel,
       (SELECT json_build_object('status', refund.status, 'resolution_method', refund.resolution_method, 'amount_kobo', refund.amount_kobo, 'cancellation_fee_kobo', refund.cancellation_fee_kobo, 'requested_at', refund.requested_at) FROM refunds refund WHERE refund.order_id = orders.id ORDER BY refund.requested_at DESC LIMIT 1) AS refund,
       (SELECT json_build_object('id', delivery.id, 'status', delivery.status, 'tracking_code', delivery.tracking_code,
         'courier_name', delivery.courier_name, 'courier_phone', delivery.courier_phone,
