@@ -1671,7 +1671,7 @@ function AdminPage({ readOnly, supportAccess, onImpersonated }: { readOnly: bool
         <header><div><small>{section === "produce" ? "PRODUCE LISTING" : section === "activity" ? "AUDIT EVENT" : section.slice(0, -1).toUpperCase()}</small><h2>{entityTitle(section, selected)}</h2></div><button onClick={() => setSelected(null)} aria-label="Close details"><X size={19}/></button></header>
         {["orders", "refunds"].includes(section) && Boolean(selected.payment_receipt_name) && <section className="admin-payment-review"><span><PackageCheck size={19}/></span><div><strong>Manual payment receipt</strong><small>Submitted {formatEntityValue("submitted_at", selected.payment_receipt_submitted_at)}</small></div><a href={`/api/payments/manual/${section === "orders" ? selected.id : selected.order_id}`} target="_blank" rel="noreferrer">Open receipt</a></section>}
         {section === "payouts" && <section className="admin-payment-review"><span><CreditCard size={19}/></span><div><strong>Payout destination</strong><small>{selected.account_name ? `${String(selected.account_name)} · account ending ${String(selected.account_last4)}` : "No payout account configured"}</small></div><b>{money(Number(selected.net_amount_kobo) / 100)}</b></section>}
-        {section === "payouts" && Array.isArray(selected.orders) && <div className="admin-order-items"><div className="admin-order-item headings"><span>Included order</span><span>Gross</span><span>Fee</span><span>Net</span></div>{(selected.orders as Array<Record<string, unknown>>).map((order, index) => <div className="admin-order-item" key={`${String(order.order_number)}-${index}`}><span><strong>Order #{String(order.order_number)}</strong></span><span>{money(Number(order.gross_kobo) / 100)}</span><span>{money(Number(order.fee_kobo) / 100)}</span><b>{money(Number(order.net_kobo) / 100)}</b></div>)}</div>}
+        {section === "payouts" && Array.isArray(selected.orders) && <section className="payout-drawer-breakdown"><header><div><small>SETTLEMENT BREAKDOWN</small><strong>{String(selected.order_count)} fulfilled {Number(selected.order_count) === 1 ? "order" : "orders"}</strong></div><span>{money(Number(selected.net_amount_kobo) / 100)} net</span></header><div className="payout-drawer-orders">{(selected.orders as Array<Record<string, unknown>>).map((order, index) => <article key={`${String(order.order_number)}-${index}`}><strong>Order #{String(order.order_number)}</strong><dl><div><dt>Gross</dt><dd>{money(Number(order.gross_kobo) / 100)}</dd></div><div><dt>Fee</dt><dd className="fee">-{money(Number(order.fee_kobo) / 100)}</dd></div><div><dt>Net</dt><dd>{money(Number(order.net_kobo) / 100)}</dd></div></dl></article>)}</div></section>}
         <div className="entity-details">{Object.entries(selected).filter(([key, value]) => showAdminDetailField(key, value)).map(([key, value]) => <div key={key}><span>{key.replaceAll("_", " ")}</span><strong>{formatEntityValue(key, value)}</strong></div>)}</div>
         {!readOnly && section !== "activity" && <footer className="admin-detail-actions">
           {section === "users" && <button className="impersonate-user" onClick={impersonateUser} disabled={busy}><Eye size={16}/> View as this user</button>}
@@ -1754,6 +1754,18 @@ function showAdminDetailField(key: string, value: unknown) {
     "password_hash",
     "payment_receipt_name",
     "payment_receipt_submitted_at",
+    "gross_amount_kobo",
+    "platform_fee_kobo",
+    "net_amount_kobo",
+    "farm_name",
+    "farmer_name",
+    "farmer_email",
+    "order_count",
+    "payout_provider",
+    "bank_code",
+    "account_name",
+    "account_last4",
+    "recipient_code",
   ].includes(key);
 }
 
