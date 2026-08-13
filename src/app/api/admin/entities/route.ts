@@ -5,7 +5,7 @@ import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
 import { DEFAULT_LISTING_IMAGE, listingImageUrl, profileImageUrl } from "@/lib/images";
 
-type EntityType = "users" | "farms" | "produce" | "orders" | "refunds" | "reviews" | "activity" | "options";
+type EntityType = "users" | "farms" | "produce" | "orders" | "refunds" | "payouts" | "reviews" | "activity" | "options";
 
 function isUploadedListingImage(value?: string) {
   try { return Boolean(value && new URL(value).hostname.endsWith(".blob.vercel-storage.com")); } catch { return false; }
@@ -158,6 +158,37 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(id ? { entity: rows[0] ?? null } : { entities: rows });
   }
 
+  if (type === "payouts") {
+    const rows = id ? await sql`
+      SELECT request.*, farm.name AS farm_name, owner.first_name || ' ' || owner.last_name AS farmer_name,
+        owner.email AS farmer_email, account.provider AS payout_provider, account.bank_code,
+        account.account_name, account.account_last4, account.recipient_code,
+        reviewer.first_name || ' ' || reviewer.last_name AS reviewed_by_name,
+        count(link.farm_order_id)::int AS order_count,
+        coalesce(json_agg(json_build_object('order_number', orders.order_number, 'gross_kobo', farm_order.subtotal_kobo,
+          'fee_kobo', farm_order.platform_fee_kobo, 'net_kobo', farm_order.farmer_net_kobo)
+          ORDER BY orders.placed_at) FILTER (WHERE farm_order.id IS NOT NULL), '[]') AS orders
+      FROM payout_requests request JOIN farms farm ON farm.id=request.farm_id JOIN users owner ON owner.id=farm.owner_id
+      LEFT JOIN farmer_payout_accounts account ON account.farm_id=farm.id AND account.is_default
+      LEFT JOIN users reviewer ON reviewer.id=request.reviewed_by
+      LEFT JOIN payout_request_orders link ON link.payout_request_id=request.id
+      LEFT JOIN farm_orders farm_order ON farm_order.id=link.farm_order_id LEFT JOIN orders ON orders.id=farm_order.order_id
+      WHERE request.id=${id} GROUP BY request.id, farm.name, owner.first_name, owner.last_name, owner.email,
+        account.provider, account.bank_code, account.account_name, account.account_last4, account.recipient_code,
+        reviewer.first_name, reviewer.last_name LIMIT 1
+    ` : await sql`
+      SELECT request.id, request.status, request.gross_amount_kobo, request.platform_fee_kobo, request.net_amount_kobo,
+        request.requested_at, request.updated_at, farm.name AS farm_name,
+        owner.first_name || ' ' || owner.last_name AS farmer_name,
+        count(link.farm_order_id)::int AS order_count
+      FROM payout_requests request JOIN farms farm ON farm.id=request.farm_id JOIN users owner ON owner.id=farm.owner_id
+      LEFT JOIN payout_request_orders link ON link.payout_request_id=request.id
+      GROUP BY request.id, farm.name, owner.first_name, owner.last_name
+      ORDER BY CASE request.status WHEN 'requested' THEN 0 WHEN 'processing' THEN 1 ELSE 2 END, request.requested_at DESC LIMIT 100
+    `;
+    return NextResponse.json(id ? { entity: rows[0] ?? null } : { entities: rows });
+  }
+
   if (type === "reviews") {
     const rows = id ? await sql`
       SELECT review.*, farm.name AS farm_name, orders.order_number,
@@ -292,7 +323,7 @@ export async function PATCH(request: NextRequest) {
     const type = request.nextUrl.searchParams.get("type") as EntityType;
     const id = request.nextUrl.searchParams.get("id");
     const body = await request.json().catch(() => null) as Record<string, string> | null;
-    if (!id || !body || !["users", "farms", "produce", "orders", "refunds", "reviews"].includes(type)) return NextResponse.json({ error: "A valid entity ID is required" }, { status: 400 });
+    if (!id || !body || !["users", "farms", "produce", "orders", "refunds", "payouts", "reviews"].includes(type)) return NextResponse.json({ error: "A valid entity ID is required" }, { status: 400 });
     const sql = getDatabase();
 
     if (type === "orders") {
@@ -375,6 +406,36 @@ export async function PATCH(request: NextRequest) {
       }
       await sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) VALUES (${entity.requested_by}, 'order', 'Refund status updated', ${`Your refund request is now ${body.status.replaceAll("_", " ")}.`}, '/orders', ${JSON.stringify({ refundId: id, orderId: String(entity.order_id), status: body.status })}::jsonb)`;
       await sql`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES (${administrator.id}, 'refund.status_updated', 'refund', ${id}, ${JSON.stringify({ status: body.status, adminNote: body.adminNote || null })}::jsonb)`;
+      return NextResponse.json({ entity });
+    }
+
+    if (type === "payouts") {
+      const allowed = ["requested", "processing", "paid", "rejected", "cancelled"];
+      if (!allowed.includes(body.status)) return NextResponse.json({ error: "Invalid payout status" }, { status: 400 });
+      const [before] = await sql`SELECT status, requested_by, farm_id FROM payout_requests WHERE id=${id}`;
+      if (!before) return NextResponse.json({ error: "Payout request not found" }, { status: 404 });
+      if (["paid", "rejected", "cancelled"].includes(String(before.status)) && body.status !== before.status) return NextResponse.json({ error: "A completed payout decision cannot be changed" }, { status: 409 });
+      const [payoutAccount] = body.status === "paid" ? await sql`SELECT id FROM farmer_payout_accounts WHERE farm_id=${before.farm_id} AND is_default LIMIT 1` : [null];
+      if (body.status === "paid" && !payoutAccount) return NextResponse.json({ error: "This farm must configure a payout account before payment can be completed" }, { status: 409 });
+      const updateRequest = sql`UPDATE payout_requests SET status=${body.status}, review_note=${body.adminNote || null},
+        reviewed_by=${administrator.id}, reviewed_at=coalesce(reviewed_at, now()), paid_at=CASE WHEN ${body.status}='paid' THEN now() ELSE paid_at END,
+        updated_at=now() WHERE id=${id}`;
+      if (body.status === "paid") await sql.transaction([
+        updateRequest,
+        sql`INSERT INTO payouts (farm_order_id, payout_account_id, provider_reference, amount_kobo, status, paid_at)
+          SELECT link.farm_order_id, ${payoutAccount!.id}, ${`admin-payout-${id}`} || '-' || row_number() OVER (ORDER BY link.farm_order_id),
+            farm_order.farmer_net_kobo, 'successful', now()
+          FROM payout_request_orders link JOIN farm_orders farm_order ON farm_order.id=link.farm_order_id
+          WHERE link.payout_request_id=${id} ON CONFLICT (farm_order_id) DO NOTHING`,
+      ]); else await updateRequest;
+      const [entity] = await sql`SELECT id, status, requested_by, farm_id, net_amount_kobo FROM payout_requests WHERE id=${id}`;
+      const [farm] = await sql`SELECT name FROM farms WHERE id=${entity.farm_id}`;
+      await sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) VALUES
+        (${entity.requested_by}, 'payment', ${body.status === "paid" ? "Payout completed" : "Payout request updated"},
+        ${`Your payout request for ${String(farm?.name || "your farm")} is now ${body.status}.`}, '/farmer',
+        ${JSON.stringify({ payoutRequestId: id, status: body.status })}::jsonb)`;
+      await sql`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES
+        (${administrator.id}, 'payout.status_updated', 'payout', ${id}, ${JSON.stringify({ status: body.status, reviewNote: body.adminNote || null })}::jsonb)`;
       return NextResponse.json({ entity });
     }
 

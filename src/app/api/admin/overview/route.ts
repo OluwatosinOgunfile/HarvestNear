@@ -17,6 +17,7 @@ export async function GET() {
       (SELECT count(*)::int FROM orders) AS orders,
       (SELECT count(*)::int FROM orders WHERE status IN ('paid','confirmed','preparing','ready','dispatched')) AS open_orders,
       (SELECT count(*)::int FROM refunds WHERE status IN ('requested','under_review')) AS open_refunds,
+      (SELECT count(*)::int FROM payout_requests WHERE status IN ('requested','processing')) AS open_payouts,
       (SELECT count(*)::int FROM deliveries WHERE status = 'failed') AS failed_deliveries,
       (SELECT count(*)::int FROM reviews WHERE NOT is_visible) AS hidden_reviews,
       (SELECT count(*)::int FROM carts WHERE expires_at > now()) AS active_carts,
