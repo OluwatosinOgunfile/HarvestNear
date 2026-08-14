@@ -8,7 +8,7 @@ export async function GET(_request: Request, { params }: Params) {
   const { id } = await params;
   const sql = getDatabase();
   const [farms, listings, reviews] = await Promise.all([
-    sql`SELECT farm.id, farm.name, farm.description, farm.address_text, farm.city, farm.state,
+    sql`SELECT farm.id, farm.name, farm.description, farm.address_text, farm.city, farm.state, farm.latitude, farm.longitude,
       farm.offers_pickup, farm.offers_delivery,
       coalesce((SELECT round(avg(review.rating)::numeric, 2) FROM reviews review WHERE review.farm_id=farm.id AND review.is_visible), 0) AS average_rating,
       (SELECT count(*)::int FROM reviews review WHERE review.farm_id=farm.id AND review.is_visible) AS review_count,

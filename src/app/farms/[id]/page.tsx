@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { ArrowRight, AtSign, BadgeCheck, ChevronDown, ChevronRight, House, Leaf, Mail, MapPin, PackageCheck, Phone, ShoppingBag, Star, Store, Truck, UserRound } from "lucide-react";
+import { ArrowRight, AtSign, BadgeCheck, ChevronDown, ChevronRight, ExternalLink, House, Leaf, Mail, MapPin, PackageCheck, Phone, ShoppingBag, Star, Store, Truck, UserRound } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
@@ -17,7 +17,7 @@ const formatDate = (v: unknown) => new Intl.DateTimeFormat("en-NG", { day: "nume
 const loadFarm = cache(async function loadFarm(id: string) {
   const sql = getDatabase();
   const [farms, listings, reviews] = await Promise.all([
-    sql`SELECT farm.id, farm.name, farm.description, farm.phone, farm.email, farm.address_text, farm.city, farm.state,
+    sql`SELECT farm.id, farm.name, farm.description, farm.phone, farm.email, farm.address_text, farm.city, farm.state, farm.latitude, farm.longitude,
       farm.offers_pickup, farm.offers_delivery,
       coalesce((SELECT round(avg(review.rating)::numeric, 2) FROM reviews review WHERE review.farm_id=farm.id AND review.is_visible), 0) AS average_rating,
       (SELECT count(*)::int FROM reviews review WHERE review.farm_id=farm.id AND review.is_visible) AS review_count,
@@ -83,6 +83,9 @@ export default async function FarmStorePage({ params }: Props) {
   const { farm, listings, reviews, recommendations } = data; const rating=Number(farm.average_rating);
   const hero=listings[0]?.image_url?listingImageUrl(String(listings[0].id),listings[0].image_url):DEFAULT_LISTING_IMAGE;
   const farmUrl = `https://www.harvestnearu.com/farms/${farm.id}`;
+  const latitude=Number(farm.latitude);const longitude=Number(farm.longitude);const hasMap=Number.isFinite(latitude)&&Number.isFinite(longitude);
+  const mapDelta=.012;const mapEmbed=hasMap?`https://www.openstreetmap.org/export/embed.html?bbox=${longitude-mapDelta}%2C${latitude-mapDelta}%2C${longitude+mapDelta}%2C${latitude+mapDelta}&layer=mapnik&marker=${latitude}%2C${longitude}`:"";
+  const mapUrl=hasMap?`https://www.openstreetmap.org/?mlat=${latitude}&mlon=${longitude}#map=15/${latitude}/${longitude}`:"";
   const farmStructuredData = {
     "@context": "https://schema.org",
     "@graph": [
@@ -111,6 +114,7 @@ export default async function FarmStorePage({ params }: Props) {
     <section className="store-hero"><Image src={hero} alt="" fill priority sizes="100vw"/><span/><div><p>VERIFIED LOCAL FARM</p><h1>{String(farm.name)}</h1><div className="store-rating"><Stars rating={rating}/><strong>{rating.toFixed(1)}</strong><em>{Number(farm.review_count)} {Number(farm.review_count)===1?"review":"reviews"}</em><BadgeCheck size={20}/></div></div></section>
     <div className="store-content">
       <section className="store-about"><div><p className="store-kicker">ABOUT THE FARM</p><h2>Fresh food, grown closer.</h2><p>{String(farm.description||`${farm.name} supplies fresh, locally grown produce to HarvestNearU customers.`)}</p><dl><div><dt><MapPin size={18}/> Address</dt><dd>{String(farm.address_text)}, {String(farm.city)}, {String(farm.state)}</dd></div><div><dt><Store size={18}/> Farm owner</dt><dd>{String(farm.first_name)} {String(farm.last_name)}</dd></div><div><dt><Truck size={18}/> Fulfilment</dt><dd>{[farm.offers_pickup&&"Farm pickup",farm.offers_delivery&&"Delivery"].filter(Boolean).join(" and ")||"Contact farm"}</dd></div></dl></div><aside><h3>Contact the farm</h3><a href={`tel:${farm.phone}`}><Phone size={17}/>{String(farm.phone)}</a>{Boolean(farm.email)&&<a href={`mailto:${farm.email}`}><Mail size={17}/>{String(farm.email)}</a>}<small>Verified on HarvestNearU {farm.verified_at?`since ${formatDate(farm.verified_at)}`:""}</small></aside></section>
+      {hasMap&&<section className="store-map-section"><header><div><p className="store-kicker">FARM LOCATION</p><h2>Find {String(farm.name)}</h2><p>{String(farm.address_text)}, {String(farm.city)}, {String(farm.state)}</p></div><a href={mapUrl} target="_blank" rel="noreferrer">Open directions <ExternalLink size={16}/></a></header><iframe title={`Map showing ${String(farm.name)}`} src={mapEmbed} loading="lazy" referrerPolicy="no-referrer-when-downgrade"/><small>Map data © OpenStreetMap contributors</small></section>}
       <StoreSection kicker="AVAILABLE NOW" title={`Produce from ${farm.name}`} count={`${listings.length} active ${listings.length===1?"listing":"listings"}`}>{listings.length?<div className="store-product-grid">{listings.map(x=><ProductCard key={String(x.id)} item={x}/>)}</div>:<Empty icon={<Leaf/>} title="No produce available today" text="This farm has no active listings right now. Please check again soon."/>}</StoreSection>
       <StoreSection kicker="VERIFIED BUYER FEEDBACK" title="What customers say" count={<div className="store-rating-summary"><strong>{rating.toFixed(1)}</strong><Stars rating={rating}/><span>Based on {reviews.length} verified {reviews.length===1?"review":"reviews"}</span></div>}>{reviews.length?<div className="review-grid">{reviews.map(r=><article key={String(r.id)}><Stars rating={Number(r.rating)}/><blockquote>{r.comment?`\"${String(r.comment)}\"`:"Rating submitted without a written comment."}</blockquote><footer><strong>{String(r.first_name)} {String(r.last_name).slice(0,1)}.</strong><span>Verified buyer - {formatDate(r.created_at)}</span></footer>{Boolean(r.farmer_reply)&&<div className="farm-reply"><strong>{String(farm.name)} replied</strong><p>{String(r.farmer_reply)}</p></div>}</article>)}</div>:<Empty icon={<Star/>} title="No buyer feedback yet" text="The first verified review for this farm will appear here."/>}</StoreSection>
       {recommendations.length>0&&<StoreSection kicker="YOU MAY ALSO NEED" title="More from the same categories" count={<a className="store-all-link" href="/produce">Browse all <ChevronRight size={16}/></a>}><div className="store-product-grid">{recommendations.map(x=><ProductCard key={String(x.id)} item={x} showFarm/>)}</div></StoreSection>}
