@@ -750,7 +750,8 @@ export default function Home() {
   }, [products, effectiveCategory, query, distanceFilterActive, maxDistance, priceFilterActive, maxPrice, todayOnly, hideLowStock, sortBy]);
 
   const activeFilterCount = Number(distanceFilterActive) + Number(priceFilterActive) + Number(todayOnly) + Number(hideLowStock);
-  const pageSize = 8;
+  // Keep full rows across the catalog's three- and four-column desktop layouts.
+  const pageSize = 12;
   const totalPages = Math.max(1, Math.ceil(visible.length / pageSize));
   const safePage = Math.min(currentPage, totalPages);
   const paginatedProducts = visible.slice((safePage - 1) * pageSize, safePage * pageSize);
