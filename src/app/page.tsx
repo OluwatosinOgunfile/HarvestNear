@@ -311,6 +311,8 @@ export default function Home() {
   const [showSignupPassword, setShowSignupPassword] = useState(false);
   const [sortBy, setSortBy] = useState<"nearest" | "price-low" | "price-high" | "rating" | "stock">("nearest");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const filterButtonRef = useRef<HTMLButtonElement>(null);
+  const filterPopoverRef = useRef<HTMLDivElement>(null);
   const [locationOpen, setLocationOpen] = useState(false);
   const locationPickerRef = useRef<HTMLDivElement>(null);
   const [deliveryLocations, setDeliveryLocations] = useState<DeliveryLocation[]>(fallbackDeliveryLocations);
@@ -483,6 +485,25 @@ export default function Home() {
       document.removeEventListener("keydown", closeOnEscape);
     };
   }, [locationOpen]);
+
+  useEffect(() => {
+    if (!filtersOpen) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!filterButtonRef.current?.contains(target) && !filterPopoverRef.current?.contains(target)) setFiltersOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setFiltersOpen(false);
+      filterButtonRef.current?.focus();
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer, true);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer, true);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [filtersOpen]);
 
   useEffect(() => {
     if (!notificationUserId) return;
@@ -949,8 +970,8 @@ export default function Home() {
           <section className="discovery-bar">
             <label className="search-box"><Search size={20} /><input value={query} onChange={(e) => { setQuery(e.target.value); setCurrentPage(1); }} placeholder="Search tomatoes, yam, farmer..." /></label>
             <div className="location-picker" ref={locationPickerRef}><button className={`location-button ${locationOpen ? "active" : ""}`} onClick={() => { setLocationOpen((open) => !open); setFiltersOpen(false); }} aria-expanded={locationOpen} aria-haspopup="listbox"><span className="loc-icon"><LocateFixed size={18}/></span><span><small>DELIVERING TO</small><strong>{locationOverride ? deliveryLocation.name : savedLocationLabel || deliveryLocation.name}</strong></span><ChevronDown className={locationOpen ? "open" : ""} size={17}/></button>{locationOpen && <><button className="location-backdrop" aria-label="Close delivery locations" onClick={() => setLocationOpen(false)}/><div className="location-menu" role="listbox" aria-label="Delivery location"><header><strong>Choose your area</strong><small>Travel times update automatically</small></header>{savedLocationLabel && <button role="option" aria-selected={!locationOverride} className={`device-location saved-location ${!locationOverride ? "selected" : ""}`} onClick={() => { setLocationOverride(false); setLocationOpen(false); setCurrentPage(1); }}><House size={16}/><span><strong>Home</strong><small>{savedLocationLabel}</small></span>{!locationOverride && <Check size={14}/>}</button>}<button className="device-location" onClick={useDeviceLocation}><LocateFixed size={16}/><span><strong>Use current location</strong><small>Allow location access in your browser</small></span></button>{deliveryLocations.map((location) => <button role="option" aria-selected={locationOverride && deliveryLocation.name === location.name} className={locationOverride && deliveryLocation.name === location.name ? "selected" : ""} key={location.name} onClick={() => { setDeliveryLocation(location); setLocationOverride(true); setLocationOpen(false); setCurrentPage(1); }}><MapPin size={15}/><span>{location.name}</span>{locationOverride && deliveryLocation.name === location.name && <Check size={14}/>}</button>)}</div></>}</div>
-            <button className={`filter-button ${activeFilterCount ? "active" : ""}`} onClick={() => setFiltersOpen((open) => !open)}><SlidersHorizontal size={18} /> Filters {activeFilterCount > 0 && <b>{activeFilterCount}</b>}</button>
-            {filtersOpen && <div className="filter-popover">
+            <button ref={filterButtonRef} className={`filter-button ${activeFilterCount ? "active" : ""}`} onClick={() => setFiltersOpen((open) => !open)}><SlidersHorizontal size={18} /> Filters {activeFilterCount > 0 && <b>{activeFilterCount}</b>}</button>
+            {filtersOpen && <div className="filter-popover" ref={filterPopoverRef}>
               <div className="filter-head"><div><strong>Filter harvests</strong><span>Refine what is shown near you</span></div><button onClick={() => setFiltersOpen(false)}><X size={17}/></button></div>
               <label className="range-filter"><span><strong>Maximum distance</strong><b>{distanceFilterActive ? `${maxDistance} km · ${walkingTime(maxDistance)}` : "Any distance"}</b></span><input type="number" min="1" step="1" value={distanceFilterActive ? maxDistance : ""} placeholder="Enter distance in km" onChange={(event) => { const value = event.target.value; setDistanceFilterActive(value !== ""); if (value) setMaxDistance(Number(value)); setCurrentPage(1); }}/></label>
               <label className="range-filter"><span><strong>Maximum unit price</strong><b>{priceFilterActive ? money(maxPrice) : "Any price"}</b></span><input type="number" min="1" step="100" value={priceFilterActive ? maxPrice : ""} placeholder="Enter maximum price" onChange={(event) => { const value = event.target.value; setPriceFilterActive(value !== ""); if (value) setMaxPrice(Number(value)); setCurrentPage(1); }}/></label>
