@@ -8,10 +8,12 @@ export async function GET() {
   try {
     const sql = getDatabase();
     const centres = await sql`
-      SELECT id, name, address_text, city, state, latitude, longitude, opening_hours
-      FROM collection_hubs
-      WHERE is_active
-      ORDER BY state, city, name
+      SELECT hub.id, hub.name, hub.address_text, hub.city, hub.state, hub.latitude, hub.longitude,
+        hub.opening_hours, area.id AS area_id, area.name AS area_name
+      FROM collection_hubs hub
+      JOIN service_areas area ON area.id = hub.area_id
+      WHERE hub.is_active AND area.is_active
+      ORDER BY area.state, area.city, area.name, hub.name
     `;
     return NextResponse.json({ centres }, {
       headers: { "Cache-Control": "public, max-age=60, s-maxage=300, stale-while-revalidate=600" },

@@ -5,7 +5,7 @@ import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
 import { DEFAULT_LISTING_IMAGE, listingImageUrl, profileImageUrl } from "@/lib/images";
 
-type EntityType = "users" | "farms" | "produce" | "pickup_centres" | "orders" | "refunds" | "payouts" | "reviews" | "activity" | "options";
+type EntityType = "users" | "farms" | "produce" | "areas" | "pickup_centres" | "orders" | "refunds" | "payouts" | "reviews" | "activity" | "options";
 
 function isUploadedListingImage(value?: string) {
   try { return Boolean(value && new URL(value).hostname.endsWith(".blob.vercel-storage.com")); } catch { return false; }
@@ -39,12 +39,26 @@ export async function GET(request: NextRequest) {
   const sql = getDatabase();
 
   if (type === "options") {
-    const [owners, farms, categories] = await Promise.all([
+    const [owners, farms, categories, areas] = await Promise.all([
       sql`SELECT id, first_name || ' ' || last_name AS name FROM users WHERE role = 'farmer' AND is_active ORDER BY first_name`,
       sql`SELECT id, name FROM farms WHERE verification_status <> 'suspended' ORDER BY name`,
       sql`SELECT id, name FROM produce_categories WHERE is_active ORDER BY name`,
+      sql`SELECT id, name, city, state FROM service_areas WHERE is_active ORDER BY state, city, name`,
     ]);
-    return NextResponse.json({ owners, farms, categories });
+    return NextResponse.json({ owners, farms, categories, areas });
+  }
+
+  if (type === "areas") {
+    const rows = id ? await sql`
+      SELECT area.*, CASE WHEN area.is_active THEN 'active' ELSE 'inactive' END AS status,
+        (SELECT count(*)::int FROM collection_hubs hub WHERE hub.area_id = area.id) AS pickup_centre_count
+      FROM service_areas area WHERE area.id = ${id} LIMIT 1
+    ` : await sql`
+      SELECT area.*, CASE WHEN area.is_active THEN 'active' ELSE 'inactive' END AS status,
+        (SELECT count(*)::int FROM collection_hubs hub WHERE hub.area_id = area.id) AS pickup_centre_count
+      FROM service_areas area ORDER BY area.is_active DESC, area.state, area.city, area.name LIMIT 100
+    `;
+    return NextResponse.json(id ? { entity: rows[0] ?? null } : { entities: rows });
   }
 
   if (type === "users") {
@@ -109,15 +123,16 @@ export async function GET(request: NextRequest) {
 
   if (type === "pickup_centres") {
     const rows = id ? await sql`
-      SELECT hub.*, CASE WHEN hub.is_active THEN 'active' ELSE 'inactive' END AS status,
+      SELECT hub.*, area.name AS area_name, area.city AS area_city, area.state AS area_state,
+        CASE WHEN hub.is_active THEN 'active' ELSE 'inactive' END AS status,
         (SELECT count(*)::int FROM orders WHERE collection_hub_id = hub.id) AS order_count
-      FROM collection_hubs hub WHERE hub.id = ${id} LIMIT 1
+      FROM collection_hubs hub JOIN service_areas area ON area.id = hub.area_id WHERE hub.id = ${id} LIMIT 1
     ` : await sql`
-      SELECT hub.id, hub.name, hub.address_text, hub.city, hub.state, hub.latitude, hub.longitude,
+      SELECT hub.id, hub.name, hub.area_id, area.name AS area_name, hub.address_text, hub.city, hub.state, hub.latitude, hub.longitude,
         hub.opening_hours, hub.is_active, hub.created_at, hub.updated_at,
         CASE WHEN hub.is_active THEN 'active' ELSE 'inactive' END AS status,
         (SELECT count(*)::int FROM orders WHERE collection_hub_id = hub.id) AS order_count
-      FROM collection_hubs hub ORDER BY hub.is_active DESC, hub.created_at DESC LIMIT 100
+      FROM collection_hubs hub JOIN service_areas area ON area.id = hub.area_id ORDER BY hub.is_active DESC, hub.created_at DESC LIMIT 100
     `;
     return NextResponse.json(id ? { entity: rows[0] ?? null } : { entities: rows });
   }
@@ -307,16 +322,31 @@ export async function POST(request: NextRequest) {
     }
 
     if (type === "pickup_centres") {
-      if (!body.name || !body.address || !body.city || !body.state || !body.latitude || !body.longitude || !body.openingHours) throw new Error("Complete all pickup centre fields");
+      if (!body.name || !body.areaId || !body.address || !body.city || !body.state || !body.latitude || !body.longitude || !body.openingHours) throw new Error("Complete all pickup centre fields");
       const latitude = Number(body.latitude); const longitude = Number(body.longitude);
       if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) throw new Error("Enter valid pickup centre coordinates");
       const [entity] = await sql`
-        INSERT INTO collection_hubs (name, address_text, city, state, latitude, longitude, opening_hours, is_active)
-        VALUES (${body.name.trim()}, ${body.address.trim()}, ${body.city.trim()}, ${body.state.trim()}, ${latitude}, ${longitude}, ${JSON.stringify({ summary: body.openingHours.trim() })}::jsonb, true)
+        INSERT INTO collection_hubs (name, area_id, address_text, city, state, latitude, longitude, opening_hours, is_active)
+        SELECT ${body.name.trim()}, area.id, ${body.address.trim()}, ${body.city.trim()}, ${body.state.trim()}, ${latitude}, ${longitude}, ${JSON.stringify({ summary: body.openingHours.trim() })}::jsonb, true
+        FROM service_areas area WHERE area.id = ${body.areaId} AND area.is_active
         RETURNING id
       `;
+      if (!entity) throw new Error("Select an active service area");
       await sql`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES
         (${administrator.id}, 'pickup_centre.created', 'pickup_centre', ${entity.id}, ${JSON.stringify({ name: body.name, city: body.city, state: body.state })}::jsonb)`;
+      return NextResponse.json({ id: entity.id }, { status: 201 });
+    }
+
+    if (type === "areas") {
+      if (!body.name || !body.city || !body.state || !body.latitude || !body.longitude) throw new Error("Complete all area fields");
+      const latitude = Number(body.latitude); const longitude = Number(body.longitude);
+      if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) throw new Error("Enter valid area coordinates");
+      const [entity] = await sql`
+        INSERT INTO service_areas (name, city, state, latitude, longitude, is_active)
+        VALUES (${body.name.trim()}, ${body.city.trim()}, ${body.state.trim()}, ${latitude}, ${longitude}, true) RETURNING id
+      `;
+      await sql`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES
+        (${administrator.id}, 'service_area.created', 'service_area', ${entity.id}, ${JSON.stringify({ name: body.name, city: body.city, state: body.state })}::jsonb)`;
       return NextResponse.json({ id: entity.id }, { status: 201 });
     }
   } catch (error) {
@@ -346,6 +376,10 @@ export async function DELETE(request: NextRequest) {
   } else if (type === "pickup_centres") {
     await sql`UPDATE collection_hubs SET is_active = false, updated_at = now() WHERE id = ${id}`;
     await sql`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES (${session.id}, 'pickup_centre.deactivated', 'pickup_centre', ${id}, ${JSON.stringify({ isActive: false })}::jsonb)`;
+  } else if (type === "areas") {
+    const [{ count }] = await sql`SELECT count(*)::int AS count FROM collection_hubs WHERE area_id = ${id} AND is_active`;
+    if (Number(count) > 0) return NextResponse.json({ error: "Deactivate or move this area's pickup centres first" }, { status: 409 });
+    await sql`UPDATE service_areas SET is_active = false, updated_at = now() WHERE id = ${id}`;
   } else return NextResponse.json({ error: "Unknown entity type" }, { status: 400 });
 
   return NextResponse.json({ removed: true });
@@ -358,21 +392,32 @@ export async function PATCH(request: NextRequest) {
     const type = request.nextUrl.searchParams.get("type") as EntityType;
     const id = request.nextUrl.searchParams.get("id");
     const body = await request.json().catch(() => null) as Record<string, string> | null;
-    if (!id || !body || !["users", "farms", "produce", "pickup_centres", "orders", "refunds", "payouts", "reviews"].includes(type)) return NextResponse.json({ error: "A valid entity ID is required" }, { status: 400 });
+    if (!id || !body || !["users", "farms", "produce", "areas", "pickup_centres", "orders", "refunds", "payouts", "reviews"].includes(type)) return NextResponse.json({ error: "A valid entity ID is required" }, { status: 400 });
     const sql = getDatabase();
 
     if (type === "pickup_centres") {
-      if (!body.name || !body.address || !body.city || !body.state || !body.latitude || !body.longitude || !body.openingHours) return NextResponse.json({ error: "Complete all pickup centre fields" }, { status: 400 });
+      if (!body.name || !body.areaId || !body.address || !body.city || !body.state || !body.latitude || !body.longitude || !body.openingHours) return NextResponse.json({ error: "Complete all pickup centre fields" }, { status: 400 });
       const latitude = Number(body.latitude); const longitude = Number(body.longitude);
       if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) return NextResponse.json({ error: "Enter valid pickup centre coordinates" }, { status: 400 });
       const [entity] = await sql`
-        UPDATE collection_hubs SET name=${body.name.trim()}, address_text=${body.address.trim()}, city=${body.city.trim()}, state=${body.state.trim()},
+        UPDATE collection_hubs SET name=${body.name.trim()}, area_id=${body.areaId}, address_text=${body.address.trim()}, city=${body.city.trim()}, state=${body.state.trim()},
           latitude=${latitude}, longitude=${longitude}, opening_hours=${JSON.stringify({ summary: body.openingHours.trim() })}::jsonb,
           is_active=${body.isActive === "true"}, updated_at=now() WHERE id=${id} RETURNING id, is_active
       `;
       if (!entity) return NextResponse.json({ error: "Pickup centre not found" }, { status: 404 });
       await sql`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES
         (${administrator.id}, 'pickup_centre.updated', 'pickup_centre', ${id}, ${JSON.stringify(body)}::jsonb)`;
+      return NextResponse.json({ entity });
+    }
+
+    if (type === "areas") {
+      if (!body.name || !body.city || !body.state || !body.latitude || !body.longitude) return NextResponse.json({ error: "Complete all area fields" }, { status: 400 });
+      const latitude = Number(body.latitude); const longitude = Number(body.longitude);
+      const [entity] = await sql`
+        UPDATE service_areas SET name=${body.name.trim()}, city=${body.city.trim()}, state=${body.state.trim()}, latitude=${latitude}, longitude=${longitude},
+          is_active=${body.isActive === "true"}, updated_at=now() WHERE id=${id} RETURNING id, is_active
+      `;
+      if (!entity) return NextResponse.json({ error: "Area not found" }, { status: 404 });
       return NextResponse.json({ entity });
     }
 
