@@ -24,10 +24,12 @@ function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-export async function createSession(userId: string) {
+export async function createSession(userId: string, options?: { maxAgeMinutes?: number }) {
   const token = randomBytes(32).toString("base64url");
   const tokenHash = hashToken(token);
-  const expiresAt = new Date(Date.now() + SESSION_DAYS * 86_400_000);
+  const expiresAt = options?.maxAgeMinutes
+    ? new Date(Date.now() + options.maxAgeMinutes * 60_000)
+    : new Date(Date.now() + SESSION_DAYS * 86_400_000);
   const requestHeaders = await headers();
   const sql = getDatabase();
 

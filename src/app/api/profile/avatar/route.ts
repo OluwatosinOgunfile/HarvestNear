@@ -3,7 +3,10 @@ import { NextResponse } from "next/server";
 
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
+import { optimizeUploadedImage } from "@/lib/image-processing";
 import { canMutateAs, checkRateLimit, validImageFile } from "@/lib/security";
+
+export const runtime = "nodejs";
 
 const IMAGE_FORMATS: Record<string, { extension: string; contentType: string }> = {
   "image/jpeg": { extension: "jpg", contentType: "image/jpeg" },
@@ -38,14 +41,20 @@ export async function POST(request: Request) {
   if (file.size > 3 * 1024 * 1024) return NextResponse.json({ error: "Profile pictures must be 3 MB or smaller" }, { status: 413 });
   if (!await validImageFile(file)) return NextResponse.json({ error: "The file content does not match a supported image format" }, { status: 400 });
   const imageBytes = Buffer.from(await file.arrayBuffer());
+  const optimized = await optimizeUploadedImage(file, "profile").catch((error) => {
+    console.error("Avatar optimization unavailable; storing validated original", error);
+    return null;
+  });
+  const storedImage = optimized?.body || imageBytes;
+  const storedFormat = optimized ? { extension: optimized.extension, contentType: optimized.contentType } : format;
   const sql = getDatabase();
   let blobUrl: string | null = null;
   try {
     const [current] = await sql`SELECT avatar_url FROM users WHERE id = ${session.id}`;
-    const blob = await put(`profile-images/${session.id}/${crypto.randomUUID()}.${format.extension}`, imageBytes, {
+    const blob = await put(`profile-images/${session.id}/${crypto.randomUUID()}.${storedFormat.extension}`, storedImage, {
       access: "private",
       addRandomSuffix: false,
-      contentType: format.contentType,
+      contentType: storedFormat.contentType,
     });
     blobUrl = blob.url;
     await sql`UPDATE users SET avatar_url = ${blob.url}, updated_at = now() WHERE id = ${session.id}`;
@@ -53,7 +62,7 @@ export async function POST(request: Request) {
       await del(String(current.avatar_url)).catch((error) => console.error("Old avatar cleanup failed", error));
     }
     const version = encodeURIComponent(blob.pathname.split("/").pop() || crypto.randomUUID());
-    return NextResponse.json({ avatarUrl: `/api/images/profiles/${session.id}?v=${version}`, bytes: imageBytes.length });
+    return NextResponse.json({ avatarUrl: `/api/images/profiles/${session.id}?v=${version}`, optimized: Boolean(optimized), bytes: storedImage.length, originalBytes: imageBytes.length });
   } catch (error) {
     if (blobUrl) await del(blobUrl).catch((cleanupError) => console.error("Failed avatar cleanup", cleanupError));
     console.error("Profile picture persistence failed", error);

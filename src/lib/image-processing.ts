@@ -1,9 +1,5 @@
 import "server-only";
 
-// Sharp 0.35 ships declarations outside the package export map; runtime ESM import is valid.
-// @ts-expect-error Upstream package export map does not expose lib/index.d.ts.
-import sharp from "sharp";
-
 type ImagePurpose = "listing" | "profile";
 
 const IMAGE_PRESETS = {
@@ -12,6 +8,9 @@ const IMAGE_PRESETS = {
 };
 
 export async function optimizeUploadedImage(file: File, purpose: ImagePurpose) {
+  // Load the native processor only when an upload reaches this point. A missing
+  // deployment binary can then fall back without preventing the route from loading.
+  const { default: sharp } = await import("sharp");
   const preset = IMAGE_PRESETS[purpose];
   const input = Buffer.from(await file.arrayBuffer());
   const output = await sharp(input, { limitInputPixels: 40_000_000 })
