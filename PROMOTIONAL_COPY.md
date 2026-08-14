@@ -3,22 +3,22 @@
 ## Campaign Platform
 
 **Campaign theme:** Fresh Local Produce, Found Here.
-**Consumer message:** Available harvests from verified farms are closer than you think.
-**Farmer message:** Manage your farms, live stock, fulfilment, and reputation in one place.
+**Consumer message:** See what verified farms have available, how long the journey may take, and how to get there.
+**Farmer message:** Manage your farms, live stock, fulfilment, payouts, and reputation in one place.
 **Primary CTA:** Shop nearby harvests.
 **Farmer CTA:** Start selling on HarvestNearU.
 
 ## Consumer Launch Caption
 
-The freshest food may be closer than you think. Discover available produce from verified farms, compare estimated walking times, order the quantity you need, pay securely with Paystack, and track every item through receipt. Shop local at **harvestnearu.com**.
+The freshest food may be closer than you think. Discover available produce from verified farms, compare estimated walking times, view farm maps and directions, order the quantity you need, pay securely with Paystack, and track every item through receipt. Shop local on the web or HarvestNearU mobile app.
 
 ## Farmer Recruitment Caption
 
-Your next customer could be nearby. Create one account for multiple farms, publish live stock with optional selling dates, fulfil each item, and build trust through verified buyer ratings with HarvestNearU.
+Your next customer could be nearby. Create one account for multiple farms, publish live stock, fulfil each item, build trust through verified buyer ratings, and request farm payouts with clear statements on HarvestNearU.
 
 ## WhatsApp Broadcast
 
-Fresh harvests are closer. Shop vegetables, tubers, grains, fruit, eggs and more from verified farms near you. Pay securely and follow each item until receipt. Visit **harvestnearu.com**.
+Fresh harvests are closer. Shop vegetables, tubers, grains, fruit, eggs and more from verified farms near you. Choose doorstep delivery, farm pickup, or arrange delivery with the farmer. Pay securely and follow each item until receipt. Visit **harvestnearu.com**.
 
 ## Short Headlines
 
@@ -31,17 +31,22 @@ Fresh harvests are closer. Shop vegetables, tubers, grains, fruit, eggs and more
 - Visit the farm. Know who grows your food.
 - One order. Every item tracked.
 - One farmer account. Multiple farms.
+- See the farm. Get directions. Shop with confidence.
+- Fulfil orders. Request payouts. Keep clear records.
 
 ## Product Proof Points
 
 - Verified farm storefronts with address, ratings, feedback, and current produce
 - Live remaining-stock controls and automatic out-of-stock status
 - Proximity-first discovery expressed as estimated walking time
+- Free farm maps and routed directions from a current or saved location
 - Paystack checkout with optional administrator-reviewed bank transfer
-- Farm pickup or doorstep delivery where the supplying farm supports it
+- Distance-priced doorstep delivery, free farm pickup, or delivery arranged with the farmer
 - Separate tracking and receipt confirmation for each product in an order
-- Persistent basket, favourites, notifications, and account credit
+- Printable order receipts and farmer payout statements
+- Persistent basket, favourites, account credit, real-time notifications, and email preferences
 - Support tickets and transparent refund status
+- Native mobile access for customers, farmers, administrators, and support staff
 
 ## Suggested Hashtags
 

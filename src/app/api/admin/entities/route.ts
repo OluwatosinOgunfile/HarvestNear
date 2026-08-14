@@ -5,7 +5,7 @@ import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
 import { DEFAULT_LISTING_IMAGE, listingImageUrl, profileImageUrl } from "@/lib/images";
 
-type EntityType = "users" | "farms" | "produce" | "orders" | "refunds" | "payouts" | "reviews" | "activity" | "options";
+type EntityType = "users" | "farms" | "produce" | "pickup_centres" | "orders" | "refunds" | "payouts" | "reviews" | "activity" | "options";
 
 function isUploadedListingImage(value?: string) {
   try { return Boolean(value && new URL(value).hostname.endsWith(".blob.vercel-storage.com")); } catch { return false; }
@@ -105,6 +105,21 @@ export async function GET(request: NextRequest) {
     `;
     const mapped = rows.map((row) => ({ ...row, image_url: row.image_url ? listingImageUrl(String(row.id), String(row.image_url)) : DEFAULT_LISTING_IMAGE }));
     return NextResponse.json(id ? { entity: mapped[0] ?? null } : { entities: mapped });
+  }
+
+  if (type === "pickup_centres") {
+    const rows = id ? await sql`
+      SELECT hub.*, CASE WHEN hub.is_active THEN 'active' ELSE 'inactive' END AS status,
+        (SELECT count(*)::int FROM orders WHERE collection_hub_id = hub.id) AS order_count
+      FROM collection_hubs hub WHERE hub.id = ${id} LIMIT 1
+    ` : await sql`
+      SELECT hub.id, hub.name, hub.address_text, hub.city, hub.state, hub.latitude, hub.longitude,
+        hub.opening_hours, hub.is_active, hub.created_at, hub.updated_at,
+        CASE WHEN hub.is_active THEN 'active' ELSE 'inactive' END AS status,
+        (SELECT count(*)::int FROM orders WHERE collection_hub_id = hub.id) AS order_count
+      FROM collection_hubs hub ORDER BY hub.is_active DESC, hub.created_at DESC LIMIT 100
+    `;
+    return NextResponse.json(id ? { entity: rows[0] ?? null } : { entities: rows });
   }
 
   if (type === "orders") {
@@ -214,6 +229,7 @@ export async function GET(request: NextRequest) {
           WHEN 'listing' THEN (SELECT title FROM produce_listings WHERE id::text = log.entity_id)
           WHEN 'refund' THEN (SELECT 'Refund for order #' || orders.order_number FROM refunds JOIN orders ON orders.id = refunds.order_id WHERE refunds.id::text = log.entity_id)
           WHEN 'review' THEN (SELECT farm.name || ' review' FROM reviews JOIN farms farm ON farm.id = reviews.farm_id WHERE reviews.id::text = log.entity_id)
+          WHEN 'pickup_centre' THEN (SELECT name FROM collection_hubs WHERE id::text = log.entity_id)
         END AS entity_label
       FROM audit_logs log LEFT JOIN users ON users.id = log.actor_id WHERE log.id::text = ${id} LIMIT 1
     ` : await sql`
@@ -226,6 +242,7 @@ export async function GET(request: NextRequest) {
           WHEN 'listing' THEN (SELECT title FROM produce_listings WHERE id::text = log.entity_id)
           WHEN 'refund' THEN (SELECT 'Refund for order #' || orders.order_number FROM refunds JOIN orders ON orders.id = refunds.order_id WHERE refunds.id::text = log.entity_id)
           WHEN 'review' THEN (SELECT farm.name || ' review' FROM reviews JOIN farms farm ON farm.id = reviews.farm_id WHERE reviews.id::text = log.entity_id)
+          WHEN 'pickup_centre' THEN (SELECT name FROM collection_hubs WHERE id::text = log.entity_id)
         END AS entity_label
       FROM audit_logs log LEFT JOIN users ON users.id = log.actor_id ORDER BY log.created_at DESC LIMIT 150
     `;
@@ -236,7 +253,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!await authorize(true)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const administrator = await authorize(true);
+  if (!administrator) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const type = request.nextUrl.searchParams.get("type") as EntityType;
   const body = await request.json().catch(() => null) as Record<string, string> | null;
   if (!body) return NextResponse.json({ error: "Invalid request" }, { status: 400 });
@@ -287,6 +305,20 @@ export async function POST(request: NextRequest) {
       if (body.imageUrl) await sql`INSERT INTO listing_images (listing_id, url, alt_text) VALUES (${entity.id}, ${body.imageUrl}, ${body.name})`;
       return NextResponse.json({ id: entity.id }, { status: 201 });
     }
+
+    if (type === "pickup_centres") {
+      if (!body.name || !body.address || !body.city || !body.state || !body.latitude || !body.longitude || !body.openingHours) throw new Error("Complete all pickup centre fields");
+      const latitude = Number(body.latitude); const longitude = Number(body.longitude);
+      if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) throw new Error("Enter valid pickup centre coordinates");
+      const [entity] = await sql`
+        INSERT INTO collection_hubs (name, address_text, city, state, latitude, longitude, opening_hours, is_active)
+        VALUES (${body.name.trim()}, ${body.address.trim()}, ${body.city.trim()}, ${body.state.trim()}, ${latitude}, ${longitude}, ${JSON.stringify({ summary: body.openingHours.trim() })}::jsonb, true)
+        RETURNING id
+      `;
+      await sql`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES
+        (${administrator.id}, 'pickup_centre.created', 'pickup_centre', ${entity.id}, ${JSON.stringify({ name: body.name, city: body.city, state: body.state })}::jsonb)`;
+      return NextResponse.json({ id: entity.id }, { status: 201 });
+    }
   } catch (error) {
     const databaseError = error as { code?: string; message?: string };
     const message = databaseError.code === "23505" ? "A record with those details already exists" : databaseError.message || "Could not add record";
@@ -311,6 +343,9 @@ export async function DELETE(request: NextRequest) {
     await sql`UPDATE produce_listings SET status = 'paused', updated_at = now() WHERE farm_id = ${id} AND status = 'active'`;
   } else if (type === "produce") {
     await sql`UPDATE produce_listings SET status = 'paused', updated_at = now() WHERE id = ${id}`;
+  } else if (type === "pickup_centres") {
+    await sql`UPDATE collection_hubs SET is_active = false, updated_at = now() WHERE id = ${id}`;
+    await sql`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES (${session.id}, 'pickup_centre.deactivated', 'pickup_centre', ${id}, ${JSON.stringify({ isActive: false })}::jsonb)`;
   } else return NextResponse.json({ error: "Unknown entity type" }, { status: 400 });
 
   return NextResponse.json({ removed: true });
@@ -323,8 +358,23 @@ export async function PATCH(request: NextRequest) {
     const type = request.nextUrl.searchParams.get("type") as EntityType;
     const id = request.nextUrl.searchParams.get("id");
     const body = await request.json().catch(() => null) as Record<string, string> | null;
-    if (!id || !body || !["users", "farms", "produce", "orders", "refunds", "payouts", "reviews"].includes(type)) return NextResponse.json({ error: "A valid entity ID is required" }, { status: 400 });
+    if (!id || !body || !["users", "farms", "produce", "pickup_centres", "orders", "refunds", "payouts", "reviews"].includes(type)) return NextResponse.json({ error: "A valid entity ID is required" }, { status: 400 });
     const sql = getDatabase();
+
+    if (type === "pickup_centres") {
+      if (!body.name || !body.address || !body.city || !body.state || !body.latitude || !body.longitude || !body.openingHours) return NextResponse.json({ error: "Complete all pickup centre fields" }, { status: 400 });
+      const latitude = Number(body.latitude); const longitude = Number(body.longitude);
+      if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) return NextResponse.json({ error: "Enter valid pickup centre coordinates" }, { status: 400 });
+      const [entity] = await sql`
+        UPDATE collection_hubs SET name=${body.name.trim()}, address_text=${body.address.trim()}, city=${body.city.trim()}, state=${body.state.trim()},
+          latitude=${latitude}, longitude=${longitude}, opening_hours=${JSON.stringify({ summary: body.openingHours.trim() })}::jsonb,
+          is_active=${body.isActive === "true"}, updated_at=now() WHERE id=${id} RETURNING id, is_active
+      `;
+      if (!entity) return NextResponse.json({ error: "Pickup centre not found" }, { status: 404 });
+      await sql`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES
+        (${administrator.id}, 'pickup_centre.updated', 'pickup_centre', ${id}, ${JSON.stringify(body)}::jsonb)`;
+      return NextResponse.json({ entity });
+    }
 
     if (type === "orders") {
       const allowed = ["paid","confirmed","preparing","ready","dispatched","delivered","collected","cancelled","refunded"];

@@ -13,14 +13,16 @@ HarvestNearU uses the Next.js App Router. Public and role-specific paths render 
 | Vercel Blob | Private listing images, profile pictures, and manual-payment receipts |
 | Paystack | Hosted payment authorization and transaction verification |
 | Google OAuth | Optional Google account authentication |
-| Expo / React Native | Separate Android and iOS application sharing this backend API |
+| Resend | Branded transactional and preference-controlled notification email |
+| OpenStreetMap / OSRM | Free farm maps and routed directions |
+| Expo / React Native | Separate Android and iOS application sharing this backend API and Expo push delivery |
 
 ## Roles and access
 
 - Consumers browse, purchase, track items, acknowledge receipt, rate farms, manage credit, and contact support.
-- Farmers retain purchasing capabilities and additionally manage multiple farms, listings, fulfilment, earnings, and ratings.
-- Support staff manage support tickets with restricted administrative access.
-- Administrators manage users, farms, listings, orders, payments, refunds, reviews, settings, audit activity, and read-only impersonation.
+- Farmers retain purchasing capabilities and additionally manage multiple farms, listings, fulfilment, ratings, payout accounts, payout requests, and statements.
+- Support staff manage support tickets with restricted console access on web and mobile.
+- Administrators manage users, farms, listings, orders, payments, payouts, refunds, reviews, settings, audit activity, and read-only impersonation.
 
 Server route handlers must enforce roles and `canMutateAs` rules. Client-side navigation is usability logic, not an authorization boundary.
 
@@ -37,6 +39,12 @@ Server route handlers must enforce roles and `canMutateAs` rules. Client-side na
 An order may contain items from several farms. `farm_orders` separates farmer accounting and `order_items` separates fulfilment state. Customers acknowledge receipt per item and can rate the supplying farm immediately. Overall order feedback can wait until every item is fulfilled.
 
 Paystack is the primary payment provider. Server initialization and callback/webhook handlers verify amount, currency, and reference. Manual transfer is optional and administrator-configured; its receipt is removed after confirmation. Account credit can partially or fully fund checkout.
+
+Delivery quotes support distance-priced doorstep delivery, free farm pickup, and farmer-arranged delivery. Farm storefronts render OpenStreetMap locations and launch OSRM-backed directions using device coordinates or the saved address fallback.
+
+Platform pickup centres are stored in `collection_hubs`. Administrators own their address, coordinates, opening-hours summary, and active state through the administration API. Only active centres are exposed by the cached public collection-hubs endpoint used by web and mobile Delivery Areas screens; deactivation preserves historical order references.
+
+Fulfilled farm orders can be grouped into a payout request. Payout accounts belong to a farm rather than the owner globally; administrator status transitions and printable statements preserve the gross, fee, net, and included-order audit trail.
 
 ## Images and caching
 

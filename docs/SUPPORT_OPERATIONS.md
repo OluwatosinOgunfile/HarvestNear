@@ -24,13 +24,23 @@ For post-fulfilment quality or missing-item complaints, create or use a support 
 
 Each product has independent tracking because different farms may fulfil the same order. Farmers advance only their items. Customers confirm each item after delivery or pickup and can rate that farm immediately. The order completes after all items have been acknowledged.
 
+Customers choose one of three fulfilment methods before payment: distance-priced doorstep delivery when eligible, free farm pickup, or delivery arranged directly with the farmer. For map or pickup questions, confirm that both the customer's saved location and the farm coordinates are current. Farm storefronts use OpenStreetMap and can launch routed directions from the customer's current or saved location.
+
+Administrators manage shared collection locations under **Pickup centres**. Capture the coordinates while physically at the centre or enter verified coordinates, record clear opening hours, and deactivate a location that is temporarily or permanently unavailable. Active centres appear in Delivery Areas on web and mobile. Deactivate rather than deleting records so historical order references remain intact.
+
+## Farmer payouts
+
+Each farm has its own verified payout account. Fulfilled, unsettled farm orders become available for a payout request. Administrators open **Payouts**, review the included orders and gross sale, platform fee, and net payout, then begin review, mark the request paid, or reject it with a clear note.
+
+Farmers can view and print their payout history and settlement statements. Never request a full bank account number through a ticket; direct the farmer to the protected payout-account form. A payout notification alone does not prove settlement: confirm the request status and paid timestamp.
+
 ## Farm verification
 
 Administrators review ownership and farm details before approval. Verification creates a notification for the farmer. A verified farm can publish listings; rejected or suspended farms must not appear in public marketplace results.
 
 ## Notifications
 
-Notifications cover accounts, farm verification, payments, orders, deliveries, and harvest activity. Viewed notifications are marked read and later cleaned up. The mobile wrapper does not yet provide native background push notifications.
+Notifications cover accounts, farm verification, payments, payouts, orders, deliveries, ratings, support, and harvest activity. The web client receives in-app updates, and the native app receives actionable Expo push notifications with sound when the device has granted permission. Branded email notifications follow the categories selected in the user profile; essential security, payment, refund, and active-order messages remain enabled. Viewed notifications are marked read and later cleaned up.
 
 ## Escalation checklist
 

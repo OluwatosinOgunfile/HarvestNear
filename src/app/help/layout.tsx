@@ -36,10 +36,34 @@ const faqStructuredData = {
     },
     {
       "@type": "Question",
-      name: "Can I view a farm before ordering?",
+      name: "Can I view a farm and get directions before ordering?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: "Yes. Select a farm name on a produce card to view its address, verified buyer feedback, current produce and related recommendations.",
+        text: "Yes. Select a farm name on a produce card to view its address, verified buyer feedback, current produce and related recommendations. The farm map can open routed directions from your current or saved location.",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "What fulfilment options are available?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "Checkout can offer distance-priced doorstep delivery, free farm pickup, or delivery arranged directly with the farmer.",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Where can I find available pickup centres?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "Open Delivery Areas to see active HarvestNearU pickup centres, their address, opening hours and map location.",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "How do farmer payouts work?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "Farmers configure a payout account for each farm, request eligible fulfilled earnings, follow administrator review and keep a printable payout statement.",
       },
     },
   ],
