@@ -9,7 +9,7 @@ export function mobileCorsHeaders(request: Request) {
   if (!LOCAL_ORIGIN.test(origin) && !configured.includes(origin)) return headers;
   headers.set("Access-Control-Allow-Origin", origin);
   headers.set("Access-Control-Allow-Credentials", "true");
-  headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  headers.set("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS");
   headers.set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-HarvestNearU-Client");
   headers.set("Vary", "Origin");
   return headers;

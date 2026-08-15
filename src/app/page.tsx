@@ -4,6 +4,7 @@
 import {
   ArrowLeft,
   ArrowRight,
+  BarChart3,
   BadgeCheck,
   Bell,
   Check,
@@ -1380,6 +1381,14 @@ type AdminOverview = {
   users: Array<{ id: string; first_name: string; last_name: string; email: string; role: string; is_active: boolean; created_at: string }>;
 };
 
+type AdminAnalytics = {
+  summary: { active_users: number; paying_customers: number; orders_30d: number; revenue_30d_kobo: number; average_order_kobo: number; fulfilment_rate: number };
+  daily: Array<{ day: string; orders: number; revenue_kobo: number; customers: number }>;
+  statuses: Array<{ status: string; count: number }>;
+  farms: Array<{ id: string; name: string; units: number; sales_kobo: number; orders: number }>;
+  categories: Array<{ name: string; units: number; sales_kobo: number }>;
+};
+
 type AdminEntityType = "users" | "farms" | "produce" | "areas" | "pickup_centres" | "orders" | "refunds" | "payouts" | "reviews" | "activity";
 type AdminEntity = Record<string, unknown> & { id: string };
 type AdminOptions = { owners: Array<{ id: string; name: string }>; farms: Array<{ id: string; name: string }>; categories: Array<{ id: string; name: string }>; areas: Array<{ id: string; name: string; city: string; state: string }> };
@@ -1411,9 +1420,36 @@ function adminEntityFilterValue(section: AdminEntityType, entity: AdminEntity) {
   return String(entity.entity_type || "system");
 }
 
+function AdminAnalyticsView({ analytics, loading, error }: { analytics: AdminAnalytics | null; loading: boolean; error: string }) {
+  if (loading && !analytics) return <div className="analytics-loading"><LoaderCircle className="spin" size={24}/><strong>Calculating marketplace performance...</strong></div>;
+  if (error && !analytics) return <div className="entity-empty"><BarChart3 size={24}/><strong>Analytics unavailable</strong><p>{error}</p></div>;
+  if (!analytics) return null;
+  const maxRevenue = Math.max(...analytics.daily.map((item) => Number(item.revenue_kobo)), 1);
+  const maxFarmSales = Math.max(...analytics.farms.map((item) => Number(item.sales_kobo)), 1);
+  const maxCategorySales = Math.max(...analytics.categories.map((item) => Number(item.sales_kobo)), 1);
+  const conversion = Number(analytics.summary.active_users) ? Math.round(Number(analytics.summary.paying_customers) / Number(analytics.summary.active_users) * 1000) / 10 : 0;
+  return <section className="admin-analytics">
+    <header className="analytics-heading"><div><p className="eyebrow">MARKETPLACE ANALYTICS</p><h2>Performance at a glance</h2><p>Live commercial and customer activity calculated from marketplace records.</p></div><span>Last 30 days</span></header>
+    <div className="analytics-kpis">
+      <article><small>30-DAY REVENUE</small><strong>{money(Number(analytics.summary.revenue_30d_kobo) / 100)}</strong><p>Paid orders, excluding cancellations and refunds</p></article>
+      <article><small>ORDERS</small><strong>{analytics.summary.orders_30d}</strong><p>Orders created during the last 30 days</p></article>
+      <article><small>AVERAGE ORDER</small><strong>{money(Number(analytics.summary.average_order_kobo) / 100)}</strong><p>Average value of successful purchases</p></article>
+      <article><small>BUYER CONVERSION</small><strong>{conversion}%</strong><p>{analytics.summary.paying_customers} of {analytics.summary.active_users} active users purchased</p></article>
+      <article><small>FULFILMENT RATE</small><strong>{Number(analytics.summary.fulfilment_rate).toFixed(1)}%</strong><p>Non-pending orders completed successfully</p></article>
+    </div>
+    <div className="analytics-grid">
+      <section className="analytics-panel analytics-trend"><header><div><h3>Revenue trend</h3><p>Daily paid revenue for the last 30 days</p></div><strong>{money(analytics.daily.reduce((sum, item) => sum + Number(item.revenue_kobo), 0) / 100)}</strong></header><div className="analytics-bars" aria-label="Daily revenue chart">{analytics.daily.map((item) => <div className="analytics-bar-column" key={item.day} title={`${new Date(item.day).toLocaleDateString("en-NG")}: ${money(Number(item.revenue_kobo) / 100)}`}><span style={{ height: `${Math.max(3, Number(item.revenue_kobo) / maxRevenue * 100)}%` }}/><i>{new Date(item.day).getDate()}</i></div>)}</div></section>
+      <section className="analytics-panel"><header><div><h3>Order status</h3><p>Current lifecycle distribution</p></div></header><div className="analytics-statuses">{analytics.statuses.map((item) => <div key={item.status}><span className={`status-dot ${item.status}`}/><strong>{statusLabel(item.status)}</strong><b>{item.count}</b></div>)}</div></section>
+      <section className="analytics-panel"><header><div><h3>Top-performing farms</h3><p>Ranked by completed sales value</p></div></header><div className="analytics-ranking">{analytics.farms.map((farm, index) => <div key={farm.id}><b>{index + 1}</b><span><strong>{farm.name}</strong><i>{farm.units} units · {farm.orders} orders</i><em><span style={{ width: `${Number(farm.sales_kobo) / maxFarmSales * 100}%` }}/></em></span><mark>{money(Number(farm.sales_kobo) / 100)}</mark></div>)}</div></section>
+      <section className="analytics-panel"><header><div><h3>Category performance</h3><p>Sales contribution by produce category</p></div></header><div className="analytics-ranking">{analytics.categories.map((category, index) => <div key={category.name}><b>{index + 1}</b><span><strong>{category.name}</strong><i>{category.units} units sold</i><em><span style={{ width: `${Number(category.sales_kobo) / maxCategorySales * 100}%` }}/></em></span><mark>{money(Number(category.sales_kobo) / 100)}</mark></div>)}</div></section>
+    </div>
+  </section>;
+}
+
 function AdminPage({ readOnly, supportAccess, onImpersonated }: { readOnly: boolean; supportAccess: boolean; onImpersonated: (user: CurrentUser) => void }) {
   const [overview, setOverview] = useState<AdminOverview | null>(null);
-  const [section, setSection] = useState<"overview" | AdminEntityType>("overview");
+  const [analytics, setAnalytics] = useState<AdminAnalytics | null>(null);
+  const [section, setSection] = useState<"overview" | "analytics" | AdminEntityType>("overview");
   const [entities, setEntities] = useState<AdminEntity[]>([]);
   const [selected, setSelected] = useState<AdminEntity | null>(null);
   const [options, setOptions] = useState<AdminOptions>({ owners: [], farms: [], categories: [], areas: [] });
@@ -1481,6 +1517,14 @@ function AdminPage({ readOnly, supportAccess, onImpersonated }: { readOnly: bool
   useEffect(() => {
     if (section === "overview") return;
     let cancelled = false;
+    if (section === "analytics") {
+      fetch("/api/admin/analytics").then(async (response) => {
+        const data = await readJsonResponse<AdminAnalytics & { error?: string }>(response);
+        if (!response.ok) throw new Error(data.error || "Could not load analytics");
+        if (!cancelled) { setAnalytics(data); setBusy(false); }
+      }).catch((reason: Error) => { if (!cancelled) { setError(reason.message); setBusy(false); } });
+      return () => { cancelled = true; };
+    }
     fetch(`/api/admin/entities?type=${section}`).then(async (response) => {
       const data = await readJsonResponse<{ entities?: AdminEntity[]; error?: string }>(response);
       if (!response.ok) throw new Error(data.error || "Could not load records");
@@ -1490,7 +1534,7 @@ function AdminPage({ readOnly, supportAccess, onImpersonated }: { readOnly: bool
   }, [section]);
 
   const filterOptions = useMemo(() => {
-    if (section === "overview") return [];
+    if (section === "overview" || section === "analytics") return [];
     const values = new Set(entities.map((entity) => adminEntityFilterValue(section, entity)).filter(Boolean));
     return [...values].sort((left, right) => left.localeCompare(right));
   }, [entities, section]);
@@ -1498,7 +1542,7 @@ function AdminPage({ readOnly, supportAccess, onImpersonated }: { readOnly: bool
   const activityActions = useMemo(() => [...new Set(entities.map((entity) => String(entity.action || "")).filter(Boolean))].sort(), [entities]);
   const activityActors = useMemo(() => [...new Set(entities.map((entity) => String(entity.actor_name || "")).filter(Boolean))].sort(), [entities]);
   const visibleEntities = useMemo(() => {
-    if (section === "overview") return entities;
+    if (section === "overview" || section === "analytics") return entities;
     const query = entitySearch.trim().toLowerCase();
     const filtered = entities.filter((entity) => {
       if (effectiveEntityFilter !== "all" && adminEntityFilterValue(section, entity) !== effectiveEntityFilter) return false;
@@ -1540,7 +1584,7 @@ function AdminPage({ readOnly, supportAccess, onImpersonated }: { readOnly: bool
 
   async function addEntity(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (section === "overview") return;
+    if (section === "overview" || section === "analytics") return;
     setBusy(true); setError("");
     const form = new FormData(event.currentTarget);
     const image = form.get("image");
@@ -1580,7 +1624,7 @@ function AdminPage({ readOnly, supportAccess, onImpersonated }: { readOnly: bool
   }
 
   async function removeEntity() {
-    if (!selected || section === "overview" || !window.confirm(`Remove this ${section === "produce" ? "produce listing" : section === "pickup_centres" ? "pickup centre" : section.slice(0, -1)}? Historical records will be retained.`)) return;
+    if (!selected || section === "overview" || section === "analytics" || !window.confirm(`Remove this ${section === "produce" ? "produce listing" : section === "pickup_centres" ? "pickup centre" : section.slice(0, -1)}? Historical records will be retained.`)) return;
     setBusy(true); setError("");
     const response = await fetch(`/api/admin/entities?type=${section}&id=${selected.id}`, { method: "DELETE" });
     const data = await readJsonResponse(response) as { error?: string };
@@ -1591,7 +1635,7 @@ function AdminPage({ readOnly, supportAccess, onImpersonated }: { readOnly: bool
 
   async function editEntity(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selected || section === "overview") return;
+    if (!selected || section === "overview" || section === "analytics") return;
     setBusy(true); setError("");
     let uploadedUrl = "";
     try {
@@ -1717,14 +1761,14 @@ function AdminPage({ readOnly, supportAccess, onImpersonated }: { readOnly: bool
     <header className="admin-heading"><div><p className="eyebrow"><span/> MARKETPLACE OPERATIONS</p><h1>Administration</h1><p>Monitor people, farms, listings, orders, and customer resolutions.</p></div><div className="admin-heading-tools">{!readOnly && <button onClick={() => { setError(""); setPaymentSettingsOpen(true); }}><AtSign size={15}/> Bank payment details</button>}<span className="admin-live"><i/> {readOnly ? "Read-only support access" : "Live database"}</span></div></header>
     {section === "produce" && !readOnly && <ProduceCategoryCreator onCreated={(category) => setOptions((current) => ({ ...current, categories: [...current.categories.filter((item) => item.id !== category.id), category].sort((a,b) => a.name.localeCompare(b.name)) }))}/>} 
     <div className="admin-workspace">
-      <label className="admin-mobile-section"><span className="sr-only">Administration section</span><select aria-label="Administration section" value={section} onChange={(event) => { const next = event.target.value as typeof section; setSection(next); setSelected(null); setError(""); setBusy(next !== "overview"); }}>{(["overview", "users", "farms", "produce", "areas", "pickup_centres", "orders", "refunds", "payouts", "reviews", "activity"] as const).filter((item) => !(supportAccess && item === "activity")).map((item) => <option key={item} value={item}>{item === "produce" ? "Produce listings" : item === "pickup_centres" ? "Pickup centres" : item[0].toUpperCase() + item.slice(1)}{item === "refunds" && metrics.open_refunds > 0 ? ` (${metrics.open_refunds})` : item === "payouts" && metrics.open_payouts > 0 ? ` (${metrics.open_payouts})` : ""}</option>)}</select><ChevronDown size={16}/></label>
-      <nav className="admin-tabs" aria-label="Administration sections"><small>Workspace</small>{(["overview", "users", "farms", "produce", "areas", "pickup_centres", "orders", "refunds", "payouts", "reviews", "activity"] as const).filter((item) => !(supportAccess && item === "activity")).map((item) => <button key={item} className={section === item ? "active" : ""} onClick={() => { setSection(item); setSelected(null); setError(""); setBusy(item !== "overview"); }}>{item === "overview" ? <House size={15}/> : item === "users" ? <UserRound size={15}/> : item === "farms" ? <Store size={15}/> : item === "produce" ? <Leaf size={15}/> : item === "areas" || item === "pickup_centres" ? <MapPin size={15}/> : item === "orders" ? <PackageCheck size={15}/> : item === "refunds" ? <RotateCcw size={15}/> : item === "payouts" ? <CreditCard size={15}/> : item === "reviews" ? <Star size={15}/> : <Clock3 size={15}/>}<span>{item === "pickup_centres" ? "Pickup centres" : item}</span>{item === "refunds" && metrics.open_refunds > 0 && <b className="admin-tab-count">{metrics.open_refunds}</b>}{item === "payouts" && metrics.open_payouts > 0 && <b className="admin-tab-count">{metrics.open_payouts}</b>}</button>)}</nav>
+      <label className="admin-mobile-section"><span className="sr-only">Administration section</span><select aria-label="Administration section" value={section} onChange={(event) => { const next = event.target.value as typeof section; setSection(next); setSelected(null); setError(""); setBusy(next !== "overview"); }}>{(["overview", "analytics", "users", "farms", "produce", "areas", "pickup_centres", "orders", "refunds", "payouts", "reviews", "activity"] as const).filter((item) => supportAccess ? item !== "analytics" && item !== "activity" : true).map((item) => <option key={item} value={item}>{item === "produce" ? "Produce listings" : item === "pickup_centres" ? "Pickup centres" : item[0].toUpperCase() + item.slice(1)}{item === "refunds" && metrics.open_refunds > 0 ? ` (${metrics.open_refunds})` : item === "payouts" && metrics.open_payouts > 0 ? ` (${metrics.open_payouts})` : ""}</option>)}</select><ChevronDown size={16}/></label>
+      <nav className="admin-tabs" aria-label="Administration sections"><small>Workspace</small>{(["overview", "analytics", "users", "farms", "produce", "areas", "pickup_centres", "orders", "refunds", "payouts", "reviews", "activity"] as const).filter((item) => supportAccess ? item !== "analytics" && item !== "activity" : true).map((item) => <button key={item} className={section === item ? "active" : ""} onClick={() => { setSection(item); setSelected(null); setError(""); setBusy(item !== "overview"); }}>{item === "overview" ? <House size={15}/> : item === "analytics" ? <BarChart3 size={15}/> : item === "users" ? <UserRound size={15}/> : item === "farms" ? <Store size={15}/> : item === "produce" ? <Leaf size={15}/> : item === "areas" || item === "pickup_centres" ? <MapPin size={15}/> : item === "orders" ? <PackageCheck size={15}/> : item === "refunds" ? <RotateCcw size={15}/> : item === "payouts" ? <CreditCard size={15}/> : item === "reviews" ? <Star size={15}/> : <Clock3 size={15}/>}<span>{item === "pickup_centres" ? "Pickup centres" : item}</span>{item === "refunds" && metrics.open_refunds > 0 && <b className="admin-tab-count">{metrics.open_refunds}</b>}{item === "payouts" && metrics.open_payouts > 0 && <b className="admin-tab-count">{metrics.open_payouts}</b>}</button>)}</nav>
       <div className="admin-workspace-content">
     {section === "overview" ? <>
       <section className="admin-metrics"><article><span><UserRound size={19}/></span><small>ACTIVE USERS</small><strong>{metrics.users}</strong><p>{metrics.active_carts} active shopping carts</p></article><article><span><Store size={19}/></span><small>VERIFIED FARMS</small><strong>{metrics.verified_farms}</strong><p>{metrics.pending_farms} awaiting review</p></article><article><span><Leaf size={19}/></span><small>ACTIVE LISTINGS</small><strong>{metrics.listings}</strong><p>Available marketplace harvests</p></article><article><span><PackageCheck size={19}/></span><small>OPEN ORDERS</small><strong>{metrics.open_orders}</strong><p>{metrics.orders} orders recorded</p></article><article><span><RotateCcw size={19}/></span><small>OPEN REFUNDS</small><strong>{metrics.open_refunds}</strong><p>Awaiting a resolution</p></article><article><span><CreditCard size={19}/></span><small>OPEN PAYOUTS</small><strong>{metrics.open_payouts}</strong><p>Farmer requests requiring action</p></article><article><span><AtSign size={19}/></span><small>CUMULATIVE GROSS SALES</small><strong>{money(Number(metrics.cumulative_gross_kobo) / 100)}</strong><p>Completed produce sales</p></article><article><span><Minus size={19}/></span><small>PROCESSING FEES</small><strong>{money(Number(metrics.cumulative_fee_kobo) / 100)}</strong><p>Cumulative platform revenue</p></article><article><span><Check size={19}/></span><small>FARMER NET SALES</small><strong>{money(Number(metrics.cumulative_net_kobo) / 100)}</strong><p>Earned after processing fees</p></article><article><span><Truck size={19}/></span><small>DELIVERY ISSUES</small><strong>{metrics.failed_deliveries}</strong><p>Failed deliveries</p></article><article><span><Bell size={19}/></span><small>UNREAD UPDATES</small><strong>{metrics.unread_notifications}</strong><p>{metrics.hidden_reviews} hidden reviews</p></article></section>
       <section className="admin-credit-balance"><span><AtSign size={20}/></span><div><small>OUTSTANDING ACCOUNT CREDIT</small><strong>{money(Number(metrics.outstanding_credit_kobo) / 100)}</strong><p>Total customer credit currently available for future marketplace purchases.</p></div><button onClick={() => { setBusy(true); setSection("users"); }}>View customer balances <ArrowRight size={15}/></button></section>
       <div className="admin-grid"><section className="admin-panel"><div className="admin-panel-head"><div><h2>Recent users</h2><p>Latest accounts across the marketplace</p></div><button onClick={() => { setBusy(true); setSection("users"); }}>View all <ArrowRight size={15}/></button></div><div className="admin-user-list">{overview.users.slice(0, 8).map((user) => <button className="admin-user-row" key={user.id} onClick={() => { setBusy(true); setSection("users"); setTimeout(() => openDetails("users", user.id), 0); }}><span>{user.first_name[0]}{user.last_name[0]}</span><div><strong>{user.first_name} {user.last_name}</strong><small>{user.email}</small></div><b className={`role-badge ${user.role}`}>{user.role}</b><i className={user.is_active ? "active" : ""}>{user.is_active ? "Active" : "Disabled"}</i></button>)}</div></section><aside className="admin-side"><section><div className="admin-panel-head"><div><h2>Attention needed</h2><p>Items requiring administrator action</p></div></div><button onClick={() => { setBusy(true); setSection("farms"); }}><span><Store size={17}/></span><div><strong>Farm verification</strong><small>{metrics.pending_farms} pending applications</small></div><ChevronRight size={16}/></button><button onClick={() => { setBusy(true); setSection("refunds"); }}><span><RotateCcw size={17}/></span><div><strong>Refund requests</strong><small>{metrics.open_refunds} open cases</small></div><ChevronRight size={16}/></button><button onClick={() => { setBusy(true); setSection("payouts"); }}><span><CreditCard size={17}/></span><div><strong>Farmer payouts</strong><small>{metrics.open_payouts} awaiting action</small></div><ChevronRight size={16}/></button><button onClick={() => { setBusy(true); setSection("orders"); }}><span><Truck size={17}/></span><div><strong>Delivery exceptions</strong><small>{metrics.failed_deliveries} failed deliveries</small></div><ChevronRight size={16}/></button></section><section className="admin-health"><div className="admin-panel-head"><div><h2>System status</h2><p>Core marketplace services</p></div></div><div><span><i/> Neon database</span><strong>Operational</strong></div><div><span><i/> Blob image storage</span><strong>Operational</strong></div><div><span><i/> Authentication</span><strong>Operational</strong></div></section></aside></div>
-    </> : <section className="entity-manager">
+    </> : section === "analytics" ? <AdminAnalyticsView analytics={analytics} loading={busy} error={error}/> : <section className="entity-manager">
       <div className="entity-toolbar"><div><h2>{section === "produce" ? "Produce listings" : section === "pickup_centres" ? "Pickup centres" : section[0].toUpperCase() + section.slice(1)}</h2><p>{entities.length} database records</p></div>{!readOnly && ["users","farms","produce","areas","pickup_centres"].includes(section) && <button onClick={() => { setError(""); if (section === "pickup_centres") setPickupCentreModal("add"); else if (section === "areas") setAreaModal("add"); else setAddOpen(true); }}><Plus size={16}/> Add {section === "produce" ? "produce" : section === "pickup_centres" ? "pickup centre" : section.slice(0, -1)}</button>}</div>
       <div className="entity-list-controls">
         <div className="entity-search"><Search size={16}/><input type="search" aria-label={`Search ${section}`} value={entitySearch} onChange={(event) => setEntitySearch(event.target.value)} placeholder={`Search ${section === "produce" ? "produce listings" : section}...`}/>{entitySearch && <button type="button" onClick={() => setEntitySearch("")} aria-label="Clear search"><X size={14}/></button>}</div>
@@ -1815,7 +1859,8 @@ function AdminEntityRow({ section, entity, onOpen, onReviewRefund }: { section: 
   return <button onClick={onOpen}><span className="entity-icon"><Clock3 size={17}/></span><span><strong>{String(entity.action).replaceAll("_", " ").replaceAll(".", " ")}</strong><small>{String(entity.actor_name)} · {String(entity.entity_label || entity.entity_type).replaceAll("_", " ")}</small><AdminEntityDate label="Logged" value={entity.created_at}/></span><b className="status-badge verified">{String(entity.entity_type).replaceAll("_", " ")}</b><i>{new Date(String(entity.created_at)).toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" })}</i></button>;
 }
 
-function entityTitle(type: AdminEntityType, entity: AdminEntity) {
+function entityTitle(type: AdminEntityType | "analytics", entity: AdminEntity) {
+  if (type === "analytics") return "Analytics";
   if (type === "users") return `${entity.first_name} ${entity.last_name}`;
   if (type === "farms") return String(entity.name);
   if (type === "produce") return String(entity.title);

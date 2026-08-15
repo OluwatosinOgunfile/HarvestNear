@@ -127,7 +127,11 @@ export async function GET(request: NextRequest) {
         farm.id,
         farm.name,
         farm.city || ', ' || farm.state AS location,
-        coalesce((SELECT sum(listing.quantity_sold)::int FROM produce_listings listing WHERE listing.farm_id = farm.id), 0) AS sold,
+        coalesce((SELECT sum(item.quantity)::int
+          FROM order_items item
+          JOIN farm_orders farm_order ON farm_order.id = item.farm_order_id
+          WHERE farm_order.farm_id = farm.id
+            AND item.status NOT IN ('pending_payment', 'cancelled', 'refunded')), 0) AS sold,
         coalesce((SELECT round(avg(review.rating)::numeric, 2) FROM reviews review WHERE review.farm_id = farm.id AND review.is_visible), 0) AS rating,
         (SELECT count(*)::int FROM reviews review WHERE review.farm_id = farm.id AND review.is_visible) AS review_count,
         (SELECT count(*)::int FROM produce_listings listing

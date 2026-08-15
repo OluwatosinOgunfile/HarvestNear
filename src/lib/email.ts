@@ -50,6 +50,35 @@ export async function sendPasswordResetCode(email: string, firstName: string, co
   return true;
 }
 
+export async function sendEmailVerificationCode(email: string, firstName: string, code: string) {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.ACCOUNT_FROM_EMAIL || process.env.PASSWORD_RESET_FROM_EMAIL || "HarvestNearU <accounts@harvestnearu.com>";
+  if (!apiKey) {
+    if (process.env.NODE_ENV !== "production") console.info(`Email verification code for ${email}: ${code}`);
+    return false;
+  }
+
+  const appUrl = getAppUrl();
+  await sendWithResend({
+    apiKey,
+    from,
+    to: email,
+    subject: "Confirm your HarvestNearU email",
+    html: brandedEmail({
+      eyebrow: "CONFIRM YOUR EMAIL",
+      title: "One last step",
+      firstName,
+      intro: "Enter this verification code in the HarvestNearU app to confirm your email address.",
+      contentHtml: `<div style="margin:28px 0;padding:22px 16px;border:1px solid ${brand.border};border-radius:12px;background:#f1f6ed;text-align:center"><div style="font-size:12px;font-weight:800;color:${brand.muted};text-transform:uppercase;letter-spacing:1.2px">Verification code</div><div style="margin-top:8px;font-family:Manrope,Segoe UI,Arial,sans-serif;font-size:34px;line-height:1.2;font-weight:800;letter-spacing:7px;color:${brand.dark}">${escapeHtml(code)}</div><div style="margin-top:10px;font-size:13px;color:${brand.muted}">Expires in 15 minutes</div></div>`,
+      action: { label: "Open HarvestNearU", href: appUrl },
+      footerNote: "If you did not create this account, you can safely ignore this message.",
+    }),
+    text: `Hello ${firstName},\n\nYour HarvestNearU email verification code is ${code}. It expires in 15 minutes.`,
+    errorLabel: "email verification message",
+  });
+  return true;
+}
+
 export async function sendNotificationEmail(input: { email: string; firstName: string; title: string; message: string; actionUrl: string | null }) {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) throw new Error("RESEND_API_KEY is not configured");

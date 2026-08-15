@@ -4,10 +4,11 @@ import { confirmPaystackPayment, verifyPaystackTransaction } from "@/lib/paystac
 
 export async function GET(request: NextRequest) {
   const reference = request.nextUrl.searchParams.get("reference") || request.nextUrl.searchParams.get("trxref");
-  const destination = new URL("/orders", process.env.APP_URL || request.nextUrl.origin);
+  const mobile = request.nextUrl.searchParams.get("client") === "mobile";
+  const destination = mobile ? new URL("harvestnearu://orders") : new URL("/orders", process.env.APP_URL || request.nextUrl.origin);
   if (!reference) {
     destination.searchParams.set("payment", "invalid");
-    return NextResponse.redirect(destination);
+    return redirect(destination);
   }
   try {
     const transaction = await verifyPaystackTransaction(reference);
@@ -18,5 +19,9 @@ export async function GET(request: NextRequest) {
     console.error("Paystack callback verification failed", error);
     destination.searchParams.set("payment", "failed");
   }
-  return NextResponse.redirect(destination);
+  return redirect(destination);
+}
+
+function redirect(destination: URL) {
+  return new NextResponse(null, { status: 302, headers: { Location: destination.toString(), "Cache-Control": "no-store" } });
 }
