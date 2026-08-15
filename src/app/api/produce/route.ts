@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Invalid coordinates" }, { status: 400, headers: corsHeaders(request) });
     }
 
-    const [rows, statsRows] = await Promise.all([sql`
+    const [rows, statsRows, farmRows] = await Promise.all([sql`
       SELECT
         listing.id,
         farm.id AS farm_id,
@@ -122,6 +122,44 @@ export async function GET(request: NextRequest) {
         (SELECT count(*)::int FROM users WHERE role = 'consumer' AND is_active) AS consumers,
         (SELECT count(*)::int FROM users WHERE role = 'farmer' AND is_active) AS farmers
       FROM farms
+    `, sql`
+      SELECT
+        farm.id,
+        farm.name,
+        farm.city || ', ' || farm.state AS location,
+        coalesce((SELECT sum(listing.quantity_sold)::int FROM produce_listings listing WHERE listing.farm_id = farm.id), 0) AS sold,
+        coalesce((SELECT round(avg(review.rating)::numeric, 2) FROM reviews review WHERE review.farm_id = farm.id AND review.is_visible), 0) AS rating,
+        (SELECT count(*)::int FROM reviews review WHERE review.farm_id = farm.id AND review.is_visible) AS review_count,
+        (SELECT count(*)::int FROM produce_listings listing
+          WHERE listing.farm_id = farm.id AND listing.status = 'active'
+            AND listing.quantity_available > listing.quantity_reserved
+            AND (listing.available_from IS NULL OR listing.available_from <= now())
+            AND (listing.available_until IS NULL OR listing.available_until > now())) AS listings,
+        featured.id AS listing_id,
+        featured.category,
+        featured.image_url
+      FROM farms farm
+      JOIN LATERAL (
+        SELECT listing.id, category.name AS category, image.url AS image_url
+        FROM produce_listings listing
+        JOIN products product ON product.id = listing.product_id
+        JOIN produce_categories category ON category.id = product.category_id
+        LEFT JOIN LATERAL (
+          SELECT url FROM listing_images
+          WHERE listing_id = listing.id
+          ORDER BY sort_order, created_at
+          LIMIT 1
+        ) image ON true
+        WHERE listing.farm_id = farm.id AND listing.status = 'active'
+          AND listing.quantity_available > listing.quantity_reserved
+          AND (listing.available_from IS NULL OR listing.available_from <= now())
+          AND (listing.available_until IS NULL OR listing.available_until > now())
+        ORDER BY listing.quantity_sold DESC, listing.created_at DESC
+        LIMIT 1
+      ) featured ON true
+      WHERE farm.verification_status = 'verified'
+      ORDER BY sold DESC, rating DESC, review_count DESC, farm.created_at DESC
+      LIMIT 8
     `]);
 
     const today = new Date();
@@ -153,8 +191,20 @@ export async function GET(request: NextRequest) {
     });
 
     const stats = statsRows[0];
+    const bestSellingFarms = farmRows.map((farm) => ({
+      id: String(farm.id),
+      name: String(farm.name),
+      location: String(farm.location),
+      image: farm.image_url ? listingImageUrl(String(farm.listing_id), farm.image_url) : DEFAULT_LISTING_IMAGE,
+      category: String(farm.category),
+      rating: Number(farm.rating),
+      reviewCount: Number(farm.review_count),
+      sold: Number(farm.sold),
+      listings: Number(farm.listings),
+    }));
     return NextResponse.json({
       produce,
+      bestSellingFarms,
       proximity: { source: proximitySource, label: proximityLabel },
       stats: {
         farms: Number(stats.farms),
