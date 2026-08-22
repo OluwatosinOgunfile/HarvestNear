@@ -86,7 +86,10 @@ export async function confirmPaystackPayment(transaction: PaystackTransaction) {
   if (!record) throw new Error("Payment reference was not found");
   if (transaction.status !== "success") throw new Error("Payment has not been completed");
   if (transaction.currency !== "NGN" || Number(transaction.amount) !== Number(record.amount_kobo)) throw new Error("Payment amount verification failed");
-  if (record.payment_status === "successful" && record.order_status !== "pending_payment") return { orderId: String(record.order_id), orderNumber: String(record.order_number), alreadyConfirmed: true };
+  if (record.payment_status === "successful" && record.order_status !== "pending_payment") {
+    await sql`DELETE FROM cart_items WHERE cart_id IN (SELECT id FROM carts WHERE user_id = ${record.customer_id})`;
+    return { orderId: String(record.order_id), orderNumber: String(record.order_number), alreadyConfirmed: true };
+  }
 
   const responseSnapshot = JSON.stringify(transaction);
   const queries = [
@@ -94,6 +97,7 @@ export async function confirmPaystackPayment(transaction: PaystackTransaction) {
     sql`UPDATE orders SET status = 'confirmed', paid_at = coalesce(paid_at, ${transaction.paid_at || new Date().toISOString()}), updated_at = now() WHERE id = ${record.order_id} AND status = 'pending_payment'`,
     sql`UPDATE farm_orders SET status = 'confirmed', confirmed_at = coalesce(confirmed_at, now()), updated_at = now() WHERE order_id = ${record.order_id} AND status = 'pending_payment'`,
     sql`UPDATE order_items SET status = 'confirmed', updated_at = now() WHERE order_id = ${record.order_id} AND status = 'pending_payment'`,
+    sql`DELETE FROM cart_items WHERE cart_id IN (SELECT id FROM carts WHERE user_id = ${record.customer_id})`,
     sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) SELECT ${record.customer_id}, 'order', 'Paystack payment confirmed', ${`Your payment for order ${record.order_number} has been confirmed.`}, '/orders', ${JSON.stringify({ orderId: String(record.order_id), orderNumber: String(record.order_number), provider: "paystack" })}::jsonb WHERE ${record.order_status} = 'pending_payment'`,
     sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) SELECT DISTINCT farm.owner_id, 'order', 'New order to fulfil', ${`Order ${record.order_number} is paid and ready for fulfilment.`}, '/farmer', ${JSON.stringify({ orderId: String(record.order_id), orderNumber: String(record.order_number) })}::jsonb FROM farm_orders farm_order JOIN farms farm ON farm.id = farm_order.farm_id WHERE farm_order.order_id = ${record.order_id} AND ${record.order_status} = 'pending_payment'`,
     sql`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES (${record.customer_id}, 'payment.paystack_confirmed', 'order', ${record.order_id}, ${JSON.stringify({ reference: transaction.reference, amountKobo: transaction.amount, channel: transaction.channel })}::jsonb)`,

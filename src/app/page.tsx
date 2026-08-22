@@ -419,6 +419,13 @@ export default function Home() {
   }, [deliveryLocation.latitude, deliveryLocation.longitude, locationOverride]);
 
   useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("payment") !== "success") return;
+    localStorage.removeItem("harvestnearu-cart");
+    void fetch("/api/cart", { method: "DELETE" });
+  }, []);
+
+  useEffect(() => {
     fetch("/api/auth/session")
       .then((response) => readJsonResponse<{ user: CurrentUser | null }>(response))
       .then(async (data: { user: CurrentUser | null }) => {
