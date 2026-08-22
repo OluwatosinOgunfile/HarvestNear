@@ -267,6 +267,7 @@ export default function Home() {
   const [paid, setPaid] = useState(false);
   const [checkoutBusy, setCheckoutBusy] = useState(false);
   const [checkoutError, setCheckoutError] = useState("");
+  const [basketCheckoutError, setBasketCheckoutError] = useState("");
   const [paymentReceipt, setPaymentReceipt] = useState<File | null>(null);
   const [manualPaymentSettings, setManualPaymentSettings] = useState<ManualPaymentSettings | null>(null);
   const [manualPaymentAvailable, setManualPaymentAvailable] = useState(false);
@@ -611,9 +612,9 @@ export default function Home() {
         try {
           await prepareCheckout(data.user);
         } catch (checkoutFailure) {
-          setCartOpen(false);
-          setCheckoutError((checkoutFailure as Error).message || "Could not prepare checkout. Please try again.");
-          setCheckout(true);
+          setCheckout(false);
+          setBasketCheckoutError((checkoutFailure as Error).message || "Could not prepare checkout. Please try again.");
+          setCartOpen(true);
         }
         return;
       }
@@ -710,6 +711,7 @@ export default function Home() {
   }
 
   async function beginCheckout() {
+    setBasketCheckoutError("");
     try {
       const response = await fetch("/api/auth/session", { cache: "no-store" });
       const data = await readJsonResponse(response) as { user: CurrentUser | null };
@@ -723,9 +725,9 @@ export default function Home() {
       setCurrentUser(data.user);
       await prepareCheckout(data.user);
     } catch (error) {
-      setCartOpen(false);
-      setCheckoutError((error as Error).message || "Could not prepare checkout. Please try again.");
-      setCheckout(true);
+      setCheckout(false);
+      setBasketCheckoutError((error as Error).message || "Could not prepare checkout. Please try again.");
+      setCartOpen(true);
     }
   }
 
@@ -1068,7 +1070,7 @@ export default function Home() {
               <div><h4>{product.name}</h4><p>{product.farmer}</p><strong>{money(product.price * cart[product.id])}</strong></div>
               <div className="stepper"><button onClick={() => update(product.id, -1)} aria-label={`Remove one ${product.name}`}><Minus size={14} /></button><span>{cart[product.id]}</span><button onClick={() => update(product.id, 1)} disabled={cart[product.id] >= product.stock} aria-label={cart[product.id] >= product.stock ? `All available ${product.name} is already in your basket` : `Add one ${product.name}`}><Plus size={14} /></button></div>
             </div>)}</div>
-            <div className="delivery-choice"><p>How would you like it?</p><button className={delivery === "doorstep" ? "selected" : ""} onClick={() => setDelivery("doorstep")}><Truck size={20} /><span><strong>Doorstep delivery</strong><small>{deliveryQuote?.available ? `${deliveryQuote.distanceKm} km from the farthest farm` : "Calculated from your saved location"}</small></span><b>{deliveryQuote?.feeKobo != null ? money(deliveryQuote.feeKobo / 100) : "At checkout"}</b></button><button className={delivery === "farm_pickup" ? "selected" : ""} onClick={() => setDelivery("farm_pickup")}><Store size={20} /><span><strong>Farm pickup</strong><small>Collect directly from each supplying farm</small></span><b>Free</b></button><button className={delivery === "farmer_delivery" ? "selected" : ""} onClick={() => setDelivery("farmer_delivery")}><Handshake size={20}/><span><strong>Arrange with farmer</strong><small>Agree timing and any delivery charge directly</small></span><b>Arrange</b></button></div>
+            <div className="delivery-choice"><p>How would you like it?</p><button className={delivery === "doorstep" ? "selected" : ""} onClick={() => { setDelivery("doorstep"); setBasketCheckoutError(""); }}><Truck size={20} /><span><strong>Doorstep delivery</strong><small>{deliveryQuote?.available ? `${deliveryQuote.distanceKm} km from the farthest farm` : "Calculated from your saved location"}</small></span><b>{deliveryQuote?.feeKobo != null ? money(deliveryQuote.feeKobo / 100) : "At checkout"}</b></button><button className={delivery === "farm_pickup" ? "selected" : ""} onClick={() => { setDelivery("farm_pickup"); setBasketCheckoutError(""); }}><Store size={20} /><span><strong>Farm pickup</strong><small>Collect directly from each supplying farm</small></span><b>Free</b></button><button className={delivery === "farmer_delivery" ? "selected" : ""} onClick={() => { setDelivery("farmer_delivery"); setBasketCheckoutError(""); }}><Handshake size={20}/><span><strong>Arrange with farmer</strong><small>Agree timing and any delivery charge directly</small></span><b>Arrange</b></button>{basketCheckoutError && <p className="basket-checkout-error" role="alert">{basketCheckoutError}</p>}</div>
             <div className="cart-total"><p><span>Subtotal</span><strong>{money(subtotal)}</strong></p><p><span>Delivery</span><strong>{deliveryFee ? money(deliveryFee) : "Free"}</strong></p><p className="total"><span>Total</span><strong>{money(subtotal + deliveryFee)}</strong></p><button className="checkout-button" onClick={beginCheckout}>Continue to payment <ArrowRight size={18} /></button><small>Secure payment powered by Paystack</small></div>
           </> : <div className="empty-cart"><div className="empty-cart-visual" aria-hidden="true"><span><ShoppingBag size={34}/></span><i><Leaf size={16}/></i><b><MapPin size={15}/></b></div><span className="empty-cart-kicker">READY WHEN YOU ARE</span><h3>Your next harvest starts here.</h3><p>Your basket is empty. Browse fresh produce available from trusted farms near you.</p><button onClick={() => setCartOpen(false)}><Leaf size={15}/> Explore harvests <ArrowRight size={16}/></button><div className="empty-cart-points"><span><Check size={12}/> Local farms</span><span><Clock3 size={12}/> Daily availability</span></div></div>}
         </aside>
