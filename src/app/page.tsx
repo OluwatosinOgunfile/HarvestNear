@@ -436,8 +436,11 @@ export default function Home() {
         const mergedCart = { ...(cartData.cart || {}), ...localCart };
         const mergedFavourites = [...new Set([...(favouriteData.favourites || []), ...localFavourites])];
         setCart(mergedCart); setLiked(mergedFavourites);
-        localStorage.removeItem("harvestnearu-cart"); localStorage.removeItem("harvestnearu-favourites");
-        if (Object.keys(localCart).length) fetch("/api/cart", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: Object.entries(mergedCart).map(([listingId, quantity]) => ({ listingId, quantity })) }) });
+        if (Object.keys(localCart).length) {
+          const persistResponse = await fetch("/api/cart", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: Object.entries(mergedCart).map(([listingId, quantity]) => ({ listingId, quantity })) }) });
+          if (persistResponse.ok) localStorage.removeItem("harvestnearu-cart");
+        } else localStorage.removeItem("harvestnearu-cart");
+        localStorage.removeItem("harvestnearu-favourites");
         for (const listingId of localFavourites) fetch("/api/favourites", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ listingId, saved: true }) });
         if (notificationResponse.ok) {
           const data = await readJsonResponse(notificationResponse) as { notifications: Array<{ id: string; type: NotificationItem["type"]; title: string; message: string; action_url: string | null; read_at: string | null; created_at: string }> };
@@ -745,6 +748,8 @@ export default function Home() {
         const paystackResponse = await fetch("/api/payments/paystack/initialize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: result.orderId }) });
         const paystackResult = await readJsonResponse<{ authorizationUrl?: string; error?: string }>(paystackResponse);
         if (!paystackResponse.ok || !paystackResult.authorizationUrl) throw new Error(paystackResult.error || `Order ${result.orderNumber} was created, but Paystack could not start. Retry payment from My orders.`);
+        setCart({});
+        localStorage.removeItem("harvestnearu-cart");
         window.location.assign(paystackResult.authorizationUrl);
         return;
       }
@@ -756,6 +761,8 @@ export default function Home() {
       }
       setOrderAwaitingReview(result.requiresReceipt !== false);
       setConfirmedOrderNumber(result.orderNumber); setPaid(true);
+      setCart({});
+      localStorage.removeItem("harvestnearu-cart");
       setProducts((current) => current.map((product) => cart[product.id] ? { ...product, stock: Math.max(0, product.stock - cart[product.id]), sold: product.sold + cart[product.id] } : product));
     } catch (error) {
       const message = (error as Error).message;
@@ -847,7 +854,11 @@ export default function Home() {
     const mergedCart = clampCartToStock({ ...cart, ...(cartData.cart || {}) }, products);
     const mergedFavourites = [...new Set([...(favouriteData.favourites || []), ...liked])];
     setCart(mergedCart); setLiked(mergedFavourites);
-    if (Object.keys(cart).length) persistCartForUser(mergedCart);
+    if (Object.keys(cart).length) {
+      const persistResponse = await persistCartForUser(mergedCart);
+      if (!persistResponse.ok) throw new Error("Could not save your basket after sign-in. Please try checkout again.");
+      localStorage.removeItem("harvestnearu-cart");
+    }
     for (const listingId of liked) fetch("/api/favourites", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ listingId, saved: true }) });
     if (notificationResponse.ok) {
       const data = await readJsonResponse(notificationResponse) as { notifications: Array<{ id: string; type: NotificationItem["type"]; title: string; message: string; action_url: string | null; read_at: string | null; created_at: string }> };
@@ -856,12 +867,12 @@ export default function Home() {
   }
 
   function persistCartForUser(next: Record<string, number>) {
-    fetch("/api/cart", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: Object.entries(next).map(([listingId, quantity]) => ({ listingId, quantity })) }) });
+    return fetch("/api/cart", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: Object.entries(next).map(([listingId, quantity]) => ({ listingId, quantity })) }) });
   }
 
   function persistCart(next: Record<string, number>) {
     if (!currentUser || !canPurchase) return;
-    persistCartForUser(next);
+    void persistCartForUser(next);
   }
 
   function toggleFavourite(listingId: string) {
