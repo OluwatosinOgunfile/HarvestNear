@@ -15,7 +15,7 @@ export function FarmDirectionsLink({ destination, savedOrigin }: { destination: 
   const [message, setMessage] = useState("");
 
   function openRoute(origin: Coordinates) {
-    window.location.assign(directionsUrl(origin, destination));
+    window.open(directionsUrl(origin, destination), "_blank", "noopener,noreferrer");
     setLocating(false);
   }
 
