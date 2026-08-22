@@ -277,7 +277,7 @@ export default function Home() {
   const [confirmedOrderNumber, setConfirmedOrderNumber] = useState("");
   const [orderAwaitingReview, setOrderAwaitingReview] = useState(true);
   const [delivery, setDelivery] = useState<"doorstep" | "farm_pickup" | "farmer_delivery">("doorstep");
-  const [deliveryQuote, setDeliveryQuote] = useState<{ available: boolean; feeKobo: number | null; distanceKm: number; unavailableReason: string | null } | null>(null);
+  const [deliveryQuote, setDeliveryQuote] = useState<{ available: boolean; feeKobo: number | null; distanceKm: number; radiusKm?: number | null; unavailableReason: string | null } | null>(null);
   const [liked, setLiked] = useState<string[]>([]);
   const theme = useSyncExternalStore(subscribeToTheme, getThemeSnapshot, () => "light");
   const [signupOpen, setSignupOpen] = useState(false);
@@ -692,7 +692,7 @@ export default function Home() {
   async function prepareCheckout(user: CurrentUser) {
       await hydrateShoppingState(user);
       const quoteResponse = await fetch("/api/orders/delivery-quote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: items.map((item) => ({ listingId: item.id })) }) });
-      const quoteResult = await readJsonResponse<{ doorstep?: { available: boolean; feeKobo: number | null; distanceKm: number; unavailableReason: string | null }; error?: string }>(quoteResponse);
+      const quoteResult = await readJsonResponse<{ doorstep?: { available: boolean; feeKobo: number | null; distanceKm: number; radiusKm?: number | null; unavailableReason: string | null }; error?: string }>(quoteResponse);
       if (quoteResponse.ok && quoteResult.doorstep) setDeliveryQuote(quoteResult.doorstep);
       if (delivery === "doorstep" && (!quoteResponse.ok || !quoteResult.doorstep?.available)) throw new Error(quoteResult.error || quoteResult.doorstep?.unavailableReason || "Doorstep delivery is unavailable");
       const settingsResponse = await fetch("/api/payments/manual/settings", { cache: "no-store" });
