@@ -19,6 +19,7 @@
 .app-shell[data-theme="dark"] .metric-grid,
 .app-shell[data-theme="dark"] .orders-panel,
 .app-shell[data-theme="dark"] .inventory-panel { background:#19211c; color:var(--ink); }
+.app-shell[data-theme="dark"] .drawer-head { background:#19211c; }
 .app-shell[data-theme="dark"] .market-intro { background:#173524; }
 .app-shell[data-theme="dark"] .search-box,
 .app-shell[data-theme="dark"] .role-tabs button,

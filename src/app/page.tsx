@@ -358,6 +358,13 @@ export default function Home() {
   }, [previewProduct]);
 
   useEffect(() => {
+    if (!cartOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [cartOpen]);
+
+  useEffect(() => {
     const syncView = () => setView(viewFromPath(window.location.pathname));
     syncView();
     window.addEventListener("popstate", syncView);
@@ -598,14 +605,19 @@ export default function Home() {
         : { error: response.status === 404 ? "Sign-in service is unavailable. Refresh the page and try again." : "The sign-in service returned an unexpected response. Try again shortly." };
       if (!response.ok || !data.user) throw new Error(data.error || "Sign in failed");
       setCurrentUser(data.user);
-      await hydrateShoppingState(data.user);
       if (pendingCheckout && ["consumer", "farmer"].includes(data.user.role)) {
         setPendingCheckout(false);
         setSigninOpen(false);
-        setCartOpen(false);
-        setCheckout(true);
+        try {
+          await prepareCheckout(data.user);
+        } catch (checkoutFailure) {
+          setCartOpen(false);
+          setCheckoutError((checkoutFailure as Error).message || "Could not prepare checkout. Please try again.");
+          setCheckout(true);
+        }
         return;
       }
+      await hydrateShoppingState(data.user);
       setPendingCheckout(false);
       setSigninComplete(true);
     } catch (error) {
@@ -676,18 +688,8 @@ export default function Home() {
     });
   }
 
-  async function beginCheckout() {
-    try {
-      const response = await fetch("/api/auth/session", { cache: "no-store" });
-      const data = await readJsonResponse(response) as { user: CurrentUser | null };
-      if (!response.ok || !data.user || !["consumer", "farmer"].includes(data.user.role)) {
-        setCurrentUser(data.user || null);
-        setCartOpen(false);
-        openSignIn(true);
-        return;
-      }
-      setCurrentUser(data.user);
-      await hydrateShoppingState(data.user);
+  async function prepareCheckout(user: CurrentUser) {
+      await hydrateShoppingState(user);
       const quoteResponse = await fetch("/api/orders/delivery-quote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: items.map((item) => ({ listingId: item.id })) }) });
       const quoteResult = await readJsonResponse<{ doorstep?: { available: boolean; feeKobo: number | null; distanceKm: number; unavailableReason: string | null }; error?: string }>(quoteResponse);
       if (quoteResponse.ok && quoteResult.doorstep) setDeliveryQuote(quoteResult.doorstep);
@@ -705,9 +707,25 @@ export default function Home() {
       setCheckoutError(settingsResponse.ok && (settingsResult.paystackAvailable || settingsResult.settings || creditCoversOrder) ? "" : settingsResult.error || "No payment method is currently available");
       setCartOpen(false);
       setCheckout(true);
-    } catch {
+  }
+
+  async function beginCheckout() {
+    try {
+      const response = await fetch("/api/auth/session", { cache: "no-store" });
+      const data = await readJsonResponse(response) as { user: CurrentUser | null };
+      if (!response.ok) throw new Error("Could not verify your session. Please try again.");
+      if (!data.user || !["consumer", "farmer"].includes(data.user.role)) {
+        setCurrentUser(data.user || null);
+        setCartOpen(false);
+        openSignIn(true);
+        return;
+      }
+      setCurrentUser(data.user);
+      await prepareCheckout(data.user);
+    } catch (error) {
       setCartOpen(false);
-      openSignIn(true);
+      setCheckoutError((error as Error).message || "Could not prepare checkout. Please try again.");
+      setCheckout(true);
     }
   }
 
