@@ -1,0 +1,22 @@
+import type { Metadata } from "next";
+import Image from "next/image";
+import Link from "next/link";
+import styles from "../legal.module.css";
+
+export const metadata: Metadata = { title: "Privacy Policy | HarvestNearU", description: "How HarvestNearU collects, uses, protects, and deletes personal information." };
+
+export default function PrivacyPolicy() {
+  return <main className={styles.page}><div className={styles.shell}>
+    <Link className={styles.brand} href="/"><Image src="/brand/harvestnearu-header-lockup.png" width={380} height={96} alt="HarvestNearU" priority/></Link>
+    <article className={styles.hero}><p className={styles.eyebrow}>Privacy policy · Effective 25 August 2026</p><h1>Your information, handled responsibly.</h1><p className={styles.intro}>This policy explains how HarvestNearU collects and uses information when consumers, farmers, administrators, and support staff use our website and mobile application.</p></article>
+    <div className={styles.content}>
+      <section><h2>Information we collect</h2><p>We collect account and contact details, saved delivery and farm locations, profile and produce images, order and fulfilment records, support messages, ratings, notification preferences, device push tokens, and technical security logs. When you permit location access, coordinates are used to rank nearby produce, quote delivery, and provide farm directions.</p></section>
+      <section><h2>Payments and receipts</h2><p>Paystack processes card, bank, and transfer payments. HarvestNearU does not store card numbers or security codes. If manual payments are enabled, submitted receipts are stored only while needed for review and are removed after confirmation according to the service workflow.</p></section>
+      <section><h2>How information is used</h2><ul><li>Operate accounts, carts, orders, delivery, pickup, refunds, ratings, payouts, and support.</li><li>Verify farms, prevent fraud, secure sessions, and maintain audit records.</li><li>Send essential service email and push notifications, plus optional marketing selected in email preferences.</li><li>Measure reliability and improve marketplace performance and accessibility.</li></ul></section>
+      <section><h2>Service providers</h2><p>Information is processed by providers needed to operate the service, including Vercel and Vercel Blob for hosting and images, Neon for the database, Paystack for payments, Expo for mobile builds and push delivery, Resend for email, and OpenStreetMap routing services for maps and directions. Each provider receives only the information required for its function.</p></section>
+      <section><h2>Retention and deletion</h2><p>Profile information is kept while an account is active. Users can delete an account from Privacy &amp; security in the mobile app or request deletion on our deletion page. Deletion removes or anonymizes account credentials, contact details, saved locations, images, preferences, notifications, and public farm data. Limited transaction, refund, payout, fraud-prevention, and audit records may be retained where required for legal, accounting, security, or dispute-resolution purposes.</p></section>
+      <section><h2>Your choices</h2><p>You can update your profile and saved location, control optional email categories, deny device location access, remove saved favourites, and request account deletion. Essential order, payment, refund, security, and support communications cannot be disabled while the related service is active.</p><Link className={styles.action} href="/account-deletion">Delete or request deletion of an account</Link></section>
+      <section><h2>Security and contact</h2><p>We use encrypted network connections, password hashing, restricted administrative access, session expiry, and audit logs. No online system is completely risk-free. Report privacy or security concerns to <a href="mailto:hello@harvestnearu.com">hello@harvestnearu.com</a>.</p></section>
+    </div><p className={styles.footer}>HarvestNearU Nigeria · <Link href="/">Return to marketplace</Link></p>
+  </div></main>;
+}
