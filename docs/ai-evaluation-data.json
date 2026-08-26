@@ -1,0 +1,39 @@
+{
+  "search": [
+    { "input": "ingredients for fried rice", "expectedAny": ["rice", "carrot", "egg"] },
+    { "input": "fruits with vitamin c", "expectedAny": ["orange", "pineapple", "tomato"] },
+    { "input": "what can I use for egusi soup", "expectedAny": ["melon", "ugwu", "pepper"] },
+    { "input": "protein rich food", "expectedAny": ["egg", "beans", "chicken"] },
+    { "input": "things for a fresh salad", "expectedAny": ["cucumber", "carrot", "lettuce"] },
+    { "input": "breakfast produce", "expectedAny": ["egg", "plantain", "yam"] }
+  ],
+  "faq": [
+    { "input": "Can I checkout without signing in?", "expectedTitle": "Accounts and checkout" },
+    { "input": "How do I pay with Paystack?", "expectedTitle": "Payments" },
+    { "input": "Can I collect my order from the farm?", "expectedTitle": "Delivery and pickup" },
+    { "input": "Where can I track an order?", "expectedTitle": "Orders and tracking" },
+    { "input": "I want to cancel and receive account credit", "expectedTitle": "Refunds and cancellation" },
+    { "input": "How does a farmer request payout?", "expectedTitle": "Farmer payouts" }
+  ],
+  "listing": [
+    { "input": "Fresh carrots harvested today, sold in a basket", "expectedCategory": "Vegetables", "expectedUnit": "basket" },
+    { "input": "Crate of brown eggs from free range hens", "expectedCategory": "Eggs", "expectedUnit": "crate" },
+    { "input": "Sweet ripe plantain in bunches", "expectedCategory": "Fruits", "expectedUnit": "bunch" },
+    { "input": "Five kilogram bag of local rice", "expectedCategory": "Grains", "expectedUnit": "bag" },
+    { "input": "Fresh white yam tubers", "expectedCategory": "Tubers", "expectedUnit": "piece" }
+  ],
+  "photo": [
+    { "width": 1200, "height": 900, "fileSize": 850000, "expectedQuality": "ready" },
+    { "width": 640, "height": 480, "fileSize": 500000, "expectedQuality": "needs_attention" },
+    { "width": 1200, "height": 900, "fileSize": 4200000, "expectedQuality": "needs_attention" },
+    { "width": 900, "height": 1200, "fileSize": 900000, "expectedQuality": "needs_attention" },
+    { "width": 1600, "height": 900, "fileSize": 1200000, "expectedQuality": "needs_attention" }
+  ],
+  "support": [
+    { "subject": "Missing basket item", "category": "order_issue", "messages": ["The eggs were not included in order HN-1001."], "expectedContains": ["order issue", "Missing basket item", "eggs"] },
+    { "subject": "Payment charged twice", "category": "payment_issue", "messages": ["My card was debited twice for one checkout."], "expectedContains": ["payment issue", "charged twice", "debited twice"] },
+    { "subject": "Farm pickup problem", "category": "delivery_issue", "messages": ["I arrived but could not contact the farm."], "expectedContains": ["delivery issue", "pickup", "contact"] },
+    { "subject": "Refund not received", "category": "refund_issue", "messages": ["The approved refund is not in my account credit."], "expectedContains": ["refund issue", "not received", "account credit"] },
+    { "subject": "Cannot publish listing", "category": "technical_issue", "messages": ["The publish button shows an error after image upload."], "expectedContains": ["technical issue", "publish listing", "image upload"] }
+  ]
+}

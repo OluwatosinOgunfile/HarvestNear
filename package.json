@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "ai:evaluate": "node --no-warnings --experimental-strip-types scripts/evaluate-ai.mjs",
     "db:migrate": "node --env-file=.env.local scripts/migrate.mjs",
     "db:status": "node --env-file=.env.local scripts/db-status.mjs",
     "blob:migrate-images": "node --env-file=.env.local scripts/migrate-listing-images-to-blob.mjs",

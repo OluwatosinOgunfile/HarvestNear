@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
-import { faqKnowledge, groundedFaqFallback, listingFallback, runStructuredAi } from "@/lib/harvest-ai";
+import { faqKnowledge, groundedFaqFallback, listingFallback, photoQualityFallback, runStructuredAi } from "@/lib/harvest-ai";
 import { mobileCorsHeaders, mobileOptions } from "@/lib/mobile-cors";
 import { checkRateLimit } from "@/lib/security";
 import { searchIntentFallback } from "@/lib/search-intent";
@@ -37,8 +37,8 @@ export async function POST(request: Request) {
     result={...fallback,...(ai?{title:String(ai.title||fallback.title).slice(0,100),description:String(ai.description||fallback.description).slice(0,500),unit:String(ai.unit||fallback.unit).slice(0,40),badge:String(ai.badge||fallback.badge).slice(0,50)}:{}),categoryId:matched?.id||fallback.categoryId,categoryName:matched?.name||fallback.categoryName}; enhanced=Boolean(ai);
   }else if(feature==="photo"){
     const meta=body?.metadata as Record<string,unknown>|undefined; const width=Number(meta?.width||0),height=Number(meta?.height||0),size=Number(meta?.fileSize||0);
-    const warnings:string[]=[]; if(width<900||height<675)warnings.push("Use a picture at least 900 by 675 pixels for a clearer marketplace preview."); if(size>3*1024*1024)warnings.push("Compress this picture below 3 MB before uploading."); if(width&&height&&(width/height<1.15||width/height>1.7))warnings.push("A landscape picture close to 4:3 will frame the produce better.");
-    const listing=listingFallback(input,await sql`SELECT id,name FROM produce_categories WHERE is_active ORDER BY name` as {id:string;name:string}[]); result={quality:warnings.length?"needs_attention":"ready",warnings,categoryId:listing.categoryId,categoryName:listing.categoryName};
+    const quality=photoQualityFallback(width,height,size);
+    const listing=listingFallback(input,await sql`SELECT id,name FROM produce_categories WHERE is_active ORDER BY name` as {id:string;name:string}[]); result={...quality,categoryId:listing.categoryId,categoryName:listing.categoryName};
   }else{
     const fallback=groundedFaqFallback(input); const context=faqKnowledge.map((x,i)=>`${i+1}. ${x.title}: ${x.answer}`).join("\n");
     const ai=await runStructuredAi("Answer only from the supplied HarvestNearU guidance. Return JSON only: answer and sourceTitle. If guidance is insufficient, answer exactly: I cannot confirm that from the Help Centre. Please create a support ticket.",`GUIDANCE:\n${context}\n\nQUESTION: ${input}`);

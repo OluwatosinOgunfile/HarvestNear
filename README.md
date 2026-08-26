@@ -49,6 +49,9 @@ GOOGLE_CLIENT_SECRET=...
 RESEND_API_KEY=re_...
 NOTIFICATION_FROM_EMAIL=HarvestNearU <notifications@harvestnearu.com>
 PUSH_DISPATCH_SECRET=...
+CLOUDFLARE_ACCOUNT_ID=...
+CLOUDFLARE_AI_API_TOKEN=...
+CLOUDFLARE_AI_MODEL=@cf/meta/llama-3.1-8b-instruct
 ```
 
 All values are server secrets except `APP_URL`. Never prefix database, Blob, Paystack, or Google secrets with `NEXT_PUBLIC_`.
@@ -88,6 +91,18 @@ Checkout offers doorstep delivery when the supplying farms and saved destination
 Resend delivers branded welcome, password recovery, payment, order, delivery, support, farm, rating, and payout messages. Users manage optional delivery, support, farm, rating, nearby-produce, promotion, and weekly-digest email categories from their profile; essential security, payment, refund, and active-order messages remain enabled.
 
 Web notifications update in app, while the native client registers Expo push tokens for actionable alerts with sound. Notification dispatch endpoints should be protected with `PUSH_DISPATCH_SECRET` in production.
+
+## AI assistance and evaluation
+
+Cloudflare Workers AI can enhance marketplace intent search, farmer listing suggestions, photo guidance, grounded Help Centre answers, and support summaries. Every feature retains a deterministic fallback when Cloudflare is unavailable, keeping the core marketplace functional and low cost.
+
+Synthetic expected examples live in `docs/ai-evaluation-data.json`. Run the regression suite after changing prompts, models, FAQ guidance, categories, or fallback rules:
+
+```powershell
+npm run ai:evaluate
+```
+
+The suite is evaluation data, not customer data and not a production model fine-tune. Add reviewed examples for real failure patterns; do not add personal information, support-ticket contents, or unverified AI answers.
 
 ## Storage and images
 
