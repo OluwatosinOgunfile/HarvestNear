@@ -8,7 +8,8 @@
     { "input": "breakfast produce", "expectedAny": ["egg", "plantain", "yam"] },
     { "input": "chicken", "expectedAny": ["chick", "poultry"] },
     { "input": "fresh maize", "expectedAny": ["corn"] },
-    { "input": "ugwu leaves", "expectedAny": ["spinach", "leafy vegetable"] }
+    { "input": "ugwu leaves", "expectedAny": ["spinach", "leafy vegetable"] },
+    { "input": "carbonhydrates", "expectedAny": ["rice", "yam", "cassava"] }
   ],
   "faq": [
     { "input": "Can I checkout without signing in?", "expectedTitle": "Accounts and checkout" },

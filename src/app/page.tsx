@@ -1099,7 +1099,14 @@ export default function Home() {
                   </div>
                 </article>
               ))}
-            </div> : <div className="empty-state"><Search size={28} /><h3>No harvests found</h3><p>Try another search or category.</p></div>}
+            </div> : <div className="marketplace-empty">
+              <div className="marketplace-empty-visual" aria-hidden="true"><span><Search size={25}/></span><i><Leaf size={14}/></i></div>
+              <span className="marketplace-empty-kicker">FRESH OPTIONS AWAIT</span>
+              <h3>No harvests matched your search.</h3>
+              <p>{query.trim() ? <>We could not find <strong>&ldquo;{query.trim()}&rdquo;</strong> in today&apos;s available produce. Try a broader term or browse everything nearby.</> : "No produce currently matches these filters. Adjust them or browse all available harvests."}</p>
+              {matchedIntentTerms.length > 0 && <small>Related terms checked: {matchedIntentTerms.join(", ")}</small>}
+              <div><button onClick={() => { setQuery(""); setCategory("All produce"); setCurrentPage(1); }}>Show all harvests <ArrowRight size={15}/></button><button onClick={() => setFiltersOpen(true)}><SlidersHorizontal size={15}/> Adjust filters</button></div>
+            </div>}
             {visible.length > 0 && <nav className="pagination" aria-label="Produce pagination">
               <p>Showing <strong>{(safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, visible.length)}</strong> of {visible.length} harvests</p>
               <div><button className="page-arrow" onClick={() => setCurrentPage(Math.max(1, safePage - 1))} disabled={safePage === 1} aria-label="Previous page"><ChevronLeft size={17}/></button>{Array.from({length:totalPages},(_,index)=>index+1).map(page=><button key={page} className={safePage === page ? "selected" : ""} onClick={() => { setCurrentPage(page); document.querySelector(".catalog")?.scrollIntoView({behavior:"smooth",block:"start"}); }} aria-label={`Page ${page}`} aria-current={safePage === page ? "page" : undefined}>{page}</button>)}<button className="page-arrow" onClick={() => setCurrentPage(Math.min(totalPages, safePage + 1))} disabled={safePage === totalPages} aria-label="Next page"><ChevronRight size={17}/></button></div>
