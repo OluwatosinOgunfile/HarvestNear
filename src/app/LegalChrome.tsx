@@ -4,7 +4,7 @@ import Link from "next/link";
 import styles from "./legal.module.css";
 
 export function LegalHeader() {
-  return <header className={styles.siteHeader}><div className={styles.headerInner}><Link className={styles.headerBrand} href="/"><Image src="/brand/harvestnearu-header-lockup.png" width={380} height={96} alt="HarvestNearU" priority/></Link><nav aria-label="Main navigation"><Link href="/">Home</Link><Link href="/produce"><ShoppingBag size={17}/> <span>Shop produce</span></Link><Link href="/orders"><PackageCheck size={17}/> <span>My orders</span></Link></nav><Link className={styles.accountLink} href="/profile"><UserRound size={19}/><span>Account</span></Link></div></header>;
+  return <header className={styles.siteHeader}><div className={styles.headerInner}><Link className={styles.headerBrand} href="/"><Image src="/brand/harvestnearu-opaque-seal-se2-lockup.png" width={380} height={96} alt="HarvestNearU" priority/></Link><nav aria-label="Main navigation"><Link href="/">Home</Link><Link href="/produce"><ShoppingBag size={17}/> <span>Shop produce</span></Link><Link href="/orders"><PackageCheck size={17}/> <span>My orders</span></Link></nav><Link className={styles.accountLink} href="/profile"><UserRound size={19}/><span>Account</span></Link></div></header>;
 }
 
 export function LegalFooter() {

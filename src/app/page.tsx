@@ -35,6 +35,7 @@ import {
   ShoppingBag,
   SlidersHorizontal,
   Star,
+  Sparkles,
   Store,
   Sun,
   Trash2,
@@ -1235,7 +1236,7 @@ function LandingPage({ stats, signedOut, onShop, onFarmer, onSignup }: { stats: 
   </main>;
 }
 
-type SupportTicket = { id: string; ticket_number: string; subject: string; category: string; priority: string; status: string; requester_name: string; requester_email: string; assignee_name: string | null; assigned_to: string | null; order_number: string | null; created_at: string; updated_at: string; messages: Array<{ id: string; body: string; is_internal: boolean; created_at: string; author_name: string; author_role: string }> };
+type SupportTicket = { id: string; ticket_number: string; subject: string; category: string; priority: string; status: string; requester_name: string; requester_email: string; assignee_name: string | null; assigned_to: string | null; order_number: string | null; ai_summary: string | null; created_at: string; updated_at: string; messages: Array<{ id: string; body: string; is_internal: boolean; created_at: string; author_name: string; author_role: string }> };
 
 function SupportTicketCentre({ user, onSignIn }: { user: CurrentUser | null; onSignIn: () => void }) {
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
@@ -1322,6 +1323,9 @@ function SupportTicketCentre({ user, onSignIn }: { user: CurrentUser | null; onS
 
 function SupportPage({ page, onNavigate, user, onSignIn }: { page: "help" | "delivery" | "returns"; onNavigate: (view: View) => void; user: CurrentUser | null; onSignIn: () => void }) {
   const [query, setQuery] = useState("");
+  const [assistantQuestion, setAssistantQuestion] = useState("");
+  const [assistantAnswer, setAssistantAnswer] = useState<{answer:string;sourceTitle:string}|null>(null);
+  const [assistantBusy, setAssistantBusy] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const [pickupCentres, setPickupCentres] = useState<Array<{ id: string; name: string; address_text: string; city: string; state: string; latitude: number; longitude: number; opening_hours: { summary?: string } | null }>>([]);
   useEffect(() => {
@@ -1353,6 +1357,7 @@ function SupportPage({ page, onNavigate, user, onSignIn }: { page: "help" | "del
     ["How can I suggest an improvement to HarvestNearU?", "Use Product feedback in the Help Centre to rate your experience, select the affected area, and describe what worked or should improve. The feedback enters the support team's review queue and remains visible in your history."],
   ];
   const visibleFaqs = faqs.filter(([question, answer]) => `${question} ${answer}`.toLowerCase().includes(query.toLowerCase()));
+  async function askHelpAssistant(event:FormEvent<HTMLFormElement>){event.preventDefault();if(!assistantQuestion.trim())return;setAssistantBusy(true);try{const response=await fetch("/api/ai/assist",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({feature:"faq",input:assistantQuestion})});const result=await readJsonResponse<{answer?:string;sourceTitle?:string;error?:string}>(response);if(!response.ok)throw new Error(result.error||"The assistant is unavailable");setAssistantAnswer({answer:result.answer||"Please create a support ticket.",sourceTitle:result.sourceTitle||"Help Centre"});}catch(reason){setAssistantAnswer({answer:(reason as Error).message,sourceTitle:"Help Centre"});}finally{setAssistantBusy(false)}}
 
   return <main className="support-page">
     <section className="support-hero">
@@ -1368,6 +1373,7 @@ function SupportPage({ page, onNavigate, user, onSignIn }: { page: "help" | "del
 
     {page === "help" && <section className="support-content">
       <div className="support-intro"><div><h2>Frequently asked questions</h2><p>Start here for the most common questions from customers and farmers.</p></div><label className="support-search"><Search size={16}/><span className="sr-only">Search help articles</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search help articles"/></label></div>
+      <form className="help-assistant" onSubmit={askHelpAssistant}><span><Sparkles size={20}/></span><div><strong>Ask HarvestNearU</strong><p>Answers are limited to verified Help Centre guidance.</p><label><span className="sr-only">Ask a question</span><input value={assistantQuestion} onChange={(event)=>setAssistantQuestion(event.target.value)} maxLength={500} placeholder="Ask about orders, delivery, payments, or payouts"/><button disabled={assistantBusy||!assistantQuestion.trim()}>{assistantBusy?"Checking...":"Ask"}</button></label>{assistantAnswer&&<blockquote><p>{assistantAnswer.answer}</p><cite>Source: {assistantAnswer.sourceTitle}</cite></blockquote>}</div></form>
       <div className="faq-list">{visibleFaqs.map(([question, answer], index) => <article className={`faq-item ${openFaq === index ? "open" : ""}`} key={question}><button aria-expanded={openFaq === index} onClick={() => setOpenFaq(openFaq === index ? null : index)}>{question}<ChevronRight size={16}/></button><div className={`faq-answer-collapse ${openFaq === index ? "open" : ""}`} aria-hidden={openFaq !== index}><div><p>{answer}</p></div></div></article>)}</div>
       {!visibleFaqs.length && <div className="empty-state"><Search size={26}/><h3>No answers found</h3><p>Try a shorter search term or contact our support team.</p></div>}
       <div className="support-note"><Headphones size={24}/><div><strong>Still need help?</strong><span>Our support team is available Monday to Saturday, 8am to 6pm.</span></div><button onClick={() => window.location.href = "mailto:hello@harvestnearu.com"}>Email support</button></div>

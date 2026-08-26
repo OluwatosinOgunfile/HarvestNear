@@ -3,11 +3,22 @@ import { randomBytes } from "node:crypto";
 
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
+import { runStructuredAi, ticketSummaryFallback } from "@/lib/harvest-ai";
 import { checkRateLimit, validText } from "@/lib/security";
 
 const categories = new Set(["order", "payment", "delivery", "refund", "account", "farm", "technical", "feedback", "other"]);
 const priorities = new Set(["low", "normal", "high", "urgent"]);
 const statuses = new Set(["open", "in_progress", "waiting_customer", "resolved", "closed"]);
+
+async function refreshSummary(sql:ReturnType<typeof getDatabase>,ticketId:string){
+  const [ticket]=await sql`SELECT subject,category FROM support_tickets WHERE id=${ticketId}`;
+  if(!ticket)return;
+  const messages=await sql`SELECT body FROM support_ticket_messages WHERE ticket_id=${ticketId} ORDER BY created_at DESC LIMIT 12`;
+  const bodies=messages.reverse().map(row=>String(row.body));
+  const fallback=ticketSummaryFallback(String(ticket.subject),String(ticket.category),bodies);
+  const ai=await runStructuredAi("Summarize a marketplace support case for staff. Return JSON only with summary. Include the issue, relevant order or farm name if present, customer expectation, actions taken, and next action. Do not invent facts.",`Subject: ${ticket.subject}\nCategory: ${ticket.category}\nConversation:\n${bodies.join("\n---\n")}`);
+  await sql`UPDATE support_tickets SET ai_summary=${String(ai?.summary||fallback).slice(0,900)},ai_summary_updated_at=now() WHERE id=${ticketId}`;
+}
 
 export async function GET(request: NextRequest) {
   const user = await getSessionUser();
@@ -39,7 +50,11 @@ export async function GET(request: NextRequest) {
     LIMIT 100
   `;
   const agents = staff ? await sql`SELECT id, first_name || ' ' || last_name AS name FROM users WHERE role IN ('admin','support') AND is_active ORDER BY first_name` : [];
-  return NextResponse.json({ tickets, agents, staff });
+  const visibleTickets = staff ? tickets.map((ticket) => ticket.ai_summary ? {
+    ...ticket,
+    messages: [{ id: `summary-${ticket.id}`, body: `Case summary\n${ticket.ai_summary}\n\nConfirm the conversation details before acting.`, is_internal: true, created_at: ticket.ai_summary_updated_at, author_name: "HarvestNearU assistant", author_role: "support" }, ...ticket.messages],
+  } : ticket) : tickets;
+  return NextResponse.json({ tickets: visibleTickets, agents, staff });
 }
 
 export async function POST(request: NextRequest) {
@@ -62,6 +77,7 @@ export async function POST(request: NextRequest) {
       sql`UPDATE support_tickets SET status = ${staff ? "waiting_customer" : "open"}, updated_at = now() WHERE id = ${ticket.id}`,
       ...(!internal && String(ticket.requester_id) !== user.id ? [sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) VALUES (${ticket.requester_id}, 'account', 'Support replied', ${`There is a new reply on ticket ${ticket.ticket_number}.`}, '/help', ${JSON.stringify({ ticketId: String(ticket.id) })}::jsonb)`] : []),
     ]);
+    await refreshSummary(sql,String(ticket.id));
     return NextResponse.json({ success: true });
   }
 
@@ -80,6 +96,7 @@ export async function POST(request: NextRequest) {
     sql`INSERT INTO support_ticket_messages (ticket_id, author_id, body) VALUES (${ticket.id}, ${user.id}, ${message})`,
     sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) SELECT id, 'account', 'New support ticket', ${`${ticketNumber}: ${subject}`}, '/help', ${JSON.stringify({ ticketId: String(ticket.id) })}::jsonb FROM users WHERE role IN ('admin','support') AND is_active`,
   ]);
+  await refreshSummary(sql,String(ticket.id));
   return NextResponse.json({ ticket }, { status: 201 });
 }
 
