@@ -79,6 +79,32 @@ export async function sendEmailVerificationCode(email: string, firstName: string
   return true;
 }
 
+export async function sendAccountDeletionCode(email: string, firstName: string, code: string) {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.ACCOUNT_FROM_EMAIL || process.env.PASSWORD_RESET_FROM_EMAIL || "HarvestNearU <accounts@harvestnearu.com>";
+  if (!apiKey) {
+    if (process.env.NODE_ENV !== "production") console.info(`Account deletion code for ${email}: ${code}`);
+    return false;
+  }
+  await sendWithResend({
+    apiKey,
+    from,
+    to: email,
+    subject: "Confirm deletion of your HarvestNearU account",
+    html: brandedEmail({
+      eyebrow: "ACCOUNT DELETION",
+      title: "Confirm this permanent action",
+      firstName,
+      intro: "A request was made to permanently delete your HarvestNearU account. Enter the code below only if you initiated this request.",
+      contentHtml: `<div style="margin:28px 0;padding:22px 16px;border:1px solid ${brand.border};border-radius:12px;background:#fff3ef;text-align:center"><div style="font-size:12px;font-weight:800;color:#a84335;text-transform:uppercase;letter-spacing:1.2px">Deletion confirmation code</div><div style="margin-top:8px;font-family:Manrope,Segoe UI,Arial,sans-serif;font-size:34px;line-height:1.2;font-weight:800;letter-spacing:7px;color:${brand.dark}">${escapeHtml(code)}</div><div style="margin-top:10px;font-size:13px;color:${brand.muted}">Expires in 15 minutes</div></div>`,
+      footerNote: "If you did not request account deletion, do not share this code. Change your password and contact support if you are concerned about your account.",
+    }),
+    text: `Hello ${firstName},\n\nYour HarvestNearU account deletion code is ${code}. It expires in 15 minutes.\n\nIf you did not request deletion, do not share this code.`,
+    errorLabel: "account deletion confirmation",
+  });
+  return true;
+}
+
 export async function sendNotificationEmail(input: { email: string; firstName: string; title: string; message: string; actionUrl: string | null }) {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) throw new Error("RESEND_API_KEY is not configured");

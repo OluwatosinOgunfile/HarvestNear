@@ -1,13 +1,42 @@
 import { del } from "@vercel/blob";
+import { createHash, randomInt } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { deleteSession, getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
+import { sendAccountDeletionCode } from "@/lib/email";
 import { mobileCorsHeaders, mobileOptions } from "@/lib/mobile-cors";
 import { canMutateAs, checkRateLimit } from "@/lib/security";
 
 export const runtime = "nodejs";
 export const OPTIONS = mobileOptions;
+
+const hashCode = (userId: string, code: string) => createHash("sha256").update(`${userId}:${code}`).digest("hex");
+
+export async function POST(request: Request) {
+  const headers = mobileCorsHeaders(request);
+  const session = await getSessionUser();
+  if (!session || !canMutateAs(session)) return NextResponse.json({ error: "Sign in to request account deletion" }, { status: 401, headers });
+  if (["admin", "support"].includes(session.role)) return NextResponse.json({ error: "Administrator and support accounts must be removed by another administrator" }, { status: 403, headers });
+  if (!await checkRateLimit(request, "account.delete-code", 5, 60 * 60, session.id)) return NextResponse.json({ error: "Too many code requests. Try again later." }, { status: 429, headers });
+  const sql = getDatabase();
+  const [account] = await sql`SELECT email, first_name FROM users WHERE id = ${session.id} AND is_active`;
+  if (!account) return NextResponse.json({ error: "Account not found" }, { status: 404, headers });
+  const code = String(randomInt(100000, 1000000));
+  await sql.transaction([
+    sql`UPDATE account_deletion_codes SET used_at = now() WHERE user_id = ${session.id} AND used_at IS NULL`,
+    sql`INSERT INTO account_deletion_codes (user_id, code_hash, expires_at) VALUES (${session.id}, ${hashCode(session.id, code)}, now() + interval '15 minutes')`,
+  ]);
+  try {
+    const delivered = await sendAccountDeletionCode(String(account.email), String(account.first_name), code);
+    if (!delivered && process.env.NODE_ENV === "production") throw new Error("Account email service is not configured");
+  }
+  catch (error) {
+    console.error("Account deletion email failed", error);
+    return NextResponse.json({ error: "We could not send the confirmation email. Try again shortly." }, { status: 503, headers });
+  }
+  return NextResponse.json({ sent: true, maskedEmail: String(account.email).replace(/^(.{2}).*(@.*)$/, "$1***$2"), expiresInSeconds: 900 }, { headers });
+}
 
 export async function DELETE(request: Request) {
   const headers = mobileCorsHeaders(request);
@@ -16,12 +45,16 @@ export async function DELETE(request: Request) {
   if (["admin", "support"].includes(session.role)) return NextResponse.json({ error: "Administrator and support accounts must be removed by another administrator" }, { status: 403, headers });
   if (!await checkRateLimit(request, "account.delete", 3, 60 * 60, session.id)) return NextResponse.json({ error: "Too many deletion attempts. Try again later." }, { status: 429, headers });
 
-  const body = await request.json().catch(() => null) as { confirmation?: string; password?: string } | null;
+  const body = await request.json().catch(() => null) as { confirmation?: string; password?: string; code?: string } | null;
   if (body?.confirmation !== "DELETE") return NextResponse.json({ error: "Type DELETE to confirm permanent account deletion" }, { status: 400, headers });
+  const code = body.code?.trim() || "";
+  if (!/^\d{6}$/.test(code)) return NextResponse.json({ error: "Enter the 6-digit code sent to your email" }, { status: 400, headers });
 
   const sql = getDatabase();
   const [account] = await sql`SELECT password_hash, avatar_url FROM users WHERE id = ${session.id} AND is_active`;
   if (!account) return NextResponse.json({ error: "Account not found" }, { status: 404, headers });
+  const [deletionCode] = await sql`SELECT id FROM account_deletion_codes WHERE user_id = ${session.id} AND code_hash = ${hashCode(session.id, code)} AND used_at IS NULL AND expires_at > now() ORDER BY created_at DESC LIMIT 1`;
+  if (!deletionCode) return NextResponse.json({ error: "That deletion code is incorrect or has expired" }, { status: 400, headers });
   if (account.password_hash) {
     const [verified] = await sql`SELECT crypt(${body.password || ""}, ${account.password_hash}) = ${account.password_hash} AS valid`;
     if (!verified?.valid) return NextResponse.json({ error: "Enter your current password to delete this account" }, { status: 401, headers });
@@ -45,6 +78,7 @@ export async function DELETE(request: Request) {
       sql`DELETE FROM mobile_web_handoffs WHERE user_id = ${session.id}`,
       sql`DELETE FROM password_reset_codes WHERE user_id = ${session.id}`,
       sql`DELETE FROM email_verification_codes WHERE user_id = ${session.id}`,
+      sql`UPDATE account_deletion_codes SET used_at = now() WHERE user_id = ${session.id} AND used_at IS NULL`,
       sql`DELETE FROM oauth_accounts WHERE user_id = ${session.id}`,
       sql`DELETE FROM user_email_preferences WHERE user_id = ${session.id}`,
       sql`DELETE FROM consumer_profiles WHERE user_id = ${session.id}`,
