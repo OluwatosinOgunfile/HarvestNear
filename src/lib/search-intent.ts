@@ -18,6 +18,17 @@ const mealIngredients: Array<{ phrases: string[]; terms: string[] }> = [
   { phrases: ["pepper soup"], terms: ["pepper", "chicken", "turkey", "fish"] },
 ];
 
+const produceSynonyms = [
+  ["chicken", "chick", "chicks", "poultry"],
+  ["pepper", "scotch bonnet"],
+  ["maize", "corn"],
+  ["ugwu", "spinach", "leafy vegetable", "leafy vegetables"],
+  ["cassava", "garri"],
+  ["beans", "legume", "legumes"],
+  ["plantain", "banana"],
+  ["yam", "tuber", "tubers"],
+] as const;
+
 function uniqueTerms(terms: string[]) {
   return [...new Set(terms.map((term) => term.trim().toLowerCase()).filter((term) => term.length > 1))].slice(0, 14);
 }
@@ -26,8 +37,9 @@ export function searchIntentFallback(input: string) {
   const query = input.toLowerCase().replace(/[^a-z0-9\s-]/g, " ").replace(/\s+/g, " ").trim();
   const matched = mealIngredients.find((intent) => intent.phrases.some((phrase) => query.includes(phrase)));
   const literalTerms = query.split(" ").filter((term) => !stopWords.has(term) && term.length > 1);
+  const synonymTerms = produceSynonyms.filter((group) => group.some((term) => query.includes(term))).flat();
   return {
-    terms: uniqueTerms([...(matched?.terms || []), ...literalTerms]),
+    terms: uniqueTerms([...(matched?.terms || []), ...synonymTerms, ...literalTerms]),
     explanation: matched
       ? matched.phrases[0].startsWith("vitamin") || matched.phrases.includes("iron") || matched.phrases.includes("protein")
         ? `Produce commonly associated with ${matched.phrases[0]}`

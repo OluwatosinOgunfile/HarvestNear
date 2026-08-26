@@ -5,7 +5,10 @@
     { "input": "what can I use for egusi soup", "expectedAny": ["melon", "ugwu", "pepper"] },
     { "input": "protein rich food", "expectedAny": ["egg", "beans", "chicken"] },
     { "input": "things for a fresh salad", "expectedAny": ["cucumber", "carrot", "lettuce"] },
-    { "input": "breakfast produce", "expectedAny": ["egg", "plantain", "yam"] }
+    { "input": "breakfast produce", "expectedAny": ["egg", "plantain", "yam"] },
+    { "input": "chicken", "expectedAny": ["chick", "poultry"] },
+    { "input": "fresh maize", "expectedAny": ["corn"] },
+    { "input": "ugwu leaves", "expectedAny": ["spinach", "leafy vegetable"] }
   ],
   "faq": [
     { "input": "Can I checkout without signing in?", "expectedTitle": "Accounts and checkout" },

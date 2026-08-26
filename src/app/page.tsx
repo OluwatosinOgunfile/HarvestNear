@@ -863,7 +863,7 @@ export default function Home() {
     const normalizedQuery = query.trim().toLowerCase();
     const filtered = products.filter((product) =>
       (effectiveCategory === "All produce" || product.category === effectiveCategory) &&
-      (!normalizedQuery || `${product.name} ${product.farmer} ${product.category}`.toLowerCase().includes(normalizedQuery) || matchesSearchTerms(`${product.name} ${product.farmer} ${product.category}`, effectiveIntentTerms)) &&
+      (!normalizedQuery || `${product.name} ${product.farmer} ${product.category}`.toLowerCase().includes(normalizedQuery) || matchesSearchTerms(`${product.name} ${product.category}`, effectiveIntentTerms)) &&
       (!distanceFilterActive || product.distance <= maxDistance) &&
       (!priceFilterActive || product.price <= maxPrice) &&
       (!todayOnly || product.available === "Today") && (!hideLowStock || product.stock > 15)
