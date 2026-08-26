@@ -5,6 +5,7 @@ import { getDatabase } from "@/lib/db";
 import { faqKnowledge, groundedFaqFallback, listingFallback, runStructuredAi } from "@/lib/harvest-ai";
 import { mobileCorsHeaders, mobileOptions } from "@/lib/mobile-cors";
 import { checkRateLimit } from "@/lib/security";
+import { searchIntentFallback } from "@/lib/search-intent";
 
 export const runtime = "nodejs";
 export const OPTIONS = mobileOptions;
@@ -15,15 +16,20 @@ export async function POST(request: Request) {
   const feature=String(body?.feature||""); const input=String(body?.input||"").trim();
   if(!input||input.length>1500)return NextResponse.json({error:"Enter a shorter request"},{status:400,headers});
   const user=await getSessionUser();
-  if(feature!=="faq"&&!user)return NextResponse.json({error:"Authentication required"},{status:401,headers});
+  if(!["faq","search"].includes(feature)&&!user)return NextResponse.json({error:"Authentication required"},{status:401,headers});
   if(feature==="listing"&&user?.role!=="farmer")return NextResponse.json({error:"Farmer account required"},{status:403,headers});
-  if(!["listing","faq","photo"].includes(feature))return NextResponse.json({error:"Unsupported assistant feature"},{status:400,headers});
-  if(!await checkRateLimit(request,`ai.${feature}`,feature==="faq"?30:20,86400,user?.id||"public"))return NextResponse.json({error:"Daily assistant limit reached. You can continue without AI."},{status:429,headers});
+  if(!["listing","faq","photo","search"].includes(feature))return NextResponse.json({error:"Unsupported assistant feature"},{status:400,headers});
+  if(!await checkRateLimit(request,`ai.${feature}`,["faq","search"].includes(feature)?30:20,86400,user?.id||"public"))return NextResponse.json({error:"Daily assistant limit reached. You can continue without AI."},{status:429,headers});
   const sql=getDatabase(); const cacheKey=keyFor(`${feature}:${input.toLowerCase()}:${feature==="photo"?JSON.stringify(body?.metadata||{}):""}`);
   const [cached]=await sql`SELECT response FROM ai_response_cache WHERE cache_key=${cacheKey} AND expires_at>now()`;
   if(cached)return NextResponse.json({...cached.response,cached:true},{headers});
   let result:Record<string,unknown>; let enhanced=false;
-  if(feature==="listing"){
+  if(feature==="search"){
+    const fallback=searchIntentFallback(input);
+    const ai=await runStructuredAi("Expand a Nigerian grocery shopping request into produce search terms. Return JSON only: terms (an array of at most 12 short ingredient or product names) and explanation. Do not provide a recipe and do not claim items are available.",input);
+    const aiTerms=Array.isArray(ai?.terms)?ai.terms.map(String).filter(Boolean).slice(0,12):[];
+    result={terms:[...new Set([...fallback.terms,...aiTerms].map((term)=>term.toLowerCase()))].slice(0,14),explanation:String(ai?.explanation||fallback.explanation).slice(0,140)}; enhanced=aiTerms.length>0;
+  }else if(feature==="listing"){
     const categories=await sql`SELECT id,name FROM produce_categories WHERE is_active ORDER BY name` as {id:string;name:string}[];
     const fallback=listingFallback(input,categories);
     const ai=await runStructuredAi("You assist Nigerian farmers. Return JSON only: title, description, categoryName, unit, badge. Never invent price, quantity, dates, certifications or health claims.",`Available categories: ${categories.map(x=>x.name).join(", ")}\nFarmer notes: ${input}`);

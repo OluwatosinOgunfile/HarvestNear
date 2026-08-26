@@ -60,6 +60,11 @@ button { color:inherit; cursor:pointer; }
 .location-button strong { margin-top:3px; font-size:13px; }
 .filter-button { padding:0 18px; display:flex; align-items:center; gap:8px; background:white; border:1px solid var(--line); font-size:13px; font-weight:700; }
 .catalog { width:min(1280px,calc(100% - 48px)); margin:67px auto 54px; }
+.search-intent-status { margin:0 0 18px; padding:12px 14px; display:flex; align-items:center; gap:10px; color:var(--green); background:var(--soft-green); border:1px solid var(--line); border-radius:6px; }
+.search-intent-status span { display:grid; gap:2px; }
+.search-intent-status strong { font-size:13px; }
+.search-intent-status small { color:var(--muted); font-size:12px; }
+.search-intent-status .spin { animation:harvest-spin .8s linear infinite; }
 .catalog-head { display:flex; justify-content:space-between; align-items:end; }
 .catalog-head h2,.panel-head h2 { margin:0; font-family:Georgia,serif; font-size:28px; font-weight:500; }
 .catalog-head p,.panel-head p { margin:5px 0 0; color:var(--muted); font-size:13px; }

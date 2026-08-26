@@ -51,6 +51,7 @@ function playNotificationChime(){try{const AudioContextClass=window.AudioContext
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { readJsonResponse } from "@/lib/client-api";
+import { matchesSearchTerms, searchIntentFallback } from "@/lib/search-intent";
 
 type Product = {
   id: string;
@@ -261,6 +262,10 @@ export default function Home() {
   const [view, setView] = useState<View>(() => viewFromPath(pathname));
   const [category, setCategory] = useState("All produce");
   const [query, setQuery] = useState("");
+  const [intentTerms, setIntentTerms] = useState<string[]>([]);
+  const [intentExplanation, setIntentExplanation] = useState("");
+  const [intentLoading, setIntentLoading] = useState(false);
+  const [intentResolvedQuery, setIntentResolvedQuery] = useState("");
   const [cart, setCart] = useState<Record<string, number>>({});
   const [basketToast, setBasketToast] = useState<{ id: number; product: string } | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
@@ -819,11 +824,46 @@ export default function Home() {
     ...new Set(products.map((product) => product.category).filter(Boolean).sort((left, right) => left.localeCompare(right))),
   ], [products]);
   const effectiveCategory = availableCategories.includes(category) ? category : "All produce";
+  const searchInput = query.trim();
+  const hasLiteralSearchMatch = useMemo(() => products.some((product) => `${product.name} ${product.farmer} ${product.category}`.toLowerCase().includes(searchInput.toLowerCase())), [products, searchInput]);
+  const fallbackIntent = useMemo(() => searchIntentFallback(searchInput), [searchInput]);
+  const shouldExpandIntent = searchInput.length >= 3 && !hasLiteralSearchMatch;
+  const effectiveIntentTerms = useMemo(() => shouldExpandIntent ? (intentResolvedQuery === searchInput ? intentTerms : fallbackIntent.terms) : [], [shouldExpandIntent, intentResolvedQuery, searchInput, intentTerms, fallbackIntent.terms]);
+  const effectiveIntentExplanation = intentResolvedQuery === searchInput ? intentExplanation : fallbackIntent.explanation;
+  const effectiveIntentLoading = intentLoading && intentResolvedQuery === searchInput;
+
+  useEffect(() => {
+    const input = query.trim();
+    if (input.length < 3 || products.some((product) => `${product.name} ${product.farmer} ${product.category}`.toLowerCase().includes(input.toLowerCase()))) return;
+    const fallback = searchIntentFallback(input);
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setIntentResolvedQuery(input);
+      setIntentLoading(true);
+      try {
+        const response = await fetch("/api/ai/assist", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ feature: "search", input }), signal: controller.signal });
+        const data = await response.json().catch(() => null) as { terms?: string[]; explanation?: string } | null;
+        if (response.ok && data?.terms?.length) {
+          setIntentTerms([...new Set([...fallback.terms, ...data.terms].map((term) => term.toLowerCase()))]);
+          setIntentExplanation(data.explanation || fallback.explanation);
+        }
+      } catch (error) {
+        if ((error as Error).name !== "AbortError") {
+          setIntentTerms(fallback.terms);
+          setIntentExplanation(fallback.explanation);
+        }
+      } finally {
+        if (!controller.signal.aborted) setIntentLoading(false);
+      }
+    }, 450);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [query, products]);
 
   const visible = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
     const filtered = products.filter((product) =>
       (effectiveCategory === "All produce" || product.category === effectiveCategory) &&
-      (product.name.toLowerCase().includes(query.toLowerCase()) || product.farmer.toLowerCase().includes(query.toLowerCase())) &&
+      (!normalizedQuery || `${product.name} ${product.farmer} ${product.category}`.toLowerCase().includes(normalizedQuery) || matchesSearchTerms(`${product.name} ${product.farmer} ${product.category}`, effectiveIntentTerms)) &&
       (!distanceFilterActive || product.distance <= maxDistance) &&
       (!priceFilterActive || product.price <= maxPrice) &&
       (!todayOnly || product.available === "Today") && (!hideLowStock || product.stock > 15)
@@ -835,9 +875,10 @@ export default function Home() {
       if (sortBy === "stock") return b.stock - a.stock;
       return a.distance - b.distance;
     });
-  }, [products, effectiveCategory, query, distanceFilterActive, maxDistance, priceFilterActive, maxPrice, todayOnly, hideLowStock, sortBy]);
+  }, [products, effectiveCategory, query, effectiveIntentTerms, distanceFilterActive, maxDistance, priceFilterActive, maxPrice, todayOnly, hideLowStock, sortBy]);
 
   const activeFilterCount = Number(distanceFilterActive) + Number(priceFilterActive) + Number(todayOnly) + Number(hideLowStock);
+  const matchedIntentTerms = useMemo(() => effectiveIntentTerms.filter((term) => products.some((product) => matchesSearchTerms(`${product.name} ${product.category}`, [term]))), [effectiveIntentTerms, products]);
   // Keep full rows across the catalog's three- and four-column desktop layouts.
   const pageSize = 12;
   const totalPages = Math.max(1, Math.ceil(visible.length / pageSize));
@@ -1021,6 +1062,9 @@ export default function Home() {
           </section>
 
           <section className="catalog">
+            {query.trim() && (effectiveIntentLoading || matchedIntentTerms.length > 0) && <div className="search-intent-status" role="status" aria-live="polite">
+              {effectiveIntentLoading ? <LoaderCircle size={17} className="spin"/> : <Leaf size={17}/>}<span><strong>{effectiveIntentLoading ? "Understanding your search..." : effectiveIntentExplanation}</strong>{matchedIntentTerms.length > 0 && <small>Matching available produce: {matchedIntentTerms.join(", ")}</small>}</span>
+            </div>}
             <div className="catalog-head">
               <div><h2>Harvests near you</h2><p>{visible.length} available listing{visible.length === 1 ? "" : "s"} near {locationOverride ? deliveryLocation.name : savedLocationLabel || deliveryLocation.name}</p></div>
               <label className="sort"><span>Sort by</span><select value={sortBy} onChange={(event) => { setSortBy(event.target.value as typeof sortBy); setCurrentPage(1); }}><option value="nearest">Shortest walk first</option><option value="price-low">Price: low to high</option><option value="price-high">Price: high to low</option><option value="rating">Highest rated</option><option value="stock">Most available</option></select><ChevronDown size={15}/></label>
