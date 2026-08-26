@@ -19,10 +19,10 @@ export async function POST(request: Request) {
   if(!["faq","search"].includes(feature)&&!user)return NextResponse.json({error:"Authentication required"},{status:401,headers});
   if(feature==="listing"&&user?.role!=="farmer")return NextResponse.json({error:"Farmer account required"},{status:403,headers});
   if(!["listing","faq","photo","search"].includes(feature))return NextResponse.json({error:"Unsupported assistant feature"},{status:400,headers});
-  if(!await checkRateLimit(request,`ai.${feature}`,["faq","search"].includes(feature)?30:20,86400,user?.id||"public"))return NextResponse.json({error:"Daily assistant limit reached. You can continue without AI."},{status:429,headers});
   const sql=getDatabase(); const cacheVersion=feature==="search"?"v2:":""; const cacheKey=keyFor(`${cacheVersion}${feature}:${input.toLowerCase()}:${feature==="photo"?JSON.stringify(body?.metadata||{}):""}`);
   const [cached]=await sql`SELECT response FROM ai_response_cache WHERE cache_key=${cacheKey} AND expires_at>now()`;
   if(cached)return NextResponse.json({...cached.response,cached:true},{headers});
+  if(!await checkRateLimit(request,`ai.${feature}`,["faq","search"].includes(feature)?30:20,86400,user?.id||"public"))return NextResponse.json({error:"Daily assistant limit reached. Cached searches remain available; try a different term or return tomorrow."},{status:429,headers});
   let result:Record<string,unknown>; let enhanced=false;
   if(feature==="search"){
     const fallback=searchIntentFallback(input);

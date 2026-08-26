@@ -855,14 +855,14 @@ export default function Home() {
       setIntentEnhanced(false);
       try {
         const response = await fetch("/api/ai/assist", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ feature: "search", input }), signal: controller.signal });
-        const data = await response.json().catch(() => null) as { terms?: string[]; explanation?: string; enhanced?: boolean } | null;
+        const data = await response.json().catch(() => null) as { terms?: string[]; explanation?: string; enhanced?: boolean; error?: string } | null;
         if (response.ok && data?.terms?.length) {
           setIntentTerms([...new Set([...fallback.terms, ...data.terms].map((term) => term.toLowerCase()))]);
           setIntentExplanation(data.explanation || fallback.explanation);
           setIntentEnhanced(Boolean(data.enhanced) || data.terms.some((term) => !fallback.terms.includes(term.toLowerCase())));
         } else {
           setIntentTerms(fallback.terms);
-          setIntentExplanation("No broader marketplace matches were found");
+          setIntentExplanation(data?.error || "No broader marketplace matches were found");
         }
       } catch (error) {
         if ((error as Error).name !== "AbortError") {
