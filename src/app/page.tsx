@@ -266,6 +266,7 @@ export default function Home() {
   const [intentExplanation, setIntentExplanation] = useState("");
   const [intentLoading, setIntentLoading] = useState(false);
   const [intentResolvedQuery, setIntentResolvedQuery] = useState("");
+  const [intentEnhanced, setIntentEnhanced] = useState(false);
   const [cart, setCart] = useState<Record<string, number>>({});
   const [basketToast, setBasketToast] = useState<{ id: number; product: string } | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
@@ -826,38 +827,54 @@ export default function Home() {
   const effectiveCategory = availableCategories.includes(category) ? category : "All produce";
   const searchInput = query.trim();
   const fallbackIntent = useMemo(() => searchIntentFallback(searchInput), [searchInput]);
+  const localSearchMatchCount = useMemo(() => {
+    if (searchInput.length < 3) return 0;
+    const normalizedQuery = searchInput.toLowerCase();
+    return products.filter((product) =>
+      (effectiveCategory === "All produce" || product.category === effectiveCategory) &&
+      (`${product.name} ${product.farmer} ${product.category}`.toLowerCase().includes(normalizedQuery) ||
+        matchesSearchTerms(`${product.name} ${product.category}`, fallbackIntent.terms))
+    ).length;
+  }, [products, effectiveCategory, searchInput, fallbackIntent.terms]);
   const effectiveIntentTerms = useMemo(() => searchInput.length >= 3
-    ? [...new Set([...fallbackIntent.terms, ...(intentResolvedQuery === searchInput ? intentTerms : [])])]
-    : [], [searchInput, fallbackIntent.terms, intentResolvedQuery, intentTerms]);
-  const effectiveIntentExplanation = intentResolvedQuery === searchInput ? intentExplanation : fallbackIntent.explanation;
-  const effectiveIntentLoading = intentLoading && intentResolvedQuery === searchInput;
+    ? [...new Set([...fallbackIntent.terms, ...(localSearchMatchCount === 0 && intentResolvedQuery === searchInput ? intentTerms : [])])]
+    : [], [searchInput, fallbackIntent.terms, localSearchMatchCount, intentResolvedQuery, intentTerms]);
+  const effectiveIntentExplanation = localSearchMatchCount === 0 && intentResolvedQuery === searchInput ? intentExplanation : fallbackIntent.explanation;
+  const effectiveIntentLoading = localSearchMatchCount === 0 && intentLoading && intentResolvedQuery === searchInput;
+  const effectiveIntentEnhanced = localSearchMatchCount === 0 && intentResolvedQuery === searchInput && intentEnhanced;
 
   useEffect(() => {
     const input = query.trim();
-    if (input.length < 3 || products.some((product) => `${product.name} ${product.farmer} ${product.category}`.toLowerCase().includes(input.toLowerCase()))) return;
+    if (productsLoading || productsError) return;
+    if (input.length < 3 || localSearchMatchCount > 0) return;
     const fallback = searchIntentFallback(input);
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       setIntentResolvedQuery(input);
       setIntentLoading(true);
+      setIntentEnhanced(false);
       try {
         const response = await fetch("/api/ai/assist", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ feature: "search", input }), signal: controller.signal });
-        const data = await response.json().catch(() => null) as { terms?: string[]; explanation?: string } | null;
+        const data = await response.json().catch(() => null) as { terms?: string[]; explanation?: string; enhanced?: boolean } | null;
         if (response.ok && data?.terms?.length) {
           setIntentTerms([...new Set([...fallback.terms, ...data.terms].map((term) => term.toLowerCase()))]);
           setIntentExplanation(data.explanation || fallback.explanation);
+          setIntentEnhanced(Boolean(data.enhanced) || data.terms.some((term) => !fallback.terms.includes(term.toLowerCase())));
+        } else {
+          setIntentTerms(fallback.terms);
+          setIntentExplanation("No broader marketplace matches were found");
         }
       } catch (error) {
         if ((error as Error).name !== "AbortError") {
           setIntentTerms(fallback.terms);
-          setIntentExplanation(fallback.explanation);
+          setIntentExplanation("No broader marketplace matches were found");
         }
       } finally {
         if (!controller.signal.aborted) setIntentLoading(false);
       }
     }, 450);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [query, products]);
+  }, [query, localSearchMatchCount, productsLoading, productsError]);
 
   const visible = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -1062,8 +1079,8 @@ export default function Home() {
           </section>
 
           <section className="catalog">
-            {query.trim() && (effectiveIntentLoading || matchedIntentTerms.length > 0) && <div className="search-intent-status" role="status" aria-live="polite">
-              {effectiveIntentLoading ? <LoaderCircle size={17} className="spin"/> : <Leaf size={17}/>}<span><strong>{effectiveIntentLoading ? "Understanding your search..." : effectiveIntentExplanation}</strong>{matchedIntentTerms.length > 0 && <small>Matching available produce: {matchedIntentTerms.join(", ")}</small>}</span>
+            {query.trim() && (effectiveIntentLoading || matchedIntentTerms.length > 0 || (localSearchMatchCount === 0 && intentResolvedQuery === searchInput)) && <div className="search-intent-status" role="status" aria-live="polite">
+              {effectiveIntentLoading ? <LoaderCircle size={17} className="spin"/> : <Leaf size={17}/>}<span><strong>{effectiveIntentLoading ? "Looking for broader matches..." : effectiveIntentEnhanced ? `AI-assisted: ${effectiveIntentExplanation}` : effectiveIntentExplanation}</strong>{matchedIntentTerms.length > 0 && <small>Matching available produce: {matchedIntentTerms.join(", ")}</small>}</span>
             </div>}
             <div className="catalog-head">
               <div><h2>Harvests near you</h2><p>{visible.length} available listing{visible.length === 1 ? "" : "s"} near {locationOverride ? deliveryLocation.name : savedLocationLabel || deliveryLocation.name}</p></div>
@@ -1103,7 +1120,7 @@ export default function Home() {
               <div className="marketplace-empty-visual" aria-hidden="true"><span><Search size={25}/></span><i><Leaf size={14}/></i></div>
               <span className="marketplace-empty-kicker">FRESH OPTIONS AWAIT</span>
               <h3>No harvests matched your search.</h3>
-              <p>{query.trim() ? <>We could not find <strong>&ldquo;{query.trim()}&rdquo;</strong> in today&apos;s available produce. Try a broader term or browse everything nearby.</> : "No produce currently matches these filters. Adjust them or browse all available harvests."}</p>
+              <p>{query.trim() ? <>We could not find <strong>&ldquo;{query.trim()}&rdquo;</strong> in today&apos;s available produce.{localSearchMatchCount === 0 && intentResolvedQuery === searchInput && !effectiveIntentLoading ? " A broader AI-assisted search was also checked." : ""} Try a broader term or browse everything nearby.</> : "No produce currently matches these filters. Adjust them or browse all available harvests."}</p>
               {matchedIntentTerms.length > 0 && <small>Related terms checked: {matchedIntentTerms.join(", ")}</small>}
               <div><button onClick={() => { setQuery(""); setCategory("All produce"); setCurrentPage(1); }}>Show all harvests <ArrowRight size={15}/></button><button onClick={() => setFiltersOpen(true)}><SlidersHorizontal size={15}/> Adjust filters</button></div>
             </div>}
