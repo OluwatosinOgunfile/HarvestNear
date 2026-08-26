@@ -825,10 +825,10 @@ export default function Home() {
   ], [products]);
   const effectiveCategory = availableCategories.includes(category) ? category : "All produce";
   const searchInput = query.trim();
-  const hasLiteralSearchMatch = useMemo(() => products.some((product) => `${product.name} ${product.farmer} ${product.category}`.toLowerCase().includes(searchInput.toLowerCase())), [products, searchInput]);
   const fallbackIntent = useMemo(() => searchIntentFallback(searchInput), [searchInput]);
-  const shouldExpandIntent = searchInput.length >= 3 && !hasLiteralSearchMatch;
-  const effectiveIntentTerms = useMemo(() => shouldExpandIntent ? (intentResolvedQuery === searchInput ? intentTerms : fallbackIntent.terms) : [], [shouldExpandIntent, intentResolvedQuery, searchInput, intentTerms, fallbackIntent.terms]);
+  const effectiveIntentTerms = useMemo(() => searchInput.length >= 3
+    ? [...new Set([...fallbackIntent.terms, ...(intentResolvedQuery === searchInput ? intentTerms : [])])]
+    : [], [searchInput, fallbackIntent.terms, intentResolvedQuery, intentTerms]);
   const effectiveIntentExplanation = intentResolvedQuery === searchInput ? intentExplanation : fallbackIntent.explanation;
   const effectiveIntentLoading = intentLoading && intentResolvedQuery === searchInput;
 

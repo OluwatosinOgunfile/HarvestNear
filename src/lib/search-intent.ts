@@ -4,6 +4,10 @@ const stopWords = new Set([
 ]);
 
 const mealIngredients: Array<{ phrases: string[]; terms: string[] }> = [
+  { phrases: ["vitamin c", "vitamin-c"], terms: ["orange", "pineapple", "tomato", "pepper", "fruit"] },
+  { phrases: ["vitamin a", "vitamin-a"], terms: ["carrot", "spinach", "ugwu", "sweet potato", "egg"] },
+  { phrases: ["iron rich", "iron-rich", "iron"], terms: ["spinach", "ugwu", "beans", "egg"] },
+  { phrases: ["high protein", "protein rich", "protein"], terms: ["egg", "beans", "chicken", "turkey"] },
   { phrases: ["fried rice"], terms: ["rice", "carrot", "egg", "peas", "sweet corn", "onion", "pepper", "chicken"] },
   { phrases: ["jollof rice", "jollof"], terms: ["rice", "tomato", "pepper", "onion", "chicken"] },
   { phrases: ["vegetable soup", "edikaikong", "efo riro"], terms: ["ugwu", "spinach", "pepper", "onion", "tomato"] },
@@ -24,7 +28,11 @@ export function searchIntentFallback(input: string) {
   const literalTerms = query.split(" ").filter((term) => !stopWords.has(term) && term.length > 1);
   return {
     terms: uniqueTerms([...(matched?.terms || []), ...literalTerms]),
-    explanation: matched ? `Ingredients commonly used for ${matched.phrases[0]}` : "Related marketplace search terms",
+    explanation: matched
+      ? matched.phrases[0].startsWith("vitamin") || matched.phrases.includes("iron") || matched.phrases.includes("protein")
+        ? `Produce commonly associated with ${matched.phrases[0]}`
+        : `Ingredients commonly used for ${matched.phrases[0]}`
+      : "Related marketplace search terms",
   };
 }
 
