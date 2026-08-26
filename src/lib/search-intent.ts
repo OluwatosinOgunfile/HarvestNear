@@ -3,12 +3,21 @@ const stopWords = new Set([
   "need", "of", "please", "recipe", "the", "to", "want", "with",
 ]);
 
-const mealIngredients: Array<{ phrases: string[]; terms: string[] }> = [
-  { phrases: ["vitamin c", "vitamin-c"], terms: ["orange", "pineapple", "tomato", "pepper", "fruit"] },
-  { phrases: ["vitamin a", "vitamin-a"], terms: ["carrot", "spinach", "ugwu", "sweet potato", "egg"] },
-  { phrases: ["iron rich", "iron-rich", "iron"], terms: ["spinach", "ugwu", "beans", "egg"] },
-  { phrases: ["high protein", "protein rich", "protein"], terms: ["egg", "beans", "chicken", "turkey"] },
-  { phrases: ["carbohydrates", "carbohydrate", "carbonhydrates", "carbs"], terms: ["rice", "yam", "cassava", "plantain", "corn", "beans", "tuber", "grain"] },
+const mealIngredients: Array<{ phrases: string[]; terms: string[]; context?: "nutrition" }> = [
+  { phrases: ["vitamin c", "vitamin-c"], terms: ["orange", "pineapple", "tomato", "pepper", "fruit"], context: "nutrition" },
+  { phrases: ["vitamin a", "vitamin-a"], terms: ["carrot", "spinach", "ugwu", "sweet potato", "egg"], context: "nutrition" },
+  { phrases: ["vitamin e", "vitamin-e"], terms: ["avocado", "spinach", "ugwu", "egg"], context: "nutrition" },
+  { phrases: ["iron rich", "iron-rich", "iron"], terms: ["spinach", "ugwu", "beans", "egg"], context: "nutrition" },
+  { phrases: ["high protein", "protein rich", "protein"], terms: ["egg", "beans", "chicken", "turkey"], context: "nutrition" },
+  { phrases: ["carbohydrates", "carbohydrate", "carbonhydrates", "carbs"], terms: ["rice", "yam", "cassava", "plantain", "corn", "beans", "tuber", "grain"], context: "nutrition" },
+  { phrases: ["potassium"], terms: ["plantain", "yam", "cassava", "sweet potato", "spinach", "ugwu", "okra", "avocado", "tomato", "orange"], context: "nutrition" },
+  { phrases: ["low sodium", "sodium"], terms: ["spinach", "ugwu", "carrot", "cucumber", "tomato", "avocado", "fruit", "vegetable"], context: "nutrition" },
+  { phrases: ["calcium"], terms: ["spinach", "ugwu", "egg", "beans", "orange"], context: "nutrition" },
+  { phrases: ["magnesium"], terms: ["spinach", "ugwu", "beans", "avocado", "plantain"], context: "nutrition" },
+  { phrases: ["fibre", "fiber"], terms: ["beans", "okra", "avocado", "carrot", "fruit", "vegetable", "grain"], context: "nutrition" },
+  { phrases: ["folate", "folic acid"], terms: ["spinach", "ugwu", "beans", "avocado", "orange"], context: "nutrition" },
+  { phrases: ["zinc"], terms: ["egg", "beans", "chicken", "turkey"], context: "nutrition" },
+  { phrases: ["antioxidant", "antioxidants"], terms: ["tomato", "pepper", "carrot", "orange", "spinach", "ugwu"], context: "nutrition" },
   { phrases: ["fried rice"], terms: ["rice", "carrot", "egg", "peas", "sweet corn", "onion", "pepper", "chicken"] },
   { phrases: ["jollof rice", "jollof"], terms: ["rice", "tomato", "pepper", "onion", "chicken"] },
   { phrases: ["vegetable soup", "edikaikong", "efo riro"], terms: ["ugwu", "spinach", "pepper", "onion", "tomato"] },
@@ -42,7 +51,7 @@ export function searchIntentFallback(input: string) {
   return {
     terms: uniqueTerms([...(matched?.terms || []), ...synonymTerms, ...literalTerms]),
     explanation: matched
-      ? matched.phrases[0].startsWith("vitamin") || matched.phrases.includes("iron") || matched.phrases.includes("protein") || matched.phrases.includes("carbohydrates")
+      ? matched.context === "nutrition"
         ? `Produce commonly associated with ${matched.phrases[0]}`
         : `Ingredients commonly used for ${matched.phrases[0]}`
       : "Related marketplace search terms",

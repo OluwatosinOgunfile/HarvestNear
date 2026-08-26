@@ -9,7 +9,10 @@
     { "input": "chicken", "expectedAny": ["chick", "poultry"] },
     { "input": "fresh maize", "expectedAny": ["corn"] },
     { "input": "ugwu leaves", "expectedAny": ["spinach", "leafy vegetable"] },
-    { "input": "carbonhydrates", "expectedAny": ["rice", "yam", "cassava"] }
+    { "input": "carbonhydrates", "expectedAny": ["rice", "yam", "cassava"] },
+    { "input": "sodium", "expectedAny": ["spinach", "carrot", "cucumber"] },
+    { "input": "foods with potassium", "expectedAny": ["plantain", "yam", "okra"] },
+    { "input": "high fibre foods", "expectedAny": ["beans", "okra", "grain"] }
   ],
   "faq": [
     { "input": "Can I checkout without signing in?", "expectedTitle": "Accounts and checkout" },

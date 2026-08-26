@@ -22,7 +22,8 @@ export async function POST(request: Request) {
   const sql=getDatabase(); const cacheVersion=feature==="search"?"v2:":""; const cacheKey=keyFor(`${cacheVersion}${feature}:${input.toLowerCase()}:${feature==="photo"?JSON.stringify(body?.metadata||{}):""}`);
   const [cached]=await sql`SELECT response FROM ai_response_cache WHERE cache_key=${cacheKey} AND expires_at>now()`;
   if(cached)return NextResponse.json({...cached.response,cached:true},{headers});
-  if(!await checkRateLimit(request,`ai.${feature}`,["faq","search"].includes(feature)?30:20,86400,user?.id||"public"))return NextResponse.json({error:"Daily assistant limit reached. Cached searches remain available; try a different term or return tomorrow."},{status:429,headers});
+  const dailyLimit=feature==="search"?60:feature==="faq"?30:20;
+  if(!await checkRateLimit(request,`ai.${feature}`,dailyLimit,86400,user?.id||"public"))return NextResponse.json({error:"Daily assistant limit reached. Cached and common nutrition searches remain available; try a different term or return tomorrow."},{status:429,headers});
   let result:Record<string,unknown>; let enhanced=false;
   if(feature==="search"){
     const fallback=searchIntentFallback(input);
