@@ -29,6 +29,7 @@ const mealIngredients: Array<{ phrases: string[]; terms: string[]; context?: "nu
 ];
 
 const produceSynonyms = [
+  ["rice", "oryza", "oryza sativa", "oriza", "oriza sativa"],
   ["chicken", "chick", "chicks", "poultry"],
   ["pepper", "scotch bonnet"],
   ["maize", "corn"],
