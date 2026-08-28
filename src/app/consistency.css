@@ -9,6 +9,21 @@
     transform 160ms ease;
 }
 
+.amara-inline-avatar,
+.help-assistant > span img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+.search-intent-status .amara-inline-avatar {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: 9px;
+}
+
 .app-shell :is(button, a, input, select, textarea):focus-visible {
   outline: 3px solid color-mix(in srgb, var(--green) 24%, transparent);
   outline-offset: 2px;

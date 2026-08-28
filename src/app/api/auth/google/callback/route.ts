@@ -3,13 +3,20 @@ import { NextResponse } from "next/server";
 
 import { createSession } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
-import { GOOGLE_OAUTH_RETURN_COOKIE, GOOGLE_OAUTH_STATE_COOKIE, GOOGLE_OAUTH_VERIFIER_COOKIE, googleAuthConfigured, validReturnPath } from "@/lib/google-auth";
+import { GOOGLE_OAUTH_MOBILE_COOKIE, GOOGLE_OAUTH_RETURN_COOKIE, GOOGLE_OAUTH_STATE_COOKIE, GOOGLE_OAUTH_VERIFIER_COOKIE, googleAuthConfigured, validReturnPath } from "@/lib/google-auth";
 import { dispatchNotificationEmails } from "@/lib/notification-email";
 
 type GoogleUser = { sub?: string; email?: string; email_verified?: boolean; given_name?: string; family_name?: string; name?: string; picture?: string };
 
 function errorRedirect(request: Request, reason: string) {
   return NextResponse.redirect(new URL(`/?authError=${encodeURIComponent(reason)}`, request.url));
+}
+
+function mobileRedirect(reason: string, token?: string) {
+  const target = new URL("harvestnearu://auth");
+  if (token) target.searchParams.set("token", token);
+  if (reason) target.searchParams.set("error", reason);
+  return NextResponse.redirect(target);
 }
 
 export async function GET(request: Request) {
@@ -19,12 +26,14 @@ export async function GET(request: Request) {
   const state = cookieStore.get(GOOGLE_OAUTH_STATE_COOKIE)?.value;
   const verifier = cookieStore.get(GOOGLE_OAUTH_VERIFIER_COOKIE)?.value;
   const returnTo = validReturnPath(cookieStore.get(GOOGLE_OAUTH_RETURN_COOKIE)?.value || null);
+  const mobile = cookieStore.get(GOOGLE_OAUTH_MOBILE_COOKIE)?.value === "1";
   const suppliedState = url.searchParams.get("state");
   const code = url.searchParams.get("code");
   cookieStore.delete(GOOGLE_OAUTH_STATE_COOKIE);
   cookieStore.delete(GOOGLE_OAUTH_VERIFIER_COOKIE);
   cookieStore.delete(GOOGLE_OAUTH_RETURN_COOKIE);
-  if (!state || !verifier || !code || suppliedState !== state) return errorRedirect(request, "invalid_google_request");
+  cookieStore.delete(GOOGLE_OAUTH_MOBILE_COOKIE);
+  if (!state || !verifier || !code || suppliedState !== state) return mobile ? mobileRedirect("invalid_google_request") : errorRedirect(request, "invalid_google_request");
 
   try {
     const callbackUrl = new URL("/api/auth/google/callback", url.origin).toString();
@@ -86,15 +95,16 @@ export async function GET(request: Request) {
       await sql`UPDATE oauth_accounts SET provider_email = ${email}, picture_url = ${profile.picture || null}, updated_at = now() WHERE user_id = ${user.id} AND provider = 'google'`;
     }
 
-    if (!user.is_active) return errorRedirect(request, "account_disabled");
+    if (!user.is_active) return mobile ? mobileRedirect("account_disabled") : errorRedirect(request, "account_disabled");
     await sql.transaction([
       sql`UPDATE users SET email_verified_at = COALESCE(email_verified_at, now()), last_login_at = now(), updated_at = now() WHERE id = ${user.id}`,
       sql`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES (${user.id}, 'user.google_signed_in', 'user', ${user.id}, ${JSON.stringify({ email })}::jsonb)`,
     ]);
-    await createSession(String(user.id));
+    const session = await createSession(String(user.id));
+    if (mobile) return mobileRedirect("", session.token);
     return NextResponse.redirect(new URL(returnTo, url.origin));
   } catch (error) {
     console.error("Google authentication failed", error);
-    return errorRedirect(request, "google_signin_failed");
+    return mobile ? mobileRedirect("google_signin_failed") : errorRedirect(request, "google_signin_failed");
   }
 }

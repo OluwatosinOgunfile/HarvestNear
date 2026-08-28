@@ -35,7 +35,6 @@ import {
   ShoppingBag,
   SlidersHorizontal,
   Star,
-  Sparkles,
   Store,
   Sun,
   Trash2,
@@ -1080,7 +1079,7 @@ export default function Home() {
 
           <section className="catalog">
             {query.trim() && (effectiveIntentLoading || matchedIntentTerms.length > 0 || (localSearchMatchCount === 0 && intentResolvedQuery === searchInput)) && <div className="search-intent-status" role="status" aria-live="polite">
-              {effectiveIntentLoading ? <LoaderCircle size={17} className="spin"/> : <Leaf size={17}/>}<span><strong>{effectiveIntentLoading ? "Looking for broader matches..." : effectiveIntentEnhanced ? `AI-assisted: ${effectiveIntentExplanation}` : effectiveIntentExplanation}</strong>{matchedIntentTerms.length > 0 && <small>Matching available produce: {matchedIntentTerms.join(", ")}</small>}</span>
+              <img src="/brand/amara-avatar.png" alt="Amara, HarvestNearU assistant" style={{width:34,height:34,objectFit:"cover",borderRadius:9,flex:"none"}}/><span><strong>{effectiveIntentLoading ? "Amara is looking for broader matches..." : effectiveIntentEnhanced ? `Amara suggests: ${effectiveIntentExplanation}` : effectiveIntentExplanation}</strong>{matchedIntentTerms.length > 0 && <small>Matching available produce: {matchedIntentTerms.join(", ")}</small>}</span>
             </div>}
             <div className="catalog-head">
               <div><h2>Harvests near you</h2><p>{visible.length} available listing{visible.length === 1 ? "" : "s"} near {locationOverride ? deliveryLocation.name : savedLocationLabel || deliveryLocation.name}</p></div>
@@ -1441,7 +1440,7 @@ function SupportPage({ page, onNavigate, user, onSignIn }: { page: "help" | "del
 
     {page === "help" && <section className="support-content">
       <div className="support-intro"><div><h2>Frequently asked questions</h2><p>Start here for the most common questions from customers and farmers.</p></div><label className="support-search"><Search size={16}/><span className="sr-only">Search help articles</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search help articles"/></label></div>
-      <form className="help-assistant" onSubmit={askHelpAssistant}><span><Sparkles size={20}/></span><div><strong>Ask HarvestNearU</strong><p>Answers are limited to verified Help Centre guidance.</p><label><span className="sr-only">Ask a question</span><input value={assistantQuestion} onChange={(event)=>setAssistantQuestion(event.target.value)} maxLength={500} placeholder="Ask about orders, delivery, payments, or payouts"/><button disabled={assistantBusy||!assistantQuestion.trim()}>{assistantBusy?"Checking...":"Ask"}</button></label>{assistantAnswer&&<blockquote><p>{assistantAnswer.answer}</p><cite>Source: {assistantAnswer.sourceTitle}</cite></blockquote>}</div></form>
+      <form className="help-assistant" onSubmit={askHelpAssistant}><span><img src="/brand/amara-avatar.png" alt="Amara" style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:7}}/></span><div><strong>Ask Amara</strong><p>Your HarvestNearU guide. Answers are limited to verified Help Centre guidance.</p><label><span className="sr-only">Ask a question</span><input value={assistantQuestion} onChange={(event)=>setAssistantQuestion(event.target.value)} maxLength={500} placeholder="Ask Amara about orders, delivery, payments, or payouts"/><button disabled={assistantBusy||!assistantQuestion.trim()}>{assistantBusy?"Checking...":"Ask Amara"}</button></label>{assistantAnswer&&<blockquote><p>{assistantAnswer.answer}</p><cite>Amara · Source: {assistantAnswer.sourceTitle}</cite></blockquote>}</div></form>
       <div className="faq-list">{visibleFaqs.map(([question, answer], index) => <article className={`faq-item ${openFaq === index ? "open" : ""}`} key={question}><button aria-expanded={openFaq === index} onClick={() => setOpenFaq(openFaq === index ? null : index)}>{question}<ChevronRight size={16}/></button><div className={`faq-answer-collapse ${openFaq === index ? "open" : ""}`} aria-hidden={openFaq !== index}><div><p>{answer}</p></div></div></article>)}</div>
       {!visibleFaqs.length && <div className="empty-state"><Search size={26}/><h3>No answers found</h3><p>Try a shorter search term or contact our support team.</p></div>}
       <div className="support-note"><Headphones size={24}/><div><strong>Still need help?</strong><span>Our support team is available Monday to Saturday, 8am to 6pm.</span></div><button onClick={() => window.location.href = "mailto:hello@harvestnearu.com"}>Email support</button></div>

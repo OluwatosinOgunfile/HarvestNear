@@ -5,6 +5,7 @@ import { createHash, randomBytes } from "node:crypto";
 export const GOOGLE_OAUTH_STATE_COOKIE = "harvestnearu_google_state";
 export const GOOGLE_OAUTH_VERIFIER_COOKIE = "harvestnearu_google_verifier";
 export const GOOGLE_OAUTH_RETURN_COOKIE = "harvestnearu_google_return";
+export const GOOGLE_OAUTH_MOBILE_COOKIE = "harvestnearu_google_mobile";
 
 export function googleAuthConfigured() {
   return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
