@@ -31,8 +31,3 @@ export function photoQualityFallback(width: number, height: number, fileSize: nu
   if(width&&height&&(width/height<1.15||width/height>1.7))warnings.push("A landscape picture close to 4:3 will frame the produce better.");
   return { quality: warnings.length ? "needs_attention" : "ready", warnings };
 }
-
-export function ticketSummaryFallback(subject: string, category: string, messages: string[]) {
-  const detail = messages.join(" ").replace(/\s+/g," ").slice(0,360);
-  return `${category.replaceAll("_"," ")} issue: ${subject}. ${detail}`.slice(0,600);
-}

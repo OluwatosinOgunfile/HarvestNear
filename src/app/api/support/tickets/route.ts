@@ -3,22 +3,11 @@ import { randomBytes } from "node:crypto";
 
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
-import { runStructuredAi, ticketSummaryFallback } from "@/lib/harvest-ai";
 import { checkRateLimit, validText } from "@/lib/security";
 
 const categories = new Set(["order", "payment", "delivery", "refund", "account", "farm", "technical", "feedback", "other"]);
 const priorities = new Set(["low", "normal", "high", "urgent"]);
 const statuses = new Set(["open", "in_progress", "waiting_customer", "resolved", "closed"]);
-
-async function refreshSummary(sql:ReturnType<typeof getDatabase>,ticketId:string){
-  const [ticket]=await sql`SELECT subject,category FROM support_tickets WHERE id=${ticketId}`;
-  if(!ticket)return;
-  const messages=await sql`SELECT body FROM support_ticket_messages WHERE ticket_id=${ticketId} ORDER BY created_at DESC LIMIT 12`;
-  const bodies=messages.reverse().map(row=>String(row.body));
-  const fallback=ticketSummaryFallback(String(ticket.subject),String(ticket.category),bodies);
-  const ai=await runStructuredAi("Summarize a marketplace support case for staff. Return JSON only with summary. Include the issue, relevant order or farm name if present, customer expectation, actions taken, and next action. Do not invent facts.",`Subject: ${ticket.subject}\nCategory: ${ticket.category}\nConversation:\n${bodies.join("\n---\n")}`);
-  await sql`UPDATE support_tickets SET ai_summary=${String(ai?.summary||fallback).slice(0,900)},ai_summary_updated_at=now() WHERE id=${ticketId}`;
-}
 
 export async function GET(request: NextRequest) {
   const user = await getSessionUser();
@@ -27,7 +16,10 @@ export async function GET(request: NextRequest) {
   const id = request.nextUrl.searchParams.get("id");
   const staff = ["admin", "support"].includes(user.role) && !user.impersonating;
   const tickets = await sql`
-    SELECT ticket.*, requester.first_name || ' ' || requester.last_name AS requester_name,
+    SELECT ticket.id, ticket.ticket_number, ticket.requester_id, ticket.assigned_to,
+      ticket.subject, ticket.category, ticket.priority, ticket.status, ticket.order_id,
+      ticket.created_at, ticket.updated_at, ticket.resolved_at,
+      requester.first_name || ' ' || requester.last_name AS requester_name,
       requester.email AS requester_email,
       assignee.first_name || ' ' || assignee.last_name AS assignee_name,
       orders.order_number,
@@ -50,11 +42,7 @@ export async function GET(request: NextRequest) {
     LIMIT 100
   `;
   const agents = staff ? await sql`SELECT id, first_name || ' ' || last_name AS name FROM users WHERE role IN ('admin','support') AND is_active ORDER BY first_name` : [];
-  const visibleTickets = staff ? tickets.map((ticket) => ticket.ai_summary ? {
-    ...ticket,
-    messages: [{ id: `summary-${ticket.id}`, body: `Case summary\n${ticket.ai_summary}\n\nConfirm the conversation details before acting.`, is_internal: true, created_at: ticket.ai_summary_updated_at, author_name: "HarvestNearU assistant", author_role: "support" }, ...ticket.messages],
-  } : ticket) : tickets;
-  return NextResponse.json({ tickets: visibleTickets, agents, staff });
+  return NextResponse.json({ tickets, agents, staff, currentUserId: user.id });
 }
 
 export async function POST(request: NextRequest) {
@@ -69,15 +57,15 @@ export async function POST(request: NextRequest) {
   if (body.ticketId) {
     const message = String(body.message || "").trim();
     if (!validText(message, 4000)) return NextResponse.json({ error: "Enter a reply of up to 4,000 characters" }, { status: 400 });
-    const [ticket] = await sql`SELECT id, requester_id, ticket_number FROM support_tickets WHERE id = ${String(body.ticketId)} AND (${staff} OR requester_id = ${user.id}) LIMIT 1`;
+    const [ticket] = await sql`SELECT id, requester_id, ticket_number, assigned_to FROM support_tickets WHERE id = ${String(body.ticketId)} AND (${staff} OR requester_id = ${user.id}) LIMIT 1`;
     if (!ticket) return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
+    if (staff && String(ticket.assigned_to || "") !== user.id) return NextResponse.json({ error: "Assign this ticket to yourself before replying" }, { status: 409 });
     const internal = staff && Boolean(body.internal);
     await sql.transaction([
       sql`INSERT INTO support_ticket_messages (ticket_id, author_id, body, is_internal) VALUES (${ticket.id}, ${user.id}, ${message}, ${internal})`,
       sql`UPDATE support_tickets SET status = ${staff ? "waiting_customer" : "open"}, updated_at = now() WHERE id = ${ticket.id}`,
       ...(!internal && String(ticket.requester_id) !== user.id ? [sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) VALUES (${ticket.requester_id}, 'account', 'Support replied', ${`There is a new reply on ticket ${ticket.ticket_number}.`}, '/help', ${JSON.stringify({ ticketId: String(ticket.id) })}::jsonb)`] : []),
     ]);
-    await refreshSummary(sql,String(ticket.id));
     return NextResponse.json({ success: true });
   }
 
@@ -96,7 +84,6 @@ export async function POST(request: NextRequest) {
     sql`INSERT INTO support_ticket_messages (ticket_id, author_id, body) VALUES (${ticket.id}, ${user.id}, ${message})`,
     sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) SELECT id, 'account', 'New support ticket', ${`${ticketNumber}: ${subject}`}, '/help', ${JSON.stringify({ ticketId: String(ticket.id) })}::jsonb FROM users WHERE role IN ('admin','support') AND is_active`,
   ]);
-  await refreshSummary(sql,String(ticket.id));
   return NextResponse.json({ ticket }, { status: 201 });
 }
 
@@ -105,13 +92,25 @@ export async function PATCH(request: NextRequest) {
   if (!user || !["admin", "support"].includes(user.role) || user.impersonating) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   const id = String(body?.ticketId || "");
+  const assignmentAction = String(body?.assignmentAction || "");
+  if (id && assignmentAction === "claim") {
+    const sql = getDatabase();
+    const [ticket] = await sql`UPDATE support_tickets SET assigned_to = ${user.id}, status = CASE WHEN status = 'open' THEN 'in_progress' ELSE status END, updated_at = now() WHERE id = ${id} AND (assigned_to IS NULL OR assigned_to = ${user.id}) RETURNING id`;
+    if (!ticket) return NextResponse.json({ error: "This ticket has already been assigned to another staff member" }, { status: 409 });
+    return NextResponse.json({ success: true });
+  }
+  if (id && assignmentAction === "release") {
+    const sql = getDatabase();
+    const [ticket] = await sql`UPDATE support_tickets SET assigned_to = NULL, status = CASE WHEN status = 'in_progress' THEN 'open' ELSE status END, updated_at = now() WHERE id = ${id} AND assigned_to = ${user.id} RETURNING id`;
+    if (!ticket) return NextResponse.json({ error: "Only the assigned staff member can release this ticket" }, { status: 409 });
+    return NextResponse.json({ success: true });
+  }
   const status = String(body?.status || "");
   const priority = String(body?.priority || "");
-  const assigneeId = body?.assigneeId ? String(body.assigneeId) : null;
   if (!id || !statuses.has(status) || !priorities.has(priority)) return NextResponse.json({ error: "Invalid ticket update" }, { status: 400 });
   const sql = getDatabase();
-  const [ticket] = await sql`UPDATE support_tickets SET status = ${status}, priority = ${priority}, assigned_to = ${assigneeId}, resolved_at = CASE WHEN ${status} IN ('resolved','closed') THEN coalesce(resolved_at, now()) ELSE NULL END, updated_at = now() WHERE id = ${id} RETURNING id, requester_id, ticket_number`;
-  if (!ticket) return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
+  const [ticket] = await sql`UPDATE support_tickets SET status = ${status}, priority = ${priority}, resolved_at = CASE WHEN ${status} IN ('resolved','closed') THEN coalesce(resolved_at, now()) ELSE NULL END, updated_at = now() WHERE id = ${id} AND assigned_to = ${user.id} RETURNING id, requester_id, ticket_number`;
+  if (!ticket) return NextResponse.json({ error: "Assign this ticket to yourself before updating it" }, { status: 409 });
   await sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) VALUES (${ticket.requester_id}, 'account', 'Support ticket updated', ${`Ticket ${ticket.ticket_number} is now ${status.replaceAll("_", " ")}.`}, '/help', ${JSON.stringify({ ticketId: id, status })}::jsonb)`;
   return NextResponse.json({ success: true });
 }

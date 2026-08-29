@@ -20,7 +20,7 @@ export async function POST(request: Request) {
   if (["admin", "support"].includes(session.role)) return NextResponse.json({ error: "Administrator and support accounts must be removed by another administrator" }, { status: 403, headers });
   if (!await checkRateLimit(request, "account.delete-code", 5, 60 * 60, session.id)) return NextResponse.json({ error: "Too many code requests. Try again later." }, { status: 429, headers });
   const sql = getDatabase();
-  const [account] = await sql`SELECT email, first_name FROM users WHERE id = ${session.id} AND is_active`;
+  const [account] = await sql`SELECT email, first_name, password_hash IS NOT NULL AS password_required FROM users WHERE id = ${session.id} AND is_active`;
   if (!account) return NextResponse.json({ error: "Account not found" }, { status: 404, headers });
   const code = String(randomInt(100000, 1000000));
   await sql.transaction([
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     console.error("Account deletion email failed", error);
     return NextResponse.json({ error: "We could not send the confirmation email. Try again shortly." }, { status: 503, headers });
   }
-  return NextResponse.json({ sent: true, maskedEmail: String(account.email).replace(/^(.{2}).*(@.*)$/, "$1***$2"), expiresInSeconds: 900 }, { headers });
+  return NextResponse.json({ sent: true, maskedEmail: String(account.email).replace(/^(.{2}).*(@.*)$/, "$1***$2"), expiresInSeconds: 900, passwordRequired: Boolean(account.password_required) }, { headers });
 }
 
 export async function DELETE(request: Request) {

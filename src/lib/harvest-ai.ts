@@ -1,5 +1,5 @@
 import "server-only";
-export { faqKnowledge, groundedFaqFallback, listingFallback, photoQualityFallback, ticketSummaryFallback } from "@/lib/ai-fallbacks";
+export { faqKnowledge, groundedFaqFallback, listingFallback, photoQualityFallback } from "@/lib/ai-fallbacks";
 
 const endpoint = () => {
   const account = process.env.CLOUDFLARE_ACCOUNT_ID;

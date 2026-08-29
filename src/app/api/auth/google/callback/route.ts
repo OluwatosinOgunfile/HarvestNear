@@ -12,9 +12,10 @@ function errorRedirect(request: Request, reason: string) {
   return NextResponse.redirect(new URL(`/?authError=${encodeURIComponent(reason)}`, request.url));
 }
 
-function mobileRedirect(reason: string, token?: string) {
+function mobileRedirect(reason: string, token?: string, created = false) {
   const target = new URL("harvestnearu://auth");
   if (token) target.searchParams.set("token", token);
+  if (created) target.searchParams.set("newAccount", "1");
   if (reason) target.searchParams.set("error", reason);
   return NextResponse.redirect(target);
 }
@@ -101,7 +102,7 @@ export async function GET(request: Request) {
       sql`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES (${user.id}, 'user.google_signed_in', 'user', ${user.id}, ${JSON.stringify({ email })}::jsonb)`,
     ]);
     const session = await createSession(String(user.id));
-    if (mobile) return mobileRedirect("", session.token);
+    if (mobile) return mobileRedirect("", session.token, created);
     return NextResponse.redirect(new URL(returnTo, url.origin));
   } catch (error) {
     console.error("Google authentication failed", error);
