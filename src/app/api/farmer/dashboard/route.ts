@@ -175,7 +175,6 @@ export async function PATCH(request: Request) {
         ELSE 'confirmed'::order_status END,
         confirmed_at = coalesce(confirmed_at, now()),
         ready_at = CASE WHEN NOT EXISTS (SELECT 1 FROM order_items child WHERE child.farm_order_id = farm_order.id AND child.status NOT IN ('ready','dispatched','delivered','collected')) THEN coalesce(ready_at, now()) ELSE ready_at END,
-        delivered_at = CASE WHEN ${item.fulfilment_method} IN ('farm_pickup','collection_hub') AND NOT EXISTS (SELECT 1 FROM order_items child WHERE child.farm_order_id = farm_order.id AND child.status <> 'collected') THEN coalesce(delivered_at, now()) ELSE delivered_at END,
         updated_at = now()
         WHERE farm_order.id = ${item.farm_order_id}`,
       sql`UPDATE orders customer_order SET status = CASE
@@ -184,6 +183,7 @@ export async function PATCH(request: Request) {
         WHEN NOT EXISTS (SELECT 1 FROM farm_orders child WHERE child.order_id = customer_order.id AND child.status NOT IN ('ready','dispatched','delivered','collected')) THEN 'ready'::order_status
         WHEN EXISTS (SELECT 1 FROM farm_orders child WHERE child.order_id = customer_order.id AND child.status IN ('preparing','ready','dispatched')) THEN 'preparing'::order_status
         ELSE 'confirmed'::order_status END,
+        delivered_at = CASE WHEN NOT EXISTS (SELECT 1 FROM order_items child WHERE child.order_id = customer_order.id AND child.status NOT IN ('delivered','collected')) THEN coalesce(delivered_at, now()) ELSE delivered_at END,
         updated_at = now() WHERE customer_order.id = ${item.order_id}`,
     ]);
 
