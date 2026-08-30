@@ -52,7 +52,7 @@ export async function GET(request: Request) {
       coalesce((SELECT sum(subtotal_kobo) FROM farm_orders WHERE farm_id = ${farm.id} AND status IN ('delivered','collected')), 0) AS cumulative_gross_kobo,
       coalesce((SELECT sum(platform_fee_kobo) FROM farm_orders WHERE farm_id = ${farm.id} AND status IN ('delivered','collected')), 0) AS cumulative_fee_kobo,
       coalesce((SELECT sum(farmer_net_kobo) FROM farm_orders WHERE farm_id = ${farm.id} AND status IN ('delivered','collected')), 0) AS cumulative_net_kobo`,
-    sql`SELECT fo.id, o.order_number, fo.status, fo.subtotal_kobo, fo.farmer_net_kobo, o.fulfilment_method, o.placed_at,
+    sql`SELECT fo.id, o.id AS order_id, o.order_number, fo.status, fo.subtotal_kobo, fo.farmer_net_kobo, o.fulfilment_method, o.placed_at,
       o.delivery_address_snapshot, o.customer_note, users.id AS customer_id, users.email AS customer_email, users.phone AS customer_phone, users.avatar_url AS customer_avatar,
       delivery.tracking_code, delivery.status AS delivery_status,
       users.first_name || ' ' || users.last_name AS customer,
@@ -63,7 +63,7 @@ export async function GET(request: Request) {
       ) ORDER BY items.created_at) AS items
       FROM farm_orders fo JOIN orders o ON o.id = fo.order_id JOIN users ON users.id = o.customer_id
       JOIN order_items items ON items.farm_order_id = fo.id LEFT JOIN deliveries delivery ON delivery.order_id = o.id WHERE fo.farm_id = ${farm.id} AND fo.status <> 'pending_payment'
-      GROUP BY fo.id, o.order_number, o.fulfilment_method, o.placed_at, o.delivery_address_snapshot, o.customer_note, users.id, users.email, users.phone, users.avatar_url, users.first_name, users.last_name, delivery.tracking_code, delivery.status
+      GROUP BY fo.id, o.id, o.order_number, o.fulfilment_method, o.placed_at, o.delivery_address_snapshot, o.customer_note, users.id, users.email, users.phone, users.avatar_url, users.first_name, users.last_name, delivery.tracking_code, delivery.status
       ORDER BY o.placed_at DESC LIMIT 50`,
     sql`SELECT listing.id, listing.title, listing.unit, listing.unit_price_kobo, listing.quantity_available,
       listing.quantity_reserved, listing.quantity_sold, listing.last_restock_total, listing.last_restocked_at,
