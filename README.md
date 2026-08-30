@@ -22,7 +22,7 @@ HarvestNearU is a Nigerian farm-to-consumer marketplace built with Next.js. Cust
 - Branded transactional email, configurable email preferences, real-time in-app updates, and native push notifications
 - Administrator management, payout processing, audit activity, refunds, moderation, and read-only impersonation
 - Support tickets, staff assignment, internal notes, replies, and product feedback
-- Responsive web experience plus a separate Expo/React Native mobile application with customer, farmer, administrator, and support flows
+- Responsive web experience plus a separate Expo/React Native mobile application for customers and farmers, with secure web-console handoff for administrators and support staff
 
 ## Local development
 
@@ -94,7 +94,7 @@ Web notifications update in app, while the native client registers Expo push tok
 
 ## AI assistance and evaluation
 
-Cloudflare Workers AI can enhance marketplace intent search, farmer listing suggestions, photo guidance, grounded Help Centre answers, and support summaries. Every feature retains a deterministic fallback when Cloudflare is unavailable, keeping the core marketplace functional and low cost.
+Cloudflare Workers AI can enhance marketplace intent search, farmer listing suggestions, photo guidance, and grounded Help Centre answers. Support tickets always display their original customer-authored content and are not AI summarized. Every AI-assisted feature retains a deterministic fallback when Cloudflare is unavailable, keeping the core marketplace functional and low cost.
 
 Synthetic expected examples live in `docs/ai-evaluation-data.json`. Run the regression suite after changing prompts, models, FAQ guidance, categories, or fallback rules:
 

@@ -3,22 +3,22 @@
 ## Campaign Platform
 
 **Campaign theme:** Fresh Local Produce, Found Here.
-**Consumer message:** See what verified farms have available, how long the journey may take, and how to get there.
-**Farmer message:** Manage your farms, live stock, fulfilment, payouts, and reputation in one place.
+**Consumer message:** Search naturally with Amara, save favourite harvests, and follow every order from a verified nearby farm.
+**Farmer message:** Manage farms, listings, live stock, fulfilment, reviews, and payouts from the web or your phone.
 **Primary CTA:** Shop nearby harvests.
 **Farmer CTA:** Start selling on HarvestNearU.
 
 ## Consumer Launch Caption
 
-The freshest food may be closer than you think. Discover available produce from verified farms, compare estimated walking times, view farm maps and directions, order the quantity you need, pay securely with Paystack, and track every item through receipt. Shop local on the web or HarvestNearU mobile app.
+The freshest food may be closer than you think. Ask Amara to help you find matching harvests, browse verified farms, save favourites, choose delivery or pickup, pay securely, and follow each order through receipt. Shop local on the web or the HarvestNearU mobile app.
 
 ## Farmer Recruitment Caption
 
-Your next customer could be nearby. Create one account for multiple farms, publish live stock, fulfil each item, build trust through verified buyer ratings, and request farm payouts with clear statements on HarvestNearU.
+Your next customer could be nearby. Create one account for multiple farms, publish and edit listings, update stock from your phone, manage fulfilment, learn from verified buyer reviews, and request payouts with clear statements.
 
 ## WhatsApp Broadcast
 
-Fresh harvests are closer. Shop vegetables, tubers, grains, fruit, eggs and more from verified farms near you. Choose doorstep delivery, farm pickup, or arrange delivery with the farmer. Pay securely and follow each item until receipt. Visit **harvestnearu.com**.
+Fresh harvests are closer. Search with Amara, save your favourite produce, and shop verified farms near you. Choose doorstep delivery, farm pickup, or arrange delivery with the farmer, then follow every update to receipt. Visit **harvestnearu.com**.
 
 ## Short Headlines
 
@@ -33,6 +33,9 @@ Fresh harvests are closer. Shop vegetables, tubers, grains, fruit, eggs and more
 - One farmer account. Multiple farms.
 - See the farm. Get directions. Shop with confidence.
 - Fulfil orders. Request payouts. Keep clear records.
+- Save what you love. Return when it is ready.
+- Update stock from the field, right from your phone.
+- Meet Amara, your HarvestNearU guide.
 
 ## Product Proof Points
 
@@ -45,8 +48,11 @@ Fresh harvests are closer. Shop vegetables, tubers, grains, fruit, eggs and more
 - Separate tracking and receipt confirmation for each product in an order
 - Printable order receipts and farmer payout statements
 - Persistent basket, favourites, account credit, real-time notifications, and email preferences
-- Support tickets and transparent refund status
-- Native mobile access for customers, farmers, administrators, and support staff
+- Email or Google sign-in with guided profile setup
+- Amara-assisted marketplace search grounded in available produce
+- Support-ticket conversations and transparent refund status
+- Native mobile access for customers and farmers, with secure web-console access for staff
+- Mobile listing editing, stock updates, farm profiles, fulfilment history, reviews, payouts, and statements
 
 ## Suggested Hashtags
 

@@ -41,8 +41,12 @@ Avoid oversized type inside dashboards and operational panels. Letter spacing re
 - Clear before clever.
 - Warm, local, and specific.
 - Focus on freshness, estimated travel time, farmer identity, live availability, and clear fulfilment status.
-- Prefer “harvest”, “nearby farmer”, and “ready today” over generic ecommerce language.
+- Prefer "harvest", "nearby farmer", and "ready today" over generic ecommerce language.
 - Never imply that all produce is organic unless a listing is verified as organic.
+
+## Amara
+
+Amara is HarvestNearU's friendly marketplace guide. She makes discovery and onboarding feel approachable while keeping produce suggestions grounded in available listings and Help Centre answers grounded in verified guidance. Never present Amara as human support or as a source of facts beyond those boundaries.
 
 ## Example Copy
 

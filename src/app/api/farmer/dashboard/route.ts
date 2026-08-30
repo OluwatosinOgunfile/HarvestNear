@@ -138,7 +138,7 @@ export async function PATCH(request: Request) {
   if (!await checkRateLimit(request, "farmer.write", 60, 60 * 60, user.id)) return NextResponse.json({ error: "Update limit reached. Try again later." }, { status: 429 });
   const body = await request.json().catch(() => null) as Record<string, string> | null;
   const sql = getDatabase();
-  if (body?.type === "item" && body.id && ["preparing", "ready", "dispatched"].includes(body.status)) {
+  if (body?.type === "item" && body.id && ["preparing", "ready", "dispatched", "collected"].includes(body.status)) {
     const [item] = await sql`
       SELECT item.id, item.product_name, item.status, item.farm_order_id, item.order_id,
         customer_order.order_number, customer_order.customer_id, customer_order.fulfilment_method
@@ -149,7 +149,15 @@ export async function PATCH(request: Request) {
         AND farm_order.farm_id IN (SELECT id FROM farms WHERE owner_id = ${user.id})
     `;
     if (!item) return NextResponse.json({ error: "Order item not found" }, { status: 404 });
-    const expected = ["confirmed", "paid"].includes(String(item.status)) ? "preparing" : item.status === "preparing" ? "ready" : item.status === "ready" && ["doorstep", "farmer_delivery"].includes(String(item.fulfilment_method)) ? "dispatched" : null;
+    const expected = ["confirmed", "paid"].includes(String(item.status))
+      ? "preparing"
+      : item.status === "preparing"
+        ? "ready"
+        : item.status === "ready" && ["doorstep", "farmer_delivery"].includes(String(item.fulfilment_method))
+          ? "dispatched"
+          : item.status === "ready" && ["farm_pickup", "collection_hub"].includes(String(item.fulfilment_method))
+            ? "collected"
+            : null;
     if (body.status !== expected) return NextResponse.json({ error: "This product cannot move to that tracking stage" }, { status: 409 });
 
     await sql.transaction([
@@ -157,17 +165,21 @@ export async function PATCH(request: Request) {
         preparing_at = CASE WHEN ${body.status} = 'preparing' THEN now() ELSE preparing_at END,
         ready_at = CASE WHEN ${body.status} = 'ready' THEN now() ELSE ready_at END,
         dispatched_at = CASE WHEN ${body.status} = 'dispatched' THEN now() ELSE dispatched_at END,
+        received_at = CASE WHEN ${body.status} = 'collected' THEN now() ELSE received_at END,
         updated_at = now() WHERE id = ${item.id}`,
       sql`UPDATE farm_orders farm_order SET status = CASE
+        WHEN ${item.fulfilment_method} IN ('farm_pickup','collection_hub') AND NOT EXISTS (SELECT 1 FROM order_items child WHERE child.farm_order_id = farm_order.id AND child.status <> 'collected') THEN 'collected'::order_status
         WHEN ${item.fulfilment_method} IN ('doorstep','farmer_delivery') AND NOT EXISTS (SELECT 1 FROM order_items child WHERE child.farm_order_id = farm_order.id AND child.status NOT IN ('dispatched','delivered')) THEN 'dispatched'::order_status
         WHEN NOT EXISTS (SELECT 1 FROM order_items child WHERE child.farm_order_id = farm_order.id AND child.status NOT IN ('ready','dispatched','delivered','collected')) THEN 'ready'::order_status
         WHEN EXISTS (SELECT 1 FROM order_items child WHERE child.farm_order_id = farm_order.id AND child.status IN ('preparing','ready','dispatched')) THEN 'preparing'::order_status
         ELSE 'confirmed'::order_status END,
         confirmed_at = coalesce(confirmed_at, now()),
         ready_at = CASE WHEN NOT EXISTS (SELECT 1 FROM order_items child WHERE child.farm_order_id = farm_order.id AND child.status NOT IN ('ready','dispatched','delivered','collected')) THEN coalesce(ready_at, now()) ELSE ready_at END,
+        delivered_at = CASE WHEN ${item.fulfilment_method} IN ('farm_pickup','collection_hub') AND NOT EXISTS (SELECT 1 FROM order_items child WHERE child.farm_order_id = farm_order.id AND child.status <> 'collected') THEN coalesce(delivered_at, now()) ELSE delivered_at END,
         updated_at = now()
         WHERE farm_order.id = ${item.farm_order_id}`,
       sql`UPDATE orders customer_order SET status = CASE
+        WHEN ${item.fulfilment_method} IN ('farm_pickup','collection_hub') AND NOT EXISTS (SELECT 1 FROM farm_orders child WHERE child.order_id = customer_order.id AND child.status <> 'collected') THEN 'collected'::order_status
         WHEN ${item.fulfilment_method} IN ('doorstep','farmer_delivery') AND NOT EXISTS (SELECT 1 FROM farm_orders child WHERE child.order_id = customer_order.id AND child.status NOT IN ('dispatched','delivered')) THEN 'dispatched'::order_status
         WHEN NOT EXISTS (SELECT 1 FROM farm_orders child WHERE child.order_id = customer_order.id AND child.status NOT IN ('ready','dispatched','delivered','collected')) THEN 'ready'::order_status
         WHEN EXISTS (SELECT 1 FROM farm_orders child WHERE child.order_id = customer_order.id AND child.status IN ('preparing','ready','dispatched')) THEN 'preparing'::order_status
@@ -183,7 +195,7 @@ export async function PATCH(request: Request) {
       await sql`UPDATE deliveries SET status = 'in_transit', picked_up_at = coalesce(picked_up_at, now()), updated_at = now() WHERE order_id = ${item.order_id}`;
       await sql`INSERT INTO delivery_events (delivery_id, status, message) SELECT id, 'in_transit', 'All products have left their farms and are on the way' FROM deliveries WHERE order_id = ${item.order_id}`;
     }
-    const itemCopy = body.status === "preparing" ? "is now being prepared" : body.status === "ready" ? "is packed and ready" : "has left the farm and is on the way";
+    const itemCopy = body.status === "preparing" ? "is now being prepared" : body.status === "ready" ? "is packed and ready" : body.status === "collected" ? "has been marked as collected" : "has left the farm and is on the way";
     await sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata)
       VALUES (${item.customer_id}, ${body.status === "dispatched" ? "delivery" : "order"}, 'Product tracking updated',
         ${`${item.product_name} in order ${item.order_number} ${itemCopy}.`}, '/orders',
@@ -214,6 +226,20 @@ export async function PATCH(request: Request) {
     }
     await sql.transaction(updates);
     return NextResponse.json({ updated: true });
+  }
+  if (body?.type === "inventory" && body.id && ["active", "paused"].includes(body.status)) {
+    const availableStock = Number(body.availableStock);
+    if (!Number.isInteger(availableStock) || availableStock < 0) return NextResponse.json({ error: "Enter a whole available quantity of zero or more" }, { status: 400 });
+    const [listing] = await sql`UPDATE produce_listings SET
+      last_restock_total = CASE WHEN ${availableStock} + quantity_reserved > quantity_available THEN ${availableStock} + quantity_reserved ELSE last_restock_total END,
+      last_restocked_at = CASE WHEN ${availableStock} + quantity_reserved > quantity_available THEN now() ELSE last_restocked_at END,
+      quantity_available = ${availableStock} + quantity_reserved,
+      status = CASE WHEN ${availableStock} = 0 THEN 'sold_out'::listing_status ELSE ${body.status}::listing_status END,
+      updated_at = now(), version = version + 1
+      WHERE id = ${body.id} AND farm_id IN (SELECT id FROM farms WHERE owner_id = ${user.id})
+      RETURNING id, quantity_available, quantity_reserved, status, last_restock_total, last_restocked_at`;
+    if (!listing) return NextResponse.json({ error: "Listing not found" }, { status: 404 });
+    return NextResponse.json({ updated: true, listing });
   }
   if (body?.type === "listing" && body.id && ["active", "paused"].includes(body.status)) {
     if (!body.categoryId || !body.name || !body.unit || !body.price || !body.stock || !body.harvestDate) return NextResponse.json({ error: "Complete all required fields" }, { status: 400 });
