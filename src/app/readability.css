@@ -493,3 +493,112 @@
   color: #fff;
   background: #174d31;
 }
+
+/* Keep user-facing account and support surfaces on the same type scale. */
+.email-preferences header > div > p:last-child,
+.profile-heading > div:first-child > p:last-child,
+.farmer-upgrade-card p,
+.farm-about > p,
+.notification-main p,
+.notification-empty p,
+.notification-settings,
+.ticket-signin p,
+.ticket-centre > header p:last-child,
+.ticket-empty p,
+.ticket-messages p,
+.experience-feedback > div > p:last-child,
+.help-assistant > div > p,
+.help-assistant blockquote p {
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.email-preference-option strong,
+.address-list strong,
+.profile-data-list dd,
+.farm-produce article strong,
+.farm-details dd,
+.notification-main strong,
+.ticket-list b,
+.ticket-messages strong,
+.ticket-assignment > strong,
+.refund-steps strong {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.email-preference-option small,
+.profile-panel-head p,
+.profile-stats span,
+.address-list p,
+.address-list small,
+.farm-values span,
+.farm-produce article p,
+.farm-produce article small,
+.farm-details dt,
+.notification-main small,
+.ticket-list strong,
+.ticket-list small,
+.ticket-thread > header p,
+.ticket-messages small,
+.ticket-assignment > span,
+.ticket-assignment > small {
+  font-size: 12px !important;
+  line-height: 1.5;
+}
+
+.email-preference-save,
+.profile-page-actions button,
+.profile-panel-head button,
+.identity-row > button,
+.farm-identity-row > button,
+.notification-tools > div button,
+.notification-tools > button,
+.notification-empty button,
+.notification-settings button,
+.ticket-signin button,
+.ticket-create > button,
+.ticket-reply > button,
+.ticket-assignment > button,
+.experience-feedback > button,
+.support-note button,
+.pickup-centre-card > a,
+.help-assistant button {
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.email-preference-option {
+  min-height: 72px;
+}
+
+.profile-panel-head h3 {
+  font-size: 18px;
+}
+
+.profile-data-list dt,
+.profile-panel-head > span,
+.farm-summary span,
+.verified-label,
+.ticket-thread > header small,
+.ticket-thread > header > b,
+.ticket-list i {
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+@media (max-width: 768px) {
+  .email-preferences header h2 {
+    font-size: 22px;
+    line-height: 1.25;
+  }
+
+  .email-preference-option strong,
+  .email-preference-option small {
+    font-size: 13px !important;
+  }
+
+  .support-tabs button {
+    font-size: 12px;
+  }
+}

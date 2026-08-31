@@ -72,6 +72,7 @@ button { color:inherit; cursor:pointer; }
 .sort button { padding:9px 12px; display:flex; align-items:center; gap:15px; background:white; border:1px solid var(--line); border-radius:4px; font-size:12px; font-weight:600; }
 .category-row { margin:23px 0 20px; display:flex; gap:8px; overflow:auto; }
 .category-row button { white-space:nowrap; padding:9px 16px; border:1px solid var(--line); background:white; border-radius:4px; color:#59645d; font-size:12px; font-weight:600; }
+.category-row .saved-produce-filter{display:flex;align-items:center;gap:6px}.category-row .saved-produce-filter span{min-width:18px;height:18px;padding:0 5px;display:grid;place-items:center;color:var(--green);background:#edf3e9;border-radius:9px;font-size:9px}.category-row .saved-produce-filter.selected span{color:var(--green);background:white}
 .category-row button.selected { background:var(--green); color:white; border-color:var(--green); }
 .product-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; }
 .product-card { background:white; border:1px solid var(--line); border-radius:6px; overflow:hidden; transition:transform .2s,box-shadow .2s; }

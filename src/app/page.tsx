@@ -286,6 +286,7 @@ export default function Home() {
   const [delivery, setDelivery] = useState<"doorstep" | "farm_pickup" | "farmer_delivery">("doorstep");
   const [deliveryQuote, setDeliveryQuote] = useState<{ available: boolean; feeKobo: number | null; distanceKm: number; radiusKm?: number | null; unavailableReason: string | null } | null>(null);
   const [liked, setLiked] = useState<string[]>([]);
+  const [savedOnly, setSavedOnly] = useState(false);
   const theme = useSyncExternalStore(subscribeToTheme, getThemeSnapshot, () => "light");
   const [signupOpen, setSignupOpen] = useState(false);
   const [signupRole, setSignupRole] = useState<"consumer" | "farmer">("consumer");
@@ -373,7 +374,10 @@ export default function Home() {
   }, [cartOpen]);
 
   useEffect(() => {
-    const syncView = () => setView(viewFromPath(window.location.pathname));
+    const syncView = () => {
+      setView(viewFromPath(window.location.pathname));
+      setSavedOnly(window.location.pathname === viewPaths.market && new URLSearchParams(window.location.search).get("saved") === "1");
+    };
     syncView();
     window.addEventListener("popstate", syncView);
     return () => window.removeEventListener("popstate", syncView);
@@ -607,8 +611,23 @@ export default function Home() {
       return;
     }
     if ((next === "market" && isAdmin) || (next === "orders" && !canPurchase) || (next === "farmer" && !isFarmer) || (next === "admin" && !isAdmin) || (next === "profile" && !isConsumer && !isFarmer)) return;
-    if (window.location.pathname !== viewPaths[next]) window.history.pushState({}, "", viewPaths[next]);
+    if (next === "market") setSavedOnly(false);
+    if (window.location.pathname !== viewPaths[next] || window.location.search) window.history.pushState({}, "", viewPaths[next]);
     setView(next);
+  }
+
+  function openSavedProduce() {
+    if (!currentUser || !canPurchase) {
+      openSignIn(false);
+      return;
+    }
+    setAccountMenuOpen(false);
+    setSavedOnly(true);
+    setCurrentPage(1);
+    setQuery("");
+    setCategory("All produce");
+    window.history.pushState({}, "", `${viewPaths.market}?saved=1`);
+    setView("market");
   }
 
   async function signIn(event: FormEvent<HTMLFormElement>) {
@@ -879,6 +898,7 @@ export default function Home() {
   const visible = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     const filtered = products.filter((product) =>
+      (!savedOnly || liked.includes(product.id)) &&
       (effectiveCategory === "All produce" || product.category === effectiveCategory) &&
       (!normalizedQuery || `${product.name} ${product.farmer} ${product.category}`.toLowerCase().includes(normalizedQuery) || matchesSearchTerms(`${product.name} ${product.category}`, effectiveIntentTerms)) &&
       (!distanceFilterActive || product.distance <= maxDistance) &&
@@ -892,7 +912,7 @@ export default function Home() {
       if (sortBy === "stock") return b.stock - a.stock;
       return a.distance - b.distance;
     });
-  }, [products, effectiveCategory, query, effectiveIntentTerms, distanceFilterActive, maxDistance, priceFilterActive, maxPrice, todayOnly, hideLowStock, sortBy]);
+  }, [products, liked, savedOnly, effectiveCategory, query, effectiveIntentTerms, distanceFilterActive, maxDistance, priceFilterActive, maxPrice, todayOnly, hideLowStock, sortBy]);
 
   const activeFilterCount = Number(distanceFilterActive) + Number(priceFilterActive) + Number(todayOnly) + Number(hideLowStock);
   const matchedIntentTerms = useMemo(() => effectiveIntentTerms.filter((term) => products.some((product) => matchesSearchTerms(`${product.name} ${product.category}`, [term]))), [effectiveIntentTerms, products]);
@@ -1021,6 +1041,7 @@ export default function Home() {
               <div className="account-menu" role="menu">
                 <div className="account-menu-heading"><span className={`account-avatar ${currentUser?.avatarUrl ? "has-photo" : ""}`}>{currentUser?.avatarUrl ? <img src={currentUser.avatarUrl} alt=""/> : <UserRound size={17} />}</span><div><strong>{currentUser ? `${currentUser.firstName} ${currentUser.lastName}` : sessionLoading ? "Checking your account" : "Welcome to HarvestNearU"}</strong><small>{currentUser ? roleLabel(currentUser.role) : "Manage your account and preferences"}</small></div></div>
                 {currentUser && !isAdmin && <button role="menuitem" onClick={() => { navigate("profile"); setAccountMenuOpen(false); }}><UserRound size={17} /><span><strong>My profile</strong><small>{isFarmer ? "Farm and owner information" : "Customer information"}</small></span><ChevronRight size={15} /></button>}
+                {currentUser && canPurchase && <button role="menuitem" onClick={openSavedProduce}><Heart size={17} fill={liked.length ? "currentColor" : "none"}/><span><strong>Saved produce</strong><small>{liked.length ? `${liked.length} saved harvest${liked.length === 1 ? "" : "s"}` : "Your favourite harvests"}</small></span><ChevronRight size={15}/></button>}
                 {currentUser && canPurchase && <button className="account-credit-menu" role="menuitem" onClick={() => { navigate("profile"); setAccountMenuOpen(false); }}><AtSign size={17}/><span><strong>Account credit</strong><small>Available for future purchases</small></span><b>{money(accountCreditKobo / 100)}</b></button>}
                 {isAdmin && <button role="menuitem" onClick={() => { navigate("admin"); setAccountMenuOpen(false); }}><SlidersHorizontal size={17} /><span><strong>Administration</strong><small>Marketplace operations</small></span><ChevronRight size={15} /></button>}
                 {currentUser && <button role="menuitem" onClick={() => { setAccountMenuOpen(false); setNotificationOpen(true); }}><Bell size={17} /><span><strong>Notifications</strong><small>Orders, harvests and delivery updates</small></span>{unreadNotificationCount > 0 && <i>{unreadNotificationCount}</i>}</button>}
@@ -1083,10 +1104,11 @@ export default function Home() {
               <img src="/brand/amara-avatar.png" alt="Amara, HarvestNearU assistant" style={{width:34,height:34,objectFit:"cover",borderRadius:9,flex:"none"}}/><span><strong>{effectiveIntentLoading ? "Amara is looking for broader matches..." : effectiveIntentEnhanced ? `Amara suggests: ${effectiveIntentExplanation}` : effectiveIntentExplanation}</strong>{matchedIntentTerms.length > 0 && <small>Matching available produce: {matchedIntentTerms.join(", ")}</small>}</span>
             </div>}
             <div className="catalog-head">
-              <div><h2>Harvests near you</h2><p>{visible.length} available listing{visible.length === 1 ? "" : "s"} near {locationOverride ? deliveryLocation.name : savedLocationLabel || deliveryLocation.name}</p></div>
+              <div><h2>{savedOnly ? "Saved produce" : "Harvests near you"}</h2><p>{savedOnly ? `${visible.length} saved harvest${visible.length === 1 ? "" : "s"} currently available` : `${visible.length} available listing${visible.length === 1 ? "" : "s"} near ${locationOverride ? deliveryLocation.name : savedLocationLabel || deliveryLocation.name}`}</p></div>
               <label className="sort"><span>Sort by</span><select value={sortBy} onChange={(event) => { setSortBy(event.target.value as typeof sortBy); setCurrentPage(1); }}><option value="nearest">Shortest walk first</option><option value="price-low">Price: low to high</option><option value="price-high">Price: high to low</option><option value="rating">Highest rated</option><option value="stock">Most available</option></select><ChevronDown size={15}/></label>
             </div>
             <div className="category-row">
+              <button className={savedOnly ? "selected saved-produce-filter" : "saved-produce-filter"} onClick={() => { setSavedOnly((current) => { const next = !current; window.history.replaceState({}, "", next ? `${viewPaths.market}?saved=1` : viewPaths.market); return next; }); setCurrentPage(1); }}><Heart size={14} fill={savedOnly ? "currentColor" : "none"}/> Saved <span>{liked.length}</span></button>
               {availableCategories.map((item) => <button key={item} onClick={() => { setCategory(item); setCurrentPage(1); }} className={effectiveCategory === item ? "selected" : ""}>{item}</button>)}
             </div>
 
@@ -1116,6 +1138,12 @@ export default function Home() {
                   </div>
                 </article>
               ))}
+            </div> : savedOnly && liked.length === 0 ? <div className="marketplace-empty">
+              <div className="marketplace-empty-visual" aria-hidden="true"><span><Heart size={25}/></span><i><Leaf size={14}/></i></div>
+              <span className="marketplace-empty-kicker">YOUR FAVOURITES</span>
+              <h3>No produce saved yet.</h3>
+              <p>Use the heart on any harvest to keep it here for quick access later.</p>
+              <div><button onClick={() => { setSavedOnly(false); window.history.replaceState({}, "", viewPaths.market); }}>Browse all harvests <ArrowRight size={15}/></button></div>
             </div> : <div className="marketplace-empty">
               <div className="marketplace-empty-visual" aria-hidden="true"><span><Search size={25}/></span><i><Leaf size={14}/></i></div>
               <span className="marketplace-empty-kicker">FRESH OPTIONS AWAIT</span>
@@ -2392,8 +2420,8 @@ type FarmerWorkspaceData = {
   reviews: Array<{ id: string; rating: number; comment: string | null; farmer_reply: string | null; created_at: string; customer_name: string; order_number: string }>;
 };
 
-function FarmReviews({ farmName, reviews }: { farmName: string; reviews: FarmerWorkspaceData["reviews"] }) {
-  return <section className="farm-reviews-panel"><div className="panel-head"><div><h2>Customer ratings</h2><p>Reviews for {farmName}</p></div><span><Star size={14} fill="currentColor"/> {reviews.length} review{reviews.length === 1 ? "" : "s"}</span></div>{reviews.length ? <div className="farm-review-list">{reviews.map((review) => <article key={review.id}><header><div><strong>{review.customer_name}</strong><small>Order #{review.order_number} · {new Date(review.created_at).toLocaleDateString("en-NG", { dateStyle: "medium" })}</small></div><span aria-label={`${review.rating} out of 5 stars`}>{[1,2,3,4,5].map((value) => <Star key={value} size={15} fill={value <= Number(review.rating) ? "currentColor" : "none"}/>)}</span></header><p>{review.comment || "The customer submitted a rating without a written comment."}</p>{review.farmer_reply && <blockquote><strong>Your reply</strong>{review.farmer_reply}</blockquote>}</article>)}</div> : <div className="farm-reviews-empty"><Star size={24}/><strong>No customer reviews yet</strong><p>Ratings and feedback for this farm will appear after fulfilled orders.</p></div>}</section>;
+function FarmReviews({ farmName, reviews, open, onToggle }: { farmName: string; reviews: FarmerWorkspaceData["reviews"]; open: boolean; onToggle: () => void }) {
+  return <section className="farm-reviews-panel"><div className="panel-head"><div><h2>Customer ratings</h2><p>Reviews for {farmName}</p></div><span><Star size={14} fill="currentColor"/> {reviews.length} review{reviews.length === 1 ? "" : "s"}</span><button className="workspace-collapse" onClick={onToggle} aria-expanded={open} aria-label={`${open ? "Collapse" : "Expand"} customer ratings`}><ChevronDown className={open ? "open" : ""} size={18}/></button></div>{open ? reviews.length ? <div className="farm-review-list">{reviews.map((review) => <article key={review.id}><header><div><strong>{review.customer_name}</strong><small>Order #{review.order_number} · {new Date(review.created_at).toLocaleDateString("en-NG", { dateStyle: "medium" })}</small></div><span aria-label={`${review.rating} out of 5 stars`}>{[1,2,3,4,5].map((value) => <Star key={value} size={15} fill={value <= Number(review.rating) ? "currentColor" : "none"}/>)}</span></header><p>{review.comment || "The customer submitted a rating without a written comment."}</p>{review.farmer_reply && <blockquote><strong>Your reply</strong>{review.farmer_reply}</blockquote>}</article>)}</div> : <div className="farm-reviews-empty"><Star size={24}/><strong>No customer reviews yet</strong><p>Ratings and feedback for this farm will appear after fulfilled orders.</p></div> : null}</section>;
 }
 
 function ExpandedFarmerOrders({ orders, busy, readOnly, onAdvance, onChat }: { orders: FarmerWorkspaceData["orders"]; busy: boolean; readOnly: boolean; onAdvance: (order: FarmerWorkspaceData["orders"][number]) => void; onChat: (order: FarmerWorkspaceData["orders"][number]) => void }) {
@@ -2415,6 +2443,9 @@ function FarmerWorkspace({ onShop }: { onShop: () => void }) {
   const [manageListing, setManageListing] = useState<FarmerWorkspaceData["listings"][number] | null>(null);
   const [showAllOrders, setShowAllOrders] = useState(false);
   const [showAllListings, setShowAllListings] = useState(false);
+  const [closedOrdersOpen, setClosedOrdersOpen] = useState(true);
+  const [inventoryOpen, setInventoryOpen] = useState(true);
+  const [reviewsOpen, setReviewsOpen] = useState(true);
   const [busy, setBusy] = useState(false);
   const [greeting, setGreeting] = useState("Welcome back");
   const [payoutAccountOpen, setPayoutAccountOpen] = useState(false);
@@ -2543,10 +2574,10 @@ function FarmerWorkspace({ onShop }: { onShop: () => void }) {
       {chatOrder && (
         <OrderChatDialog orderId={chatOrder.order_id} farmId={data.farm.id} onClose={() => setChatOrder(null)}/>
       )}
-      <section className="orders-panel closed-orders-panel"><div className="panel-head"><div><h2>Closed orders</h2><p>Completed, cancelled, and refunded orders</p></div><span>{closedOrders.length} total</span>{closedOrders.length > 3 && <button onClick={() => setShowAllOrders((value) => !value)}>{showAllOrders ? "Show recent" : "View all"} <ArrowRight className={showAllOrders ? "back" : ""} size={15}/></button>}</div>{shownClosedOrders.length ? shownClosedOrders.map((order) => <div className="order-row closed-order-row" key={order.id}><span className="order-icon"><PackageCheck size={18}/></span><div><strong>{order.customer}</strong><p>#{order.order_number} · {order.items}</p></div><small>{new Date(order.placed_at).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })}</small><span className={`status-badge ${order.status}`}>{statusLabel(order.status)}</span><b>{["delivered","collected"].includes(order.status) ? `${money(Number(order.farmer_net_kobo) / 100)} net` : money(Number(order.subtotal_kobo) / 100)}</b></div>) : <div className="panel-empty">No closed orders yet.</div>}</section>
-      <section className="inventory-panel"><div className="panel-head"><div><h2>Inventory pulse</h2><p>Your produce listings</p></div>{data.listings.length > 3 && <button onClick={() => setShowAllListings((value) => !value)}>{showAllListings ? "Show recent" : "View all"} <ArrowRight className={showAllListings ? "back" : ""} size={15}/></button>}</div>{listings.length ? listings.map((listing) => { const available = Number(listing.quantity_available) - Number(listing.quantity_reserved); const restockTotal = Math.max(1, Number(listing.last_restock_total)); const percent = Math.max(0, Math.min(100, Math.round(available / restockTotal * 100))); return <button className="inventory-row farmer-inventory-row" key={listing.id} onClick={() => { setError(""); setManageListing(listing); }}><span className="inventory-image">{listing.image_url ? <img src={listing.image_url} alt=""/> : <Leaf size={18}/>}</span><div><strong>{listing.title}</strong><p>{quantityLabel(available, listing.unit)} available · {listingStatusLabel(listing.status)}</p><span title={`${percent}% of the last restock remaining`}><i style={{ width: `${percent}%` }}/></span></div><b>{percent}%</b></button>}) : <div className="panel-empty">No listings yet.</div>}</section>
+      <section className="orders-panel closed-orders-panel"><div className="panel-head"><div><h2>Closed orders</h2><p>Completed, cancelled, and refunded orders</p></div><span>{closedOrders.length} total</span>{closedOrdersOpen && closedOrders.length > 3 && <button onClick={() => setShowAllOrders((value) => !value)}>{showAllOrders ? "Show recent" : "View all"} <ArrowRight className={showAllOrders ? "back" : ""} size={15}/></button>}<button className="workspace-collapse" onClick={() => setClosedOrdersOpen((value) => !value)} aria-expanded={closedOrdersOpen} aria-label={`${closedOrdersOpen ? "Collapse" : "Expand"} closed orders`}><ChevronDown className={closedOrdersOpen ? "open" : ""} size={18}/></button></div>{closedOrdersOpen ? shownClosedOrders.length ? shownClosedOrders.map((order) => <div className="order-row closed-order-row" key={order.id}><span className="order-icon"><PackageCheck size={18}/></span><div><strong>{order.customer}</strong><p>#{order.order_number} · {order.items}</p></div><small>{new Date(order.placed_at).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })}</small><span className={`status-badge ${order.status}`}>{statusLabel(order.status)}</span><b>{["delivered","collected"].includes(order.status) ? `${money(Number(order.farmer_net_kobo) / 100)} net` : money(Number(order.subtotal_kobo) / 100)}</b></div>) : <div className="panel-empty">No closed orders yet.</div> : null}</section>
+      <section className="inventory-panel"><div className="panel-head"><div><h2>Inventory pulse</h2><p>Your produce listings</p></div>{inventoryOpen && data.listings.length > 3 && <button onClick={() => setShowAllListings((value) => !value)}>{showAllListings ? "Show recent" : "View all"} <ArrowRight className={showAllListings ? "back" : ""} size={15}/></button>}<button className="workspace-collapse" onClick={() => setInventoryOpen((value) => !value)} aria-expanded={inventoryOpen} aria-label={`${inventoryOpen ? "Collapse" : "Expand"} inventory`}><ChevronDown className={inventoryOpen ? "open" : ""} size={18}/></button></div>{inventoryOpen ? listings.length ? listings.map((listing) => { const available = Number(listing.quantity_available) - Number(listing.quantity_reserved); const restockTotal = Math.max(1, Number(listing.last_restock_total)); const percent = Math.max(0, Math.min(100, Math.round(available / restockTotal * 100))); return <button className="inventory-row farmer-inventory-row" key={listing.id} onClick={() => { setError(""); setManageListing(listing); }}><span className="inventory-image">{listing.image_url ? <img src={listing.image_url} alt=""/> : <Leaf size={18}/>}</span><div><strong>{listing.title}</strong><p>{quantityLabel(available, listing.unit)} available · {listingStatusLabel(listing.status)}</p><span title={`${percent}% of the last restock remaining`}><i style={{ width: `${percent}%` }}/></span></div><b>{percent}%</b></button>}) : <div className="panel-empty">No listings yet.</div> : null}</section>
     </div>
-    <FarmReviews farmName={data.farm.name} reviews={data.reviews}/>
+    <FarmReviews farmName={data.farm.name} reviews={data.reviews} open={reviewsOpen} onToggle={() => setReviewsOpen((value) => !value)}/>
     {listingOpen && <div className="modal-overlay" onMouseDown={() => setListingOpen(false)}><div className="admin-add-modal farmer-listing-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close-modal" onClick={() => setListingOpen(false)}><X size={19}/></button><p className="auth-kicker">NEW HARVEST</p><h2>Add a produce listing</h2><p>Publish available produce from {data.farm.name}.</p><form onSubmit={createListing}><label>Category<select name="categoryId" required><option value="">Select category</option>{data.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>Produce name<input name="name" required/></label><div className="form-row"><label>Unit<input name="unit" placeholder="basket" required/></label><label>Price (NGN)<input name="price" type="number" min="1" required/></label></div><div className="form-row"><label>Available quantity<input name="stock" type="number" min="1" required/></label><label>Harvest date<input name="harvestDate" type="date" required/></label></div><div className="form-row"><label>Available from (optional)<input name="availableFrom" type="datetime-local"/></label><label>Available until (optional)<input name="availableUntil" type="datetime-local"/></label></div><label>Produce picture<input name="image" type="file" accept="image/png,image/jpeg,image/webp" required/><small>Uploaded securely to Blob. JPG, PNG, or WebP up to 4 MB.</small></label><label>Badge<input name="badge" placeholder="Picked today"/></label>{error && <p className="admin-error">{error}</p>}<button className="admin-submit" disabled={busy}>{busy ? "Uploading and publishing..." : "Publish listing"} {!busy && <ArrowRight size={16}/>}</button></form></div></div>}
     {farmOpen && <div className="modal-overlay" onMouseDown={() => setFarmOpen(false)}><div className="admin-add-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close-modal" onClick={() => setFarmOpen(false)}><X size={19}/></button><p className="auth-kicker">NEW FARM</p><h2>Add another farm</h2><p>Each farm has separate verification, listings, orders, and earnings.</p><form onSubmit={createFarm}><label>Farm or business name<input name="name" required/></label><label>Farm address or area<input name="location" placeholder="Kuje, Abuja" required/></label><label>Farm phone<input name="phone" required/></label><FarmCoordinateFields/>{error && <p className="admin-error">{error}</p>}<button className="admin-submit" disabled={busy}>{busy ? "Adding farm..." : "Add farm for verification"}</button></form></div></div>}
     {payoutAccountOpen&&<div className="modal-overlay" onMouseDown={()=>setPayoutAccountOpen(false)}><div className="admin-add-modal payout-account-modal" onMouseDown={(event)=>event.stopPropagation()}><button className="close-modal" onClick={()=>setPayoutAccountOpen(false)}><X size={19}/></button><p className="auth-kicker">PAYOUT ACCOUNT</p><h2>{data.farm.name}</h2><p>Paystack verifies the account and HarvestNearU stores only the recipient token and last four digits.</p>{payoutAccount?.account_last4&&<div className="payout-account-current"><Check size={17}/><span><strong>{payoutAccount.account_name}</strong><small>{payoutAccount.bank_name} · ending {payoutAccount.account_last4}</small></span></div>}<form onSubmit={savePayoutAccount}><label>Bank<select name="bankCode" required defaultValue=""><option value="" disabled>Select bank</option>{payoutBanks.map((bank)=><option key={bank.code} value={bank.code}>{bank.name}</option>)}</select></label><label>Account number<input name="accountNumber" inputMode="numeric" pattern="[0-9]{10}" minLength={10} maxLength={10} required placeholder="10-digit NUBAN account"/></label>{error&&<p className="admin-error">{error}</p>}<button className="admin-submit" disabled={busy}>{busy?"Verifying account...":"Verify and save account"}</button></form></div></div>}
