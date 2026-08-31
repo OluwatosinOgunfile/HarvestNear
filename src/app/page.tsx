@@ -324,7 +324,7 @@ export default function Home() {
   const filterPopoverRef = useRef<HTMLDivElement>(null);
   const [locationOpen, setLocationOpen] = useState(false);
   const locationPickerRef = useRef<HTMLDivElement>(null);
-  const [deliveryLocations, setDeliveryLocations] = useState<DeliveryLocation[]>(fallbackDeliveryLocations);
+  const [deliveryLocations, setDeliveryLocations] = useState<DeliveryLocation[]>([]);
   const [deliveryLocation, setDeliveryLocation] = useState<DeliveryLocation>(fallbackDeliveryLocations[0]);
   const [locationOverride, setLocationOverride] = useState(false);
   const [savedLocationLabel, setSavedLocationLabel] = useState("");
@@ -338,12 +338,12 @@ export default function Home() {
   const [previewProduct, setPreviewProduct] = useState<Product | null>(null);
 
   useEffect(() => {
-    fetch("/api/service-areas").then((response) => readJsonResponse<{ areas?: Array<{ id: string; name: string; city: string; state: string; latitude: number; longitude: number }> }>(response))
+    fetch("/api/service-areas", { cache: "no-store" }).then((response) => readJsonResponse<{ areas?: Array<{ id: string; name: string; city: string; state: string; latitude: number; longitude: number }> }>(response))
       .then(({ areas }) => {
-        if (!areas?.length) return;
-        const locations = areas.map((area) => ({ id: area.id, name: `${area.name}, ${area.city}`, latitude: Number(area.latitude), longitude: Number(area.longitude) }));
+        const locations = (areas || []).map((area) => ({ id: area.id, name: `${area.name}, ${area.city}`, latitude: Number(area.latitude), longitude: Number(area.longitude) }));
         setDeliveryLocations(locations);
-        setDeliveryLocation((current) => current.id || current.name === "Current location" ? current : locations[0]);
+        setDeliveryLocation((current) => current.name === "Current location" || locations.some((location) => location.id === current.id) ? current : locations[0] || current);
+        setLocationOverride((current) => current && locations.length > 0);
       }).catch(() => undefined);
   }, []);
 
