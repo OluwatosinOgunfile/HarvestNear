@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { getDatabase } from "@/lib/db";
 import { mobileCorsHeaders, mobileOptions } from "@/lib/mobile-cors";
 import { checkRateLimit } from "@/lib/security";
+import { isSuperAdminAccount } from "@/lib/super-admin";
 
 export const OPTIONS = mobileOptions;
 
@@ -18,8 +19,9 @@ export async function POST(request: Request) {
   if (body.password !== body.confirmPassword) return NextResponse.json({ error: "Passwords do not match" }, { status: 400, headers });
 
   const sql = getDatabase();
-  const [user] = await sql`SELECT id FROM users WHERE lower(email) = ${email} AND is_active LIMIT 1`;
+  const [user] = await sql`SELECT id, email, role FROM users WHERE lower(email) = ${email} AND is_active LIMIT 1`;
   if (!user) return NextResponse.json({ error: "The code is invalid or has expired" }, { status: 400, headers });
+  if (isSuperAdminAccount(user)) return NextResponse.json({ error: "The super administrator password can only be changed through the SUPER_ADMIN_PASSWORD environment variable" }, { status: 403, headers });
   const hash = createHash("sha256").update(`${user.id}:${code}`).digest("hex");
   const [reset] = await sql`SELECT id FROM password_reset_codes WHERE user_id = ${user.id} AND code_hash = ${hash} AND used_at IS NULL AND expires_at > now() ORDER BY created_at DESC LIMIT 1`;
   if (!reset) return NextResponse.json({ error: "The code is invalid or has expired" }, { status: 400, headers });

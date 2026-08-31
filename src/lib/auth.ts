@@ -5,6 +5,7 @@ import { cookies, headers } from "next/headers";
 
 import { getDatabase } from "@/lib/db";
 import { profileImageUrl } from "@/lib/images";
+import { isSuperAdminAccount, superAdminCredentialVersion } from "@/lib/super-admin";
 
 export type SessionUser = {
   id: string;
@@ -24,7 +25,7 @@ function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-export async function createSession(userId: string, options?: { maxAgeMinutes?: number }) {
+export async function createSession(userId: string, options?: { maxAgeMinutes?: number; credentialVersion?: string | null }) {
   const token = randomBytes(32).toString("base64url");
   const tokenHash = hashToken(token);
   const expiresAt = options?.maxAgeMinutes
@@ -34,8 +35,8 @@ export async function createSession(userId: string, options?: { maxAgeMinutes?: 
   const sql = getDatabase();
 
   await sql`
-    INSERT INTO user_sessions (user_id, token_hash, expires_at, user_agent)
-    VALUES (${userId}, ${tokenHash}, ${expiresAt.toISOString()}, ${requestHeaders.get("user-agent")})
+    INSERT INTO user_sessions (user_id, token_hash, expires_at, user_agent, credential_version)
+    VALUES (${userId}, ${tokenHash}, ${expiresAt.toISOString()}, ${requestHeaders.get("user-agent")}, ${options?.credentialVersion || null})
   `;
 
   const cookieStore = await cookies();
@@ -73,7 +74,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
 
   const sql = getDatabase();
   const [user] = await sql`
-    SELECT users.id, users.email, users.first_name, users.last_name, users.role, users.avatar_url, users.updated_at,
+    SELECT users.id, users.email, users.first_name, users.last_name, users.role, users.avatar_url, users.updated_at, session.credential_version,
       administrator.id AS administrator_id, administrator.first_name AS administrator_first_name, administrator.last_name AS administrator_last_name
     FROM user_sessions session
     JOIN users ON users.id = session.user_id
@@ -85,6 +86,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   `;
 
   if (!user) return null;
+  if (isSuperAdminAccount(user) && (!superAdminCredentialVersion() || user.credential_version !== superAdminCredentialVersion())) return null;
   return {
     id: String(user.id), email: String(user.email),
     firstName: String(user.first_name), lastName: String(user.last_name),
@@ -100,15 +102,16 @@ export async function startImpersonation(targetUserId: string) {
   if (!token) return null;
   const sql = getDatabase();
   const [session] = await sql`
-    SELECT session.id, session.user_id, users.role
+    SELECT session.id, session.user_id, users.role, users.email
     FROM user_sessions session JOIN users ON users.id = session.user_id
     WHERE session.token_hash = ${hashToken(token)} AND session.expires_at > now()
       AND session.impersonator_user_id IS NULL
     LIMIT 1
   `;
   if (!session || session.role !== "admin" || String(session.user_id) === targetUserId) return null;
-  const [target] = await sql`SELECT id, first_name, last_name, role FROM users WHERE id = ${targetUserId} AND is_active LIMIT 1`;
+  const [target] = await sql`SELECT id, first_name, last_name, role, email FROM users WHERE id = ${targetUserId} AND is_active LIMIT 1`;
   if (!target) return null;
+  if (isSuperAdminAccount(target) || (["admin", "support"].includes(String(target.role)) && !isSuperAdminAccount(session))) return null;
   await sql.transaction([
     sql`UPDATE user_sessions SET impersonator_user_id = ${session.user_id}, user_id = ${target.id}, impersonation_started_at = now(), last_seen_at = now() WHERE id = ${session.id}`,
     sql`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES (${session.user_id}, 'user.impersonation_started', 'user', ${targetUserId}, ${JSON.stringify({ targetRole: target.role, sessionId: String(session.id) })}::jsonb)`,

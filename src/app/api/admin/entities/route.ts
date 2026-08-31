@@ -4,8 +4,9 @@ import { del } from "@vercel/blob";
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
 import { DEFAULT_LISTING_IMAGE, listingImageUrl, profileImageUrl } from "@/lib/images";
+import { isSuperAdminAccount } from "@/lib/super-admin";
 
-type EntityType = "users" | "farms" | "produce" | "areas" | "pickup_centres" | "orders" | "refunds" | "payouts" | "reviews" | "activity" | "options";
+type EntityType = "users" | "farms" | "produce" | "areas" | "pickup_centres" | "orders" | "refunds" | "payouts" | "reviews" | "subscribers" | "activity" | "options";
 
 function isUploadedListingImage(value?: string) {
   try { return Boolean(value && new URL(value).hostname.endsWith(".blob.vercel-storage.com")); } catch { return false; }
@@ -34,9 +35,26 @@ export async function GET(request: NextRequest) {
   const staff = await authorize();
   if (!staff) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const type = request.nextUrl.searchParams.get("type") as EntityType;
-  if (staff.role === "support" && type === "activity") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (staff.role === "support" && ["activity", "subscribers"].includes(type)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const id = request.nextUrl.searchParams.get("id");
   const sql = getDatabase();
+
+  if (type === "subscribers") {
+    const rows = id ? await sql`
+      SELECT subscriber.id, subscriber.email, subscriber.source, subscriber.is_active, subscriber.consented_at,
+        subscriber.unsubscribed_at, subscriber.created_at, subscriber.updated_at,
+        users.first_name || ' ' || users.last_name AS account_name
+      FROM campaign_subscribers subscriber LEFT JOIN users ON users.id = subscriber.user_id
+      WHERE subscriber.id = ${id} LIMIT 1
+    ` : await sql`
+      SELECT subscriber.id, subscriber.email, subscriber.source, subscriber.is_active, subscriber.consented_at,
+        subscriber.unsubscribed_at, subscriber.created_at, subscriber.updated_at,
+        users.first_name || ' ' || users.last_name AS account_name
+      FROM campaign_subscribers subscriber LEFT JOIN users ON users.id = subscriber.user_id
+      ORDER BY subscriber.is_active DESC, subscriber.consented_at DESC LIMIT 500
+    `;
+    return NextResponse.json(id ? { entity: rows[0] ?? null } : { entities: rows });
+  }
 
   if (type === "options") {
     const [owners, farms, categories, areas] = await Promise.all([
@@ -279,6 +297,7 @@ export async function POST(request: NextRequest) {
     if (type === "users") {
       if (!body.firstName || !body.lastName || !body.email || !body.phone || !body.role || !body.password) throw new Error("Complete all required fields");
       if (!["consumer", "farmer", "admin", "support"].includes(body.role)) throw new Error("Invalid role");
+      if (["admin", "support"].includes(body.role) && !isSuperAdminAccount(administrator)) return NextResponse.json({ error: "Only the super administrator can create staff accounts" }, { status: 403 });
       const [entity] = await sql`
         INSERT INTO users (first_name, last_name, email, phone, role, password_hash, email_verified_at)
         VALUES (${body.firstName}, ${body.lastName}, ${body.email.toLowerCase()}, ${body.phone}, ${body.role}::user_role, crypt(${body.password}, gen_salt('bf', 12)), now())
@@ -367,6 +386,10 @@ export async function DELETE(request: NextRequest) {
 
   if (type === "users") {
     if (id === session.id) return NextResponse.json({ error: "You cannot remove your own account" }, { status: 400 });
+    const [target] = await sql`SELECT email, role FROM users WHERE id = ${id} LIMIT 1`;
+    if (!target) return NextResponse.json({ error: "User not found" }, { status: 404 });
+    if (isSuperAdminAccount(target)) return NextResponse.json({ error: "The super administrator can only be changed through environment configuration" }, { status: 403 });
+    if (["admin", "support"].includes(String(target.role)) && !isSuperAdminAccount(session)) return NextResponse.json({ error: "Only the super administrator can deactivate staff accounts" }, { status: 403 });
     await sql`UPDATE users SET is_active = false, updated_at = now() WHERE id = ${id}`;
   } else if (type === "farms") {
     await sql`UPDATE farms SET verification_status = 'suspended', updated_at = now() WHERE id = ${id}`;
@@ -548,6 +571,10 @@ export async function PATCH(request: NextRequest) {
         if (!body.firstName || !body.lastName || !body.email || !body.phone || !["consumer", "farmer", "admin", "support"].includes(body.role)) {
           return NextResponse.json({ error: "Complete all required user fields" }, { status: 400 });
         }
+        const [target] = await sql`SELECT email, role FROM users WHERE id = ${id} LIMIT 1`;
+        if (!target) return NextResponse.json({ error: "User not found" }, { status: 404 });
+        if (isSuperAdminAccount(target)) return NextResponse.json({ error: "The super administrator identity can only be changed through environment configuration" }, { status: 403 });
+        if ((["admin", "support"].includes(String(target.role)) || ["admin", "support"].includes(body.role)) && !isSuperAdminAccount(administrator)) return NextResponse.json({ error: "Only the super administrator can manage staff accounts" }, { status: 403 });
         if (id === administrator.id && body.role !== "admin") return NextResponse.json({ error: "You cannot change your own administrator role" }, { status: 400 });
         [entity] = await sql`
           UPDATE users SET first_name = ${body.firstName}, last_name = ${body.lastName}, email = ${body.email.toLowerCase()},

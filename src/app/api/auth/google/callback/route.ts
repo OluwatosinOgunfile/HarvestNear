@@ -58,14 +58,14 @@ export async function GET(request: Request) {
     const sql = getDatabase();
     let created = false;
     let [user] = await sql`
-      SELECT users.id, users.is_active
+      SELECT users.id, users.is_active, users.role
       FROM oauth_accounts account JOIN users ON users.id = account.user_id
       WHERE account.provider = 'google' AND account.provider_account_id = ${profile.sub}
       LIMIT 1
     `;
 
     if (!user) {
-      [user] = await sql`SELECT id, is_active FROM users WHERE lower(email) = ${email} LIMIT 1`;
+      [user] = await sql`SELECT id, is_active, role FROM users WHERE lower(email) = ${email} LIMIT 1`;
       if (!user) {
         created = true;
         const fullName = (profile.name || "Google User").trim().split(/\s+/);
@@ -97,6 +97,7 @@ export async function GET(request: Request) {
     }
 
     if (!user.is_active) return mobile ? mobileRedirect("account_disabled") : errorRedirect(request, "account_disabled");
+    if (["admin", "support"].includes(String(user.role))) return mobile ? mobileRedirect("staff_password_required") : errorRedirect(request, "staff_password_required");
     await sql.transaction([
       sql`UPDATE users SET email_verified_at = COALESCE(email_verified_at, now()), last_login_at = now(), updated_at = now() WHERE id = ${user.id}`,
       sql`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES (${user.id}, 'user.google_signed_in', 'user', ${user.id}, ${JSON.stringify({ email })}::jsonb)`,

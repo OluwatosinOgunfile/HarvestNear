@@ -5,6 +5,7 @@ import { getDatabase } from "@/lib/db";
 import { profileImageUrl } from "@/lib/images";
 import { checkRateLimit } from "@/lib/security";
 import { isMobileClient, mobileCorsHeaders, mobileOptions } from "@/lib/mobile-cors";
+import { isSuperAdminAccount, superAdminCredentialVersion, verifySuperAdminPassword } from "@/lib/super-admin";
 
 export const OPTIONS = mobileOptions;
 
@@ -17,16 +18,16 @@ export async function POST(request: Request) {
 
   const sql = getDatabase();
   const [user] = await sql`
-    SELECT id, email, first_name, last_name, role, avatar_url, updated_at
+    SELECT id, email, first_name, last_name, role, avatar_url, updated_at,
+      password_hash IS NOT NULL AND password_hash = crypt(${body.password}, password_hash) AS password_valid
     FROM users
     WHERE (lower(email) = ${identifier} OR phone = ${identifier})
       AND is_active
-      AND password_hash IS NOT NULL
-      AND password_hash = crypt(${body.password}, password_hash)
     LIMIT 1
   `;
-  if (!user) return NextResponse.json({ error: "Invalid email, phone number, or password" }, { status: 401, headers });
+  const validPassword = user && (isSuperAdminAccount(user) ? verifySuperAdminPassword(body.password) : Boolean(user.password_valid));
+  if (!validPassword) return NextResponse.json({ error: "Invalid email, phone number, or password" }, { status: 401, headers });
 
-  const session = await createSession(String(user.id));
+  const session = await createSession(String(user.id), { credentialVersion: isSuperAdminAccount(user) ? superAdminCredentialVersion() : null });
   return NextResponse.json({ ...(isMobileClient(request) ? { sessionToken: session.token } : {}), user: { id: user.id, email: user.email, firstName: user.first_name, lastName: user.last_name, role: user.role, avatarUrl: user.avatar_url ? `${profileImageUrl(String(user.id), String(user.avatar_url))}?v=${new Date(String(user.updated_at)).getTime()}` : null } }, { headers });
 }

@@ -5,6 +5,7 @@ import { getDatabase } from "@/lib/db";
 import { sendPasswordResetCode } from "@/lib/email";
 import { mobileCorsHeaders, mobileOptions } from "@/lib/mobile-cors";
 import { checkRateLimit, validText } from "@/lib/security";
+import { isSuperAdminAccount } from "@/lib/super-admin";
 
 export const OPTIONS = mobileOptions;
 
@@ -16,8 +17,8 @@ export async function POST(request: Request) {
   if (!await checkRateLimit(request, "auth.forgot-password", 5, 60 * 60, email)) return NextResponse.json({ error: "Too many reset requests. Try again later." }, { status: 429, headers });
 
   const sql = getDatabase();
-  const [user] = await sql`SELECT id, first_name, email FROM users WHERE lower(email) = ${email} AND is_active LIMIT 1`;
-  if (user) {
+  const [user] = await sql`SELECT id, first_name, email, role FROM users WHERE lower(email) = ${email} AND is_active LIMIT 1`;
+  if (user && !isSuperAdminAccount(user)) {
     const code = String(randomInt(100000, 1000000));
     const hash = createHash("sha256").update(`${user.id}:${code}`).digest("hex");
     await sql.transaction([

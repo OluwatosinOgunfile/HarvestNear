@@ -90,6 +90,16 @@ Checkout offers doorstep delivery when the supplying farms and saved destination
 
 Resend delivers branded welcome, password recovery, payment, order, delivery, support, farm, rating, and payout messages. Users manage optional delivery, support, farm, rating, nearby-produce, promotion, and weekly-digest email categories from their profile; essential security, payment, refund, and active-order messages remain enabled.
 
+### Super administrator credentials
+
+The super administrator is identified by `SUPER_ADMIN_EMAIL` (default: `admin@harvestnearu.com`) and authenticates only with `SUPER_ADMIN_PASSWORD`. Set a unique value of at least 16 characters in the deployment environment. The password cannot be changed through password recovery, Google sign-in, profile APIs, or the administration interface. Rotating the environment value invalidates existing super-administrator sessions. Only this account can create, edit, deactivate, or impersonate administrator and support accounts.
+
+Apply database migrations before deploying code that uses a rotated super-administrator credential:
+
+```bash
+npm run db:migrate
+```
+
 Web notifications update in app, while the native client registers Expo push tokens for actionable alerts with sound. Notification dispatch endpoints should be protected with `PUSH_DISPATCH_SECRET` in production.
 
 ## AI assistance and evaluation
