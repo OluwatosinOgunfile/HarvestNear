@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
+import { dispatchNotificationEmailsAfterResponse } from "@/lib/notification-email";
 import { canMutateAs, checkRateLimit } from "@/lib/security";
 
 export async function POST(request: Request) {
+  dispatchNotificationEmailsAfterResponse();
   const user = await getSessionUser();
   if (!user || !["consumer", "farmer"].includes(user.role) || !canMutateAs(user)) return NextResponse.json({ error: "Sign in with a non-impersonated account to rate a farm" }, { status: 401 });
   if (!await checkRateLimit(request, "reviews.write", 20, 60 * 60, user.id)) return NextResponse.json({ error: "Review limit reached. Try again later." }, { status: 429 });

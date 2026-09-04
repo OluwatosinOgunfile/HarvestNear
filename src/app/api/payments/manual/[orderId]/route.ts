@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
+import { dispatchNotificationEmailsAfterResponse } from "@/lib/notification-email";
 import { canMutateAs, checkRateLimit, validImageFile } from "@/lib/security";
 
 const MAX_RECEIPT_SIZE = 5 * 1024 * 1024;
@@ -66,6 +67,7 @@ export async function GET(_: Request, context: { params: Promise<{ orderId: stri
 }
 
 export async function POST(request: Request, context: { params: Promise<{ orderId: string }> }) {
+  dispatchNotificationEmailsAfterResponse();
   const user = await getSessionUser();
   if (!user || !["consumer", "farmer"].includes(user.role) || !canMutateAs(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   if (!await checkRateLimit(request, "payment.receipt", 12, 60 * 60, user.id)) return NextResponse.json({ error: "Receipt upload limit reached. Try again later." }, { status: 429 });
@@ -123,6 +125,7 @@ export async function POST(request: Request, context: { params: Promise<{ orderI
 }
 
 export async function PATCH(request: Request, context: { params: Promise<{ orderId: string }> }) {
+  dispatchNotificationEmailsAfterResponse();
   const administrator = await getSessionUser();
   if (!administrator || administrator.role !== "admin" || !canMutateAs(administrator)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await request.json().catch(() => null) as { action?: string } | null;

@@ -3,6 +3,7 @@ import { del } from "@vercel/blob";
 
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
+import { dispatchNotificationEmailsAfterResponse } from "@/lib/notification-email";
 import { DEFAULT_LISTING_IMAGE, listingImageUrl, profileImageUrl } from "@/lib/images";
 import { isSuperAdminAccount } from "@/lib/super-admin";
 
@@ -286,6 +287,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  dispatchNotificationEmailsAfterResponse();
   const administrator = await authorize(true);
   if (!administrator) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const type = request.nextUrl.searchParams.get("type") as EntityType;
@@ -409,6 +411,7 @@ export async function DELETE(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
+  dispatchNotificationEmailsAfterResponse();
   try {
     const administrator = await authorize(true);
     if (!administrator) return NextResponse.json({ error: "Forbidden" }, { status: 403 });

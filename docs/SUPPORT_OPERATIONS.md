@@ -40,7 +40,7 @@ Administrators review ownership and farm details before approval. Verification c
 
 ## Notifications
 
-Notifications cover accounts, farm verification, payments, payouts, orders, deliveries, ratings, support, and harvest activity. The web client receives in-app updates, and the native app receives actionable Expo push notifications with sound when the device has granted permission. Branded email notifications follow the categories selected in the user profile; essential security, payment, refund, and active-order messages remain enabled. Viewed notifications are marked read and later cleaned up.
+Notifications cover accounts, farm verification, payments, payouts, orders, deliveries, ratings, support, and harvest activity. The web client receives in-app updates, and the native app receives actionable Expo push notifications with sound when the device has granted permission. Branded email notifications are dispatched immediately and follow the categories selected in the user profile; essential security, payment, refund, and active-order messages remain enabled. Users who opt into nearby produce announcements receive new-listing and restock emails only when the farm falls within their saved preferred distance and the configured safety cap. Viewed notifications are marked read and later cleaned up.
 
 ## Escalation checklist
 

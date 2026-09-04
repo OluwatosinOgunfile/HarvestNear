@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
+import { dispatchNotificationEmailsAfterResponse } from "@/lib/notification-email";
 import { listingImageUrl } from "@/lib/images";
 import { paystackEnabled } from "@/lib/paystack";
 import { doorstepDeliveryFeeKobo } from "@/lib/delivery";
@@ -51,6 +52,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  dispatchNotificationEmailsAfterResponse();
   const user = await getSessionUser();
   if (!user || !["consumer", "farmer"].includes(user.role) || !canMutateAs(user)) return NextResponse.json({ error: "Sign in with a non-impersonated account to place an order" }, { status: 401 });
   if (!await checkRateLimit(request, "orders.create", 10, 10 * 60, user.id)) return NextResponse.json({ error: "Too many checkout attempts. Try again later." }, { status: 429 });
@@ -162,6 +164,7 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  dispatchNotificationEmailsAfterResponse();
   const user = await getSessionUser();
   if (!user || !["consumer", "farmer"].includes(user.role) || !canMutateAs(user)) return NextResponse.json({ error: "Impersonation is read-only" }, { status: 403 });
   const body = await request.json().catch(() => null) as { orderId?: string; itemId?: string; action?: string } | null;

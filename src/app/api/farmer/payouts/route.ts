@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
+import { dispatchNotificationEmailsAfterResponse } from "@/lib/notification-email";
 import { canMutateAs, checkRateLimit } from "@/lib/security";
 
 export async function GET(request: Request) {
@@ -29,6 +30,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  dispatchNotificationEmailsAfterResponse();
   const user = await getSessionUser();
   if (!user || user.role !== "farmer" || !canMutateAs(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   if (!await checkRateLimit(request, "farmer.payout", 5, 60 * 60, user.id)) return NextResponse.json({ error: "Too many payout requests. Try again later." }, { status: 429 });

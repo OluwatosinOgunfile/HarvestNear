@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
+import { dispatchNotificationEmailsAfterResponse } from "@/lib/notification-email";
 import { checkRateLimit, validText } from "@/lib/security";
 
 const categories = new Set(["order", "payment", "delivery", "refund", "account", "farm", "technical", "feedback", "other"]);
@@ -46,6 +47,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  dispatchNotificationEmailsAfterResponse();
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   if (!await checkRateLimit(request, "support.ticket", 20, 60 * 60)) return NextResponse.json({ error: "Too many support requests. Try again later." }, { status: 429 });
@@ -88,6 +90,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
+  dispatchNotificationEmailsAfterResponse();
   const user = await getSessionUser();
   if (!user || !["admin", "support"].includes(user.role) || user.impersonating) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;

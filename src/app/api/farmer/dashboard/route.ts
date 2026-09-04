@@ -5,6 +5,8 @@ import { randomUUID } from "node:crypto";
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
 import { DEFAULT_LISTING_IMAGE, listingImageUrl, profileImageUrl } from "@/lib/images";
+import { notifyNearbyProduce } from "@/lib/nearby-produce-notifications";
+import { dispatchNotificationEmailsAfterResponse } from "@/lib/notification-email";
 import { canMutateAs, checkRateLimit, validText } from "@/lib/security";
 
 async function farmerSession(write = false) {
@@ -87,6 +89,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  dispatchNotificationEmailsAfterResponse();
   const user = await farmerSession(true);
   if (!user) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   if (!await checkRateLimit(request, "farmer.write", 60, 60 * 60, user.id)) return NextResponse.json({ error: "Update limit reached. Try again later." }, { status: 429 });
@@ -110,6 +113,7 @@ export async function POST(request: Request) {
       VALUES (${ownedFarm.id}, ${product.id}, ${body.name}, ${body.unit}, ${Math.round(Number(body.price) * 100)}, ${Number(body.stock)}, ${Number(body.stock)}, now(), ${body.harvestDate}, ${availability.availableFrom}, ${availability.availableUntil}, 'active', ${body.badge || null}) RETURNING id
     `;
     if (body.imageUrl) await sql`INSERT INTO listing_images (listing_id, url, alt_text) VALUES (${listing.id}, ${body.imageUrl}, ${body.name})`;
+    await notifyNearbyProduce({ farmId: String(ownedFarm.id), listingId: String(listing.id), listingTitle: body.name, isRestock: false });
     return NextResponse.json({ id: listing.id }, { status: 201 });
   } catch (error) {
     console.error("Farmer listing creation failed", error);
@@ -131,6 +135,7 @@ async function POSTFarm(_request: Request, user: { id: string; email: string }, 
 }
 
 export async function PATCH(request: Request) {
+  dispatchNotificationEmailsAfterResponse();
   const session = await farmerSession();
   if (!session) return NextResponse.json({ error: "Sign in with a farmer account to update this workspace" }, { status: 403 });
   if (!canMutateAs(session)) return NextResponse.json({ error: "Administrator impersonation is read-only. Return to administration and sign in as the farmer to update fulfilment." }, { status: 403 });
@@ -230,6 +235,8 @@ export async function PATCH(request: Request) {
   if (body?.type === "inventory" && body.id && ["active", "paused"].includes(body.status)) {
     const availableStock = Number(body.availableStock);
     if (!Number.isInteger(availableStock) || availableStock < 0) return NextResponse.json({ error: "Enter a whole available quantity of zero or more" }, { status: 400 });
+    const [previous] = await sql`SELECT id, farm_id, title, quantity_available, quantity_reserved, status FROM produce_listings WHERE id=${body.id} AND farm_id IN (SELECT id FROM farms WHERE owner_id=${user.id})`;
+    if (!previous) return NextResponse.json({ error: "Listing not found" }, { status: 404 });
     const [listing] = await sql`UPDATE produce_listings SET
       last_restock_total = CASE WHEN ${availableStock} + quantity_reserved > quantity_available THEN ${availableStock} + quantity_reserved ELSE last_restock_total END,
       last_restocked_at = CASE WHEN ${availableStock} + quantity_reserved > quantity_available THEN now() ELSE last_restocked_at END,
@@ -239,6 +246,10 @@ export async function PATCH(request: Request) {
       WHERE id = ${body.id} AND farm_id IN (SELECT id FROM farms WHERE owner_id = ${user.id})
       RETURNING id, quantity_available, quantity_reserved, status, last_restock_total, last_restocked_at`;
     if (!listing) return NextResponse.json({ error: "Listing not found" }, { status: 404 });
+    const previousAvailable = Number(previous.quantity_available) - Number(previous.quantity_reserved);
+    if (availableStock > previousAvailable || (previous.status !== "active" && body.status === "active" && availableStock > 0)) {
+      await notifyNearbyProduce({ farmId: String(previous.farm_id), listingId: String(previous.id), listingTitle: String(previous.title), isRestock: true });
+    }
     return NextResponse.json({ updated: true, listing });
   }
   if (body?.type === "listing" && body.id && ["active", "paused"].includes(body.status)) {
@@ -249,7 +260,7 @@ export async function PATCH(request: Request) {
     const price = Number(body.price);
     const stock = Number(body.stock);
     if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(stock) || stock < 0) return NextResponse.json({ error: "Enter a valid price and quantity" }, { status: 400 });
-    const [ownedListing] = await sql`SELECT listing.id, listing.quantity_reserved, image.url AS image_url FROM produce_listings listing LEFT JOIN LATERAL (SELECT url FROM listing_images WHERE listing_id = listing.id ORDER BY sort_order LIMIT 1) image ON true WHERE listing.id = ${body.id} AND listing.farm_id IN (SELECT id FROM farms WHERE owner_id = ${user.id})`;
+    const [ownedListing] = await sql`SELECT listing.id, listing.farm_id, listing.title, listing.quantity_available, listing.quantity_reserved, listing.status, image.url AS image_url FROM produce_listings listing LEFT JOIN LATERAL (SELECT url FROM listing_images WHERE listing_id = listing.id ORDER BY sort_order LIMIT 1) image ON true WHERE listing.id = ${body.id} AND listing.farm_id IN (SELECT id FROM farms WHERE owner_id = ${user.id})`;
     if (!ownedListing) return NextResponse.json({ error: "Listing not found" }, { status: 404 });
     if (stock < Number(ownedListing.quantity_reserved)) return NextResponse.json({ error: "Quantity cannot be lower than stock already reserved" }, { status: 400 });
     const slug = body.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
@@ -267,6 +278,11 @@ export async function PATCH(request: Request) {
       if (body.imageUrl) await sql`INSERT INTO listing_images (listing_id, url, alt_text) VALUES (${body.id}, ${body.imageUrl}, ${body.name})`;
       const previousImage = ownedListing.image_url ? String(ownedListing.image_url) : "";
       if (previousImage && previousImage !== body.imageUrl && previousImage.includes(".blob.vercel-storage.com")) await del(previousImage).catch((error) => console.error("Old listing image cleanup failed", error));
+      const previousAvailable = Number(ownedListing.quantity_available) - Number(ownedListing.quantity_reserved);
+      const newAvailable = stock - Number(ownedListing.quantity_reserved);
+      if (newAvailable > previousAvailable || (ownedListing.status !== "active" && body.status === "active" && newAvailable > 0)) {
+        await notifyNearbyProduce({ farmId: String(ownedListing.farm_id), listingId: String(ownedListing.id), listingTitle: body.name, isRestock: true });
+      }
       return NextResponse.json({ updated: true });
     } catch (error) {
       console.error("Farmer listing update failed", error);
