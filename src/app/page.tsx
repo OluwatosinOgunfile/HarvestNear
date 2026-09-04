@@ -107,7 +107,35 @@ const fallbackDeliveryLocations = [
 type DeliveryLocation = { id?: string; name: string; latitude: number; longitude: number };
 type Theme = "light" | "dark";
 type View = "landing" | "market" | "orders" | "farmer" | "admin" | "profile" | "help" | "delivery" | "returns";
-type CurrentUser = { id: string; email: string; firstName: string; lastName: string; role: "consumer" | "farmer" | "admin" | "support"; avatarUrl?: string | null; impersonating?: boolean; administrator?: { id: string; firstName: string; lastName: string } };
+type CurrentUser = { id: string; email: string; firstName: string; lastName: string; role: "consumer" | "farmer" | "admin" | "support"; avatarUrl?: string | null; requiresLocation?: boolean; impersonating?: boolean; administrator?: { id: string; firstName: string; lastName: string } };
+
+function RequiredLocationSetup({ onSaved }: { onSaved: (user: CurrentUser) => void }) {
+  const [latitude, setLatitude] = useState("");
+  const [longitude, setLongitude] = useState("");
+  const [locating, setLocating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  function captureLocation() {
+    if (!navigator.geolocation) { setError("Location access is not available in this browser. Enter the coordinates below."); return; }
+    setLocating(true); setError("");
+    navigator.geolocation.getCurrentPosition((position) => { setLatitude(String(position.coords.latitude)); setLongitude(String(position.coords.longitude)); setLocating(false); }, () => { setError("Location access was not granted. Allow it or enter the coordinates below."); setLocating(false); }, { enableHighAccuracy: true, timeout: 12000 });
+  }
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setSaving(true); setError("");
+    const form = new FormData(event.currentTarget);
+    try {
+      const response = await fetch("/api/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "location", locationTarget: "home", label: "Home", recipientPhone: form.get("recipientPhone"), line1: form.get("line1"), city: form.get("city"), state: form.get("state"), latitude, longitude }) });
+      const result = await readJsonResponse<{ error?: string }>(response);
+      if (!response.ok) throw new Error(result.error || "Could not save your location");
+      const sessionResponse = await fetch("/api/auth/session", { cache: "no-store" });
+      const session = await readJsonResponse<{ user: CurrentUser }>(sessionResponse);
+      if (!sessionResponse.ok || !session.user || session.user.requiresLocation) throw new Error("Your location could not be confirmed");
+      onSaved(session.user);
+    } catch (reason) { setError((reason as Error).message); }
+    finally { setSaving(false); }
+  }
+  return <div className="modal-overlay required-location-overlay"><div className="signup-modal required-location-modal"><ModalBrand/><p className="auth-kicker">FINAL ACCOUNT SETUP</p><h2>Save your location</h2><p className="signup-intro">Your location is required to rank nearby harvests, send relevant restock announcements, and calculate delivery.</p><form className="signup-form" onSubmit={save}><button type="button" className="capture-location-button" onClick={captureLocation} disabled={locating}><LocateFixed size={16}/>{locating ? "Capturing location..." : "Use my current location"}</button><label>Phone number<input name="recipientPhone" type="tel" required autoComplete="tel"/></label><label>Street address or area<input name="line1" required autoComplete="street-address"/></label><div className="form-row"><label>City<input name="city" required autoComplete="address-level2"/></label><label>State<input name="state" required autoComplete="address-level1" defaultValue="FCT"/></label></div><div className="form-row"><label>Latitude<input required type="number" min="-90" max="90" step="any" value={latitude} onChange={(event)=>setLatitude(event.target.value)}/></label><label>Longitude<input required type="number" min="-180" max="180" step="any" value={longitude} onChange={(event)=>setLongitude(event.target.value)}/></label></div>{error&&<p className="auth-error" role="alert">{error}</p>}<button className="create-account" disabled={saving}>{saving ? "Saving location..." : "Save and continue"}</button></form></div></div>;
+}
 type NotificationItem = {
   id: string;
   type: "order" | "delivery" | "harvest" | "account";
@@ -643,12 +671,16 @@ export default function Home() {
         ? await readJsonResponse(response) as { user?: CurrentUser; error?: string }
         : { error: response.status === 404 ? "Sign-in service is unavailable. Refresh the page and try again." : "The sign-in service returned an unexpected response. Try again shortly." };
       if (!response.ok || !data.user) throw new Error(data.error || "Sign in failed");
-      setCurrentUser(data.user);
-      if (pendingCheckout && ["consumer", "farmer"].includes(data.user.role)) {
+      const sessionResponse = await fetch("/api/auth/session", { cache: "no-store" });
+      const sessionData = await readJsonResponse<{ user: CurrentUser | null }>(sessionResponse);
+      const signedInUser = sessionData.user || data.user;
+      setCurrentUser(signedInUser);
+      if (signedInUser.requiresLocation) { setSigninOpen(false); setPendingCheckout(false); return; }
+      if (pendingCheckout && ["consumer", "farmer"].includes(signedInUser.role)) {
         setPendingCheckout(false);
         setSigninOpen(false);
         try {
-          await prepareCheckout(data.user);
+          await prepareCheckout(signedInUser);
         } catch (checkoutFailure) {
           setCheckout(false);
           setBasketCheckoutError((checkoutFailure as Error).message || "Could not prepare checkout. Please try again.");
@@ -656,7 +688,7 @@ export default function Home() {
         }
         return;
       }
-      await hydrateShoppingState(data.user);
+      await hydrateShoppingState(signedInUser);
       setPendingCheckout(false);
       setSigninComplete(true);
     } catch (error) {
@@ -1218,6 +1250,8 @@ export default function Home() {
       {checkout && <div className="modal-overlay"><div className="payment-modal">
         {!paid ? <><button className="close-modal" onClick={() => setCheckout(false)}><X size={20} /></button><ModalBrand/><p className="eyebrow center">SECURE PAYMENT</p><h2>{paymentUnavailable ? "Payment is temporarily unavailable" : checkoutAmount ? "Complete your payment" : "Use your account credit"}</h2><p>{paymentUnavailable ? "Paystack has not been detected and manual payments are disabled. Please try again after payment configuration is refreshed." : checkoutAmount ? paymentMethod === "paystack" ? "Pay securely with Paystack using card, bank, transfer, or another available channel." : "Transfer the exact remaining amount, then upload your receipt." : "Your available account credit covers this order in full."}</p><div className="pay-summary"><span>{checkoutCredit ? `Account credit: -${money(checkoutCredit)}` : "Total to pay"}</span><strong>{money(checkoutAmount)}</strong></div>{checkoutAmount > 0 && paystackAvailable && manualPaymentSettings && <div className="payment-method-picker"><button className={paymentMethod === "paystack" ? "active" : ""} onClick={() => setPaymentMethod("paystack")}><CreditCard size={18}/><span><strong>Paystack</strong><small>Instant secure confirmation</small></span></button><button className={paymentMethod === "manual" ? "active" : ""} onClick={() => setPaymentMethod("manual")}><AtSign size={18}/><span><strong>Bank transfer</strong><small>Receipt reviewed by admin</small></span></button></div>}{checkoutAmount > 0 && paymentMethod === "manual" && manualPaymentSettings && <section className="checkout-bank-details"><div><small>BANK</small><strong>{manualPaymentSettings.bank_name}</strong></div><div><small>ACCOUNT NAME</small><strong>{manualPaymentSettings.account_name}</strong></div><div><small>ACCOUNT NUMBER</small><strong>{manualPaymentSettings.account_number}</strong></div>{manualPaymentSettings.instructions && <p>{manualPaymentSettings.instructions}</p>}</section>}<label>Email address<input value={currentUser?.email || ""} readOnly /></label>{checkoutAmount > 0 && paymentMethod === "manual" && manualPaymentAvailable && <label className="payment-receipt-field">Payment receipt<input type="file" accept="image/png,image/jpeg,image/webp,application/pdf" onChange={(event) => setPaymentReceipt(event.target.files?.[0] || null)} disabled={checkoutBusy || !manualPaymentSettings}/><small>JPG, PNG, WebP, or PDF · Maximum 5 MB</small></label>}{checkoutError && <p className="auth-error" role="alert">{checkoutError}</p>}<button className="pay-button" disabled={checkoutBusy || paymentUnavailable || (checkoutAmount > 0 && (paymentMethod === "manual" ? !paymentReceipt || !manualPaymentSettings : !paystackAvailable))} onClick={completeOrder}>{checkoutBusy ? "Processing order..." : paymentUnavailable ? "Payment unavailable" : checkoutAmount ? paymentMethod === "paystack" ? "Continue securely with Paystack" : "Place order and submit receipt" : "Place order with account credit"} {!checkoutBusy && <ArrowRight size={18} />}</button><small>{paymentUnavailable ? "Restart the application after adding Paystack environment variables." : checkoutAmount ? paymentMethod === "paystack" ? "You will return here after Paystack verifies your payment." : "Your order remains pending until an administrator verifies the transfer." : "No transfer or receipt is needed."}</small></> : <div className="success-state"><span><Check size={30} /></span><p className="eyebrow center">{orderAwaitingReview ? "RECEIPT SUBMITTED" : "ORDER CONFIRMED"}</p><h2>{orderAwaitingReview ? "Payment review is pending." : "Account credit applied."}</h2><p>Order <strong>#{confirmedOrderNumber}</strong> {orderAwaitingReview ? "is reserved. We will notify you after an administrator confirms your payment." : "has been paid and sent for fulfilment."}</p><button onClick={() => { setCheckout(false); setPaid(false); setPaymentReceipt(null); setCart({}); fetch("/api/cart", { method: "DELETE" }); navigate("orders"); }}>View order status</button></div>}
       </div></div>}
+
+      {currentUser?.requiresLocation && <RequiredLocationSetup onSaved={setCurrentUser}/>}
 
       {signupOpen && <div className="modal-overlay" onMouseDown={() => setSignupOpen(false)}><div className="signup-modal" onMouseDown={(event) => event.stopPropagation()}>
         <button className="close-modal" onClick={() => setSignupOpen(false)}><X size={20} /></button>

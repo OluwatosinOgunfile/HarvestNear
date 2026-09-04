@@ -76,7 +76,7 @@ export async function POST(request: Request) {
       VALUES (${user.id}, 'account', ${welcomeTitle}, ${welcomeMessage}, ${role === "farmer" ? "/farmer" : "/profile"}, ${JSON.stringify({ lifecycle: "welcome", role })}::jsonb)`;
     await dispatchNotificationEmails(5, String(user.id)).catch((error) => console.error("Welcome email dispatch failed", error));
     const session = await createSession(String(user.id));
-    return NextResponse.json({ ...(isMobileClient(request) ? { sessionToken: session.token } : {}), user: { id: user.id, email: user.email, firstName: user.first_name, lastName: user.last_name, role: user.role, avatarUrl: null }, farmId }, { status: 201, headers });
+    return NextResponse.json({ ...(isMobileClient(request) ? { sessionToken: session.token } : {}), user: { id: user.id, email: user.email, firstName: user.first_name, lastName: user.last_name, role: user.role, avatarUrl: null, requiresLocation: true }, farmId }, { status: 201, headers });
   } catch (error) {
     const databaseError = error as { code?: string };
     if (databaseError.code === "23505") return NextResponse.json({ error: "An account already uses that email or phone number" }, { status: 409 });

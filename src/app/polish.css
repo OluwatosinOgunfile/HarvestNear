@@ -239,6 +239,22 @@ textarea:focus-visible {
   border-color: var(--green-2);
 }
 
+.required-location-overlay { z-index: 120; }
+.required-location-modal { width: min(560px, 100%); }
+.capture-location-button {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--green);
+  background: var(--paper);
+  border: 1px solid var(--green);
+  border-radius: 6px;
+  font-weight: 800;
+}
+.app-shell[data-theme="dark"] .capture-location-button { background: #18271e; }
+
 .farm-coordinate-fields > small {
   display: block;
   margin-top: 6px;
