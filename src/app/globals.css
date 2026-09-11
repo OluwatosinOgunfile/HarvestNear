@@ -94,9 +94,13 @@ button { color:inherit; cursor:pointer; }
 .farmer .verification-seal>svg{color:inherit;background:transparent;border-radius:0}
 .rating { margin-top:11px; display:flex; align-items:center; gap:4px; color:#e4a02b; font-size:11px; font-weight:700; }
 .rating span { color:#89918b; font-weight:400; }
-.stock-track { height:3px; margin-top:13px; background:#edf0eb; }
-.stock-track span { height:100%; display:block; background:#ef8a4a; }
-.stock-copy { margin:5px 0 12px; color:#828b85; font-size:9px; }
+.new-farm { width:fit-content; height:21px; margin-top:11px; padding:0 7px; display:flex; align-items:center; color:var(--green); background:#eff4ec; border-radius:6px; font-size:10px; font-weight:800; letter-spacing:.6px; text-transform:uppercase; }
+.stock-track { height:5px; margin-top:13px; background:#edf0eb; border-radius:3px; overflow:hidden; }
+.stock-track span { height:100%; display:block; background:var(--green); border-radius:3px; }
+.stock-track.low span { background:var(--orange); }
+.app-shell[data-theme="dark"] .new-farm { background:#223128; }
+.app-shell[data-theme="dark"] .stock-track { background:#2a352e; }
+.stock-copy { margin:6px 0 12px; color:#828b85; font-size:12px; }
 .price-row { padding-top:13px; border-top:1px solid #edf0eb; display:flex; justify-content:space-between; align-items:center; }
 .price-row strong { font-size:17px; }
 .price-row span { color:#7c867f; font-size:10px; }

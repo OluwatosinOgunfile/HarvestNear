@@ -229,13 +229,24 @@ function quantityUnit(unit: string, quantity: number) {
   return `${unit}s`;
 }
 
-function walkingTime(distanceKm: number) {
-  const minutes = Math.max(5, Math.round((Number(distanceKm) * 12) / 5) * 5);
-  if (minutes <= 5) return "Under 5 min walk";
-  if (minutes < 60) return `About ${minutes} min walk`;
-  const hours = Math.floor(minutes / 60);
-  const remainder = minutes % 60;
-  return `About ${hours} hr${hours === 1 ? "" : "s"}${remainder ? ` ${remainder} min` : ""} walk`;
+// Keep in step with proximityLabel in the mobile client so both surfaces describe the same farm identically.
+const WALK_MINUTES_PER_KM = 12;
+const LONGEST_USEFUL_WALK = 45;
+
+function walkMinutes(distanceKm: number) {
+  return Math.max(5, Math.round((Math.max(0, Number(distanceKm) || 0) * WALK_MINUTES_PER_KM) / 5) * 5);
+}
+
+function proximityLabel(distanceKm: number) {
+  const distance = Math.max(0, Number(distanceKm) || 0);
+  if (distance < 0.35) return "Under 5 min walk";
+  const minutes = walkMinutes(distance);
+  if (minutes <= LONGEST_USEFUL_WALK) return `About ${minutes} min walk`;
+  return `${distance < 10 ? distance.toFixed(1) : Math.round(distance)} km away`;
+}
+
+function stockRemaining(product: Product) {
+  return Math.max(0, Math.min(100, (product.stock / Math.max(1, product.restockTotal)) * 100));
 }
 
 function transitionUpdate(update: () => void) {
@@ -1126,7 +1137,7 @@ export default function Home() {
             <button ref={filterButtonRef} className={`filter-button ${activeFilterCount ? "active" : ""}`} onClick={() => setFiltersOpen((open) => !open)}><SlidersHorizontal size={18} /> Filters {activeFilterCount > 0 && <b>{activeFilterCount}</b>}</button>
             {filtersOpen && <div className="filter-popover" ref={filterPopoverRef}>
               <div className="filter-head"><div><strong>Filter harvests</strong><span>Refine what is shown near you</span></div><button onClick={() => setFiltersOpen(false)}><X size={17}/></button></div>
-              <label className="range-filter"><span><strong>Maximum distance</strong><b>{distanceFilterActive ? `${maxDistance} km · ${walkingTime(maxDistance)}` : "Any distance"}</b></span><input type="number" min="1" step="1" value={distanceFilterActive ? maxDistance : ""} placeholder="Enter distance in km" onChange={(event) => { const value = event.target.value; setDistanceFilterActive(value !== ""); if (value) setMaxDistance(Number(value)); setCurrentPage(1); }}/></label>
+              <label className="range-filter"><span><strong>Maximum distance</strong><b>{distanceFilterActive ? `${maxDistance} km${walkMinutes(maxDistance) <= LONGEST_USEFUL_WALK ? ` · ${proximityLabel(maxDistance)}` : ""}` : "Any distance"}</b></span><input type="number" min="1" step="1" value={distanceFilterActive ? maxDistance : ""} placeholder="Enter distance in km" onChange={(event) => { const value = event.target.value; setDistanceFilterActive(value !== ""); if (value) setMaxDistance(Number(value)); setCurrentPage(1); }}/></label>
               <label className="range-filter"><span><strong>Maximum unit price</strong><b>{priceFilterActive ? money(maxPrice) : "Any price"}</b></span><input type="number" min="1" step="100" value={priceFilterActive ? maxPrice : ""} placeholder="Enter maximum price" onChange={(event) => { const value = event.target.value; setPriceFilterActive(value !== ""); if (value) setMaxPrice(Number(value)); setCurrentPage(1); }}/></label>
               <div className="quick-filters"><label><span><strong>Available today</strong><small>Only produce ready now</small></span><input type="checkbox" checked={todayOnly} onChange={(event) => { setTodayOnly(event.target.checked); setCurrentPage(1); }}/></label><label><span><strong>Hide low stock</strong><small>More than 15 units left</small></span><input type="checkbox" checked={hideLowStock} onChange={(event) => { setHideLowStock(event.target.checked); setCurrentPage(1); }}/></label></div>
               <div className="filter-actions"><button onClick={() => { setMaxDistance(20); setMaxPrice(50000); setDistanceFilterActive(false); setPriceFilterActive(false); setTodayOnly(false); setHideLowStock(false); setCurrentPage(1); }}>Reset all</button><button onClick={() => setFiltersOpen(false)}>Show {visible.length} harvests</button></div>
@@ -1139,7 +1150,7 @@ export default function Home() {
             </div>}
             <div className="catalog-head">
               <div><h2>{savedOnly ? "Saved produce" : "Harvests near you"}</h2><p>{savedOnly ? `${visible.length} saved harvest${visible.length === 1 ? "" : "s"} currently available` : `${visible.length} available listing${visible.length === 1 ? "" : "s"} near ${locationOverride ? deliveryLocation.name : savedLocationLabel || deliveryLocation.name}`}</p></div>
-              <label className="sort"><span>Sort by</span><select value={sortBy} onChange={(event) => { setSortBy(event.target.value as typeof sortBy); setCurrentPage(1); }}><option value="nearest">Shortest walk first</option><option value="price-low">Price: low to high</option><option value="price-high">Price: high to low</option><option value="rating">Highest rated</option><option value="stock">Most available</option></select><ChevronDown size={15}/></label>
+              <label className="sort"><span>Sort by</span><select value={sortBy} onChange={(event) => { setSortBy(event.target.value as typeof sortBy); setCurrentPage(1); }}><option value="nearest">Nearest first</option><option value="price-low">Price: low to high</option><option value="price-high">Price: high to low</option><option value="rating">Highest rated</option><option value="stock">Most available</option></select><ChevronDown size={15}/></label>
             </div>
             <div className="category-row">
               <button className={savedOnly ? "selected saved-produce-filter" : "saved-produce-filter"} onClick={() => { setSavedOnly((current) => { const next = !current; window.history.replaceState({}, "", next ? `${viewPaths.market}?saved=1` : viewPaths.market); return next; }); setCurrentPage(1); }}><Heart size={14} fill={savedOnly ? "currentColor" : "none"}/> Saved <span>{liked.length}</span></button>
@@ -1152,7 +1163,7 @@ export default function Home() {
                   <div className="product-image">
                     <Image src={product.image} alt={product.name} fill sizes="(max-width: 620px) calc(100vw - 28px), (max-width: 800px) 50vw, (max-width: 1100px) 33vw, 25vw" />
                     <button className="product-image-preview-trigger" onClick={() => setPreviewProduct(product)} aria-label={`View full image of ${product.name}`}><Maximize2 size={17}/><span>View full image</span></button>
-                    <span className="distance" title={`${product.distance} km straight-line distance`}><MapPin size={13} /> {walkingTime(product.distance)}</span>
+                    <span className="distance" title={`${product.distance} km straight-line distance`}><MapPin size={13} /> {proximityLabel(product.distance)}</span>
                     <button className={`heart ${liked.includes(product.id) ? "liked" : ""}`} onClick={() => toggleFavourite(product.id)} aria-label={liked.includes(product.id) ? "Remove saved product" : "Save product"}><Heart size={18} fill={liked.includes(product.id) ? "currentColor" : "none"} /></button>
                     {product.badge && <span className="product-badge">{product.badge}</span>}
                   </div>
@@ -1160,8 +1171,10 @@ export default function Home() {
                     <div className="availability"><span /> {product.available}</div>
                     <h3>{product.name}</h3>
                     <a className="farmer farmer-link" href={`/farms/${product.farmId}`} aria-label={`View ${product.farmer} store`}><Store size={14} /> <span>{product.farmer}</span> <VerificationSeal label="Verified farm"/></a>
-                    <div className="rating"><Star size={14} fill="currentColor" /> {product.rating} <span>({product.reviewCount})</span></div>
-                    <div className="stock-track" title={`${Math.round(product.stock / Math.max(1, product.restockTotal) * 100)}% of the last restock remaining`}><span style={{ width: `${Math.max(0, Math.min(100, product.stock / Math.max(1, product.restockTotal) * 100))}%` }} /></div>
+                    {product.reviewCount
+                      ? <div className="rating"><Star size={14} fill="currentColor" /> {product.rating.toFixed(1)} <span>({product.reviewCount})</span></div>
+                      : <div className="new-farm">New farm</div>}
+                    <div className={`stock-track${stockRemaining(product) < 20 ? " low" : ""}`} title={`${Math.round(stockRemaining(product))}% of the last restock remaining`}><span style={{ width: `${stockRemaining(product)}%` }} /></div>
                     <p className="stock-copy">{product.stock} {quantityUnit(product.unit, product.stock)} left</p>
                     <div className="price-row">
                       <div><strong>{money(product.price)}</strong><span> / {product.unit}</span></div>
@@ -1355,7 +1368,7 @@ function LandingPage({ stats, signedOut, onShop, onFarmer, onSignup }: { stats: 
     </section>
 
     <section className="audience-band consumer-band">
-      <div className="audience-image"><img src="/produce/creamy-avocados.webp" alt="Fresh avocados from a local farm"/><span title="2.4 km straight-line distance"><strong>{walkingTime(2.4)}</strong> from your location</span></div>
+      <div className="audience-image"><img src="/produce/creamy-avocados.webp" alt="Fresh avocados from a local farm"/><span title="2.4 km straight-line distance"><strong>{proximityLabel(2.4)}</strong> from your location</span></div>
       <div className="audience-copy"><p>FOR CONSUMERS</p><h2>Freshness you can<br/>actually locate.</h2><p>See what farmers have ready on a particular date, compare estimated travel times and prices, and order in smaller quantities without the uncertainty of a long supply chain.</p><ul><li><Check size={14}/> Availability you can see before ordering</li><li><Check size={14}/> Produce ranked by proximity</li><li><Check size={14}/> Pickup and delivery choices</li></ul><button onClick={onShop}>Start shopping <ArrowRight size={16}/></button></div>
     </section>
 
@@ -1480,7 +1493,7 @@ function SupportPage({ page, onNavigate, user, onSignIn }: { page: "help" | "del
   const faqs = [
     ["Do I need an account to place an order?", "You can browse produce without signing in, but you must create an account or sign in before checkout. Both consumer and farmer accounts can purchase produce and access My orders."],
     ["How do I place an order?", "Open Shop produce, add the quantities you need to your basket, choose distance-priced doorstep delivery, free farm pickup, or Arrange with farmer, and continue to payment. Your order will appear in My orders after it is submitted."],
-    ["How are nearby harvests ranked?", "Active produce is shown without a default category or distance filter and is ranked by proximity when you choose Shortest walk first. Walking times are estimates based on the farm's location; the underlying distance is retained for filtering."],
+    ["How are nearby harvests ranked?", "Active produce is shown without a default category or distance filter and is ranked by proximity when you choose Nearest first. Nearby farms show an estimated walking time and farms beyond walking distance show the distance in kilometres, both based on the farm's location; the underlying distance is retained for filtering."],
     ["How is produce availability confirmed?", "Farmers publish quantities and harvest dates from their workspace. Optional Available from and Available until dates restrict a listing only when both are supplied. Stock is reserved during checkout, reduced when orders are created, and marked out of stock when exhausted."],
     ["Can I view a farm and get directions before ordering?", "Yes. Select the farm name on any produce card to open its storefront. You can review its address, verified buyer ratings and feedback, current produce, and related recommendations. The free map shows the farm location, and Get directions routes from your current location or falls back to your saved address."],
     ["Can I order produce from more than one farm?", "Yes. A basket can contain produce from multiple farms. Each order keeps the farm and item breakdown, while delivery or pickup availability is shown before payment."],
