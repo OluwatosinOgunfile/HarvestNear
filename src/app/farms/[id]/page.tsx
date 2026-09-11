@@ -8,6 +8,7 @@ import { getDatabase } from "@/lib/db";
 import { DEFAULT_LISTING_IMAGE, listingImageUrl } from "@/lib/images";
 import { FarmStoreTheme, FarmStoreThemeToggle } from "@/components/FarmStoreTheme";
 import { FarmDirectionsLink } from "@/components/FarmDirectionsLink";
+import { RestockAlertButton } from "@/components/RestockAlertButton";
 import { getSessionUser } from "@/lib/auth";
 import { NewsletterSignup } from "@/app/NewsletterSignup";
 
@@ -19,7 +20,7 @@ const formatDate = (v: unknown) => new Intl.DateTimeFormat("en-NG", { day: "nume
 
 const loadFarm = cache(async function loadFarm(id: string) {
   const sql = getDatabase();
-  const [farms, listings, reviews] = await Promise.all([
+  const [farms, listings, reviews, soldOut] = await Promise.all([
     sql`SELECT farm.id, farm.name, farm.description, farm.phone, farm.email, farm.address_text, farm.city, farm.state, farm.latitude, farm.longitude,
       farm.offers_pickup, farm.offers_delivery,
       coalesce((SELECT round(avg(review.rating)::numeric, 2) FROM reviews review WHERE review.farm_id=farm.id AND review.is_visible), 0) AS average_rating,
@@ -39,6 +40,13 @@ const loadFarm = cache(async function loadFarm(id: string) {
     sql`SELECT review.id,review.rating,review.comment,review.farmer_reply,review.created_at,customer.first_name,customer.last_name
       FROM reviews review JOIN users customer ON customer.id=review.customer_id
       WHERE review.farm_id=${id} AND review.is_visible ORDER BY review.created_at DESC LIMIT 30`,
+    sql`SELECT listing.id, listing.title, listing.unit, listing.unit_price_kobo, category.name AS category,
+      image.url AS image_url FROM produce_listings listing JOIN products product ON product.id=listing.product_id
+      JOIN produce_categories category ON category.id=product.category_id
+      LEFT JOIN LATERAL (SELECT url FROM listing_images WHERE listing_id=listing.id ORDER BY sort_order,created_at LIMIT 1) image ON true
+      WHERE listing.farm_id=${id} AND listing.status IN ('active','sold_out')
+      AND listing.quantity_available<=listing.quantity_reserved
+      ORDER BY listing.last_restocked_at DESC NULLS LAST, listing.title`,
   ]);
   if (!farms[0]) return null;
   const categoryIds = listings.map((x) => String(x.category_id));
@@ -52,7 +60,7 @@ const loadFarm = cache(async function loadFarm(id: string) {
     AND (listing.available_from IS NULL OR listing.available_from<=now())
     AND (listing.available_until IS NULL OR listing.available_until>now())
     ORDER BY listing.created_at DESC LIMIT 8` : [];
-  return { farm: farms[0] as Row, listings: listings as Row[], reviews: reviews as Row[], recommendations: recommendations as Row[] };
+  return { farm: farms[0] as Row, listings: listings as Row[], outOfStock: soldOut as Row[], reviews: reviews as Row[], recommendations: recommendations as Row[] };
 });
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -83,7 +91,7 @@ function ProductCard({ item, showFarm=false }: { item: Row; showFarm?: boolean }
 
 export default async function FarmStorePage({ params }: Props) {
   const data = await loadFarm((await params).id); if (!data) notFound();
-  const { farm, listings, reviews, recommendations } = data; const rating=Number(farm.average_rating);
+  const { farm, listings, outOfStock, reviews, recommendations } = data; const rating=Number(farm.average_rating);
   const hero=listings[0]?.image_url?listingImageUrl(String(listings[0].id),listings[0].image_url):DEFAULT_LISTING_IMAGE;
   const farmUrl = `https://www.harvestnearu.com/farms/${farm.id}`;
   const latitude=Number(farm.latitude);const longitude=Number(farm.longitude);const hasMap=Number.isFinite(latitude)&&Number.isFinite(longitude);
@@ -91,6 +99,8 @@ export default async function FarmStorePage({ params }: Props) {
   const session = await getSessionUser();
   const sql = getDatabase();
   const [savedAddress] = session ? await sql`SELECT latitude, longitude FROM addresses WHERE user_id=${session.id} AND latitude IS NOT NULL AND longitude IS NOT NULL ORDER BY is_default DESC, created_at DESC LIMIT 1` : [];
+  const watchedRows = session && outOfStock.length ? await sql`SELECT listing_id FROM restock_alerts WHERE user_id=${session.id} AND notified_at IS NULL` : [];
+  const watchedListings = new Set(watchedRows.map((row) => String(row.listing_id)));
   const savedLatitude=Number(savedAddress?.latitude); const savedLongitude=Number(savedAddress?.longitude);
   const hasSavedOrigin=Number.isFinite(savedLatitude)&&Number.isFinite(savedLongitude);
   const farmStructuredData = {
@@ -123,6 +133,15 @@ export default async function FarmStorePage({ params }: Props) {
       <section className="store-about"><div><p className="store-kicker">ABOUT THE FARM</p><h2>Fresh food, grown closer.</h2><p>{String(farm.description||`${farm.name} supplies fresh, locally grown produce to HarvestNearU customers.`)}</p><dl><div><dt><MapPin size={18}/> Address</dt><dd>{String(farm.address_text)}, {String(farm.city)}, {String(farm.state)}</dd></div><div><dt><Store size={18}/> Farm owner</dt><dd>{String(farm.first_name)} {String(farm.last_name)}</dd></div><div><dt><Truck size={18}/> Fulfilment</dt><dd>{[farm.offers_pickup&&"Farm pickup",farm.offers_delivery&&"Delivery"].filter(Boolean).join(" and ")||"Contact farm"}</dd></div></dl></div><aside><h3>Contact the farm</h3><a href={`tel:${farm.phone}`}><Phone size={17}/>{String(farm.phone)}</a>{Boolean(farm.email)&&<a href={`mailto:${farm.email}`}><Mail size={17}/>{String(farm.email)}</a>}<small>Verified on HarvestNearU {farm.verified_at?`since ${formatDate(farm.verified_at)}`:""}</small></aside></section>
       {hasMap&&<section className="store-map-section"><header><div><p className="store-kicker">FARM LOCATION</p><h2>Find {String(farm.name)}</h2><p>{String(farm.address_text)}, {String(farm.city)}, {String(farm.state)}</p></div><FarmDirectionsLink destination={{latitude,longitude}} savedOrigin={hasSavedOrigin?{latitude:savedLatitude,longitude:savedLongitude}:undefined}/></header><iframe title={`Map showing ${String(farm.name)}`} src={mapEmbed} loading="lazy" referrerPolicy="no-referrer-when-downgrade"/><small>Map data © OpenStreetMap contributors</small></section>}
       <StoreSection kicker="AVAILABLE NOW" title={`Produce from ${farm.name}`} count={`${listings.length} active ${listings.length===1?"listing":"listings"}`}>{listings.length?<div className="store-product-grid">{listings.map(x=><ProductCard key={String(x.id)} item={x}/>)}</div>:<Empty icon={<Leaf/>} title="No produce available today" text="This farm has no active listings right now. Please check again soon."/>}</StoreSection>
+      {outOfStock.length>0&&<StoreSection kicker="SOLD OUT FOR NOW" title="Tell me when it returns" count={`${outOfStock.length} waiting on ${outOfStock.length===1?"a restock":"restocks"}`}>
+        <p className="store-restock-intro">We will send a notification and an email the moment {String(farm.name)} restocks.</p>
+        <div className="store-product-grid">{outOfStock.map(item=><article key={String(item.id)} className="store-product-card sold-out">
+          <Image src={item.image_url?listingImageUrl(String(item.id),item.image_url):DEFAULT_LISTING_IMAGE} alt={String(item.title)} width={560} height={415} sizes="(max-width: 620px) calc(100vw - 32px), (max-width: 900px) 50vw, 25vw"/>
+          <div><small>{String(item.category)}</small><h3>{String(item.title)}</h3><p><strong>{money(item.unit_price_kobo)}</strong> / {String(item.unit)}</p>
+            <RestockAlertButton listingId={String(item.id)} listingTitle={String(item.title)} signedIn={Boolean(session)} initiallyWatching={watchedListings.has(String(item.id))}/>
+          </div>
+        </article>)}</div>
+      </StoreSection>}
       <StoreSection kicker="VERIFIED BUYER FEEDBACK" title="What customers say" count={<div className="store-rating-summary"><strong>{rating.toFixed(1)}</strong><Stars rating={rating}/><span>Based on {reviews.length} verified {reviews.length===1?"review":"reviews"}</span></div>}>{reviews.length?<div className="review-grid">{reviews.map(r=><article key={String(r.id)}><Stars rating={Number(r.rating)}/><blockquote>{r.comment?`\"${String(r.comment)}\"`:"Rating submitted without a written comment."}</blockquote><footer><strong>{String(r.first_name)} {String(r.last_name).slice(0,1)}.</strong><span>Verified buyer - {formatDate(r.created_at)}</span></footer>{Boolean(r.farmer_reply)&&<div className="farm-reply"><strong>{String(farm.name)} replied</strong><p>{String(r.farmer_reply)}</p></div>}</article>)}</div>:<Empty icon={<Star/>} title="No buyer feedback yet" text="The first verified review for this farm will appear here."/>}</StoreSection>
       {recommendations.length>0&&<StoreSection kicker="YOU MAY ALSO NEED" title="More from the same categories" count={<a className="store-all-link" href="/produce">Browse all <ChevronRight size={16}/></a>}><div className="store-product-grid">{recommendations.map(x=><ProductCard key={String(x.id)} item={x} showFarm/>)}</div></StoreSection>}
     </div></main><StoreFooter/>

@@ -7,6 +7,8 @@ HarvestNearU is a Nigerian farm-to-consumer marketplace built with Next.js. Cust
 - Consumer and farmer signup, password authentication, and Google authentication
 - Role-aware customer, farmer, support, and administrator experiences
 - Verified farm storefronts with address, ratings, feedback, current listings, and recommendations
+- A directory of every verified farm showing what each has in stock and what is sold out
+- Restock alerts so customers can ask to be notified and emailed when a sold-out listing returns
 - Proximity ranking using saved, selected, or device coordinates and estimated walking time
 - Free OpenStreetMap farm maps with routed directions from the customer location
 - Persistent carts, favourites, notifications, profile pictures, and account credit
@@ -19,6 +21,7 @@ HarvestNearU is a Nigerian farm-to-consumer marketplace built with Next.js. Cust
 - Optional administrator-configured manual bank transfer with receipt review
 - Item-level fulfilment, tracking, customer receipt acknowledgement, farm ratings, and printable order receipts
 - Farm-specific payout accounts, farmer payout requests, administrative review, and printable payout statements
+- Automatic Paystack payouts for requests at or below the approval limit, with larger requests held for an administrator
 - Branded transactional email, configurable email preferences, real-time in-app updates, and native push notifications
 - Administrator management, payout processing, audit activity, refunds, moderation, and read-only impersonation
 - Support tickets, staff assignment, internal notes, replies, and product feedback
@@ -79,6 +82,8 @@ Paystack is the primary payment path. Configure:
 Checkout initializes payments on the server and verifies provider reference, currency, and amount before confirmation. Manual bank transfer appears only when an administrator enables it and supplies company account details. Uploaded receipts remain pending until administrator review and are deleted after confirmation.
 
 Farmers configure a verified payout destination separately for each farm. Fulfilled earnings can be submitted as a payout request; administrators review, mark paid, or reject the request, and both sides retain a printable settlement statement.
+
+Payout requests at or below `PAYOUT_AUTO_APPROVAL_LIMIT_KOBO` (default NGN 50,000) are paid by Paystack transfer without an administrator, once `PAYOUT_DISPUTE_WINDOW_MINUTES` (default 60) has passed since the customer acknowledged receipt of every included item. Requests above the limit, or with an open refund or support ticket on any included order, wait for approval as before. The `/api/payouts/run` cron claims one request at a time and records a per-attempt transfer reference, so overlapping runs cannot pay a farm twice; `transfer.success`, `transfer.failed`, and `transfer.reversed` webhooks decide the final state, and a failed transfer returns to the queue and then to administrators after three attempts. Protect the endpoint with `PAYOUT_RUN_SECRET`, disable the transfer OTP requirement in the Paystack dashboard, and keep the Paystack balance funded — a run stops early rather than overdrawing.
 
 ## Maps and fulfilment
 

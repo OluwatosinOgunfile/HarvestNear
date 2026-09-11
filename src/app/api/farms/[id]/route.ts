@@ -7,7 +7,7 @@ type Params = { params: Promise<{ id: string }> };
 export async function GET(_request: Request, { params }: Params) {
   const { id } = await params;
   const sql = getDatabase();
-  const [farms, listings, reviews] = await Promise.all([
+  const [farms, listings, reviews, soldOut] = await Promise.all([
     sql`SELECT farm.id, farm.name, farm.description, farm.address_text, farm.city, farm.state, farm.latitude, farm.longitude,
       farm.offers_pickup, farm.offers_delivery,
       coalesce((SELECT round(avg(review.rating)::numeric, 2) FROM reviews review WHERE review.farm_id=farm.id AND review.is_visible), 0) AS average_rating,
@@ -29,6 +29,14 @@ export async function GET(_request: Request, { params }: Params) {
       customer.first_name, customer.last_name
       FROM reviews review JOIN users customer ON customer.id=review.customer_id
       WHERE review.farm_id=${id} AND review.is_visible ORDER BY review.created_at DESC LIMIT 30`,
+    sql`SELECT listing.id, listing.title AS name, listing.unit, listing.unit_price_kobo,
+      0 AS stock, listing.last_restocked_at, category.id AS category_id, category.name AS category, image.url AS image
+      FROM produce_listings listing JOIN products product ON product.id=listing.product_id
+      JOIN produce_categories category ON category.id=product.category_id
+      LEFT JOIN LATERAL (SELECT url FROM listing_images WHERE listing_id=listing.id ORDER BY sort_order,created_at LIMIT 1) image ON true
+      WHERE listing.farm_id=${id} AND listing.status IN ('active','sold_out')
+      AND listing.quantity_available<=listing.quantity_reserved
+      ORDER BY listing.last_restocked_at DESC NULLS LAST, listing.title`,
   ]);
   if (!farms[0]) return NextResponse.json({ error: "Farm not found" }, { status: 404 });
   const categoryIds = listings.map((listing) => String(listing.category_id));
@@ -51,6 +59,7 @@ export async function GET(_request: Request, { params }: Params) {
   return NextResponse.json({
     farm: farms[0],
     listings: listings.map(withImage),
+    outOfStock: soldOut.map(withImage),
     reviews,
     recommendations: recommendations.map(withImage),
   });

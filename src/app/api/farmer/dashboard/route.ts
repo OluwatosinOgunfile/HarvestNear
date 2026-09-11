@@ -6,6 +6,7 @@ import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
 import { DEFAULT_LISTING_IMAGE, listingImageUrl, profileImageUrl } from "@/lib/images";
 import { notifyNearbyProduce } from "@/lib/nearby-produce-notifications";
+import { notifyRestockIfWatched } from "@/lib/restock-alerts";
 import { dispatchNotificationEmailsAfterResponse } from "@/lib/notification-email";
 import { canMutateAs, checkRateLimit, validText } from "@/lib/security";
 
@@ -249,6 +250,7 @@ export async function PATCH(request: Request) {
     const previousAvailable = Number(previous.quantity_available) - Number(previous.quantity_reserved);
     if (availableStock > previousAvailable || (previous.status !== "active" && body.status === "active" && availableStock > 0)) {
       await notifyNearbyProduce({ farmId: String(previous.farm_id), listingId: String(previous.id), listingTitle: String(previous.title), isRestock: true });
+      if (previousAvailable <= 0) await notifyRestockIfWatched(String(previous.id));
     }
     return NextResponse.json({ updated: true, listing });
   }
@@ -282,6 +284,7 @@ export async function PATCH(request: Request) {
       const newAvailable = stock - Number(ownedListing.quantity_reserved);
       if (newAvailable > previousAvailable || (ownedListing.status !== "active" && body.status === "active" && newAvailable > 0)) {
         await notifyNearbyProduce({ farmId: String(ownedListing.farm_id), listingId: String(ownedListing.id), listingTitle: body.name, isRestock: true });
+        if (previousAvailable <= 0) await notifyRestockIfWatched(String(ownedListing.id));
       }
       return NextResponse.json({ updated: true });
     } catch (error) {

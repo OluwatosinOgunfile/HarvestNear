@@ -5,6 +5,7 @@ import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
 import { dispatchNotificationEmailsAfterResponse } from "@/lib/notification-email";
 import { DEFAULT_LISTING_IMAGE, listingImageUrl, profileImageUrl } from "@/lib/images";
+import { notifyRestockIfWatched } from "@/lib/restock-alerts";
 import { isSuperAdminAccount } from "@/lib/super-admin";
 
 type EntityType = "users" | "farms" | "produce" | "areas" | "pickup_centres" | "orders" | "refunds" | "payouts" | "reviews" | "subscribers" | "activity" | "options";
@@ -620,6 +621,7 @@ export async function PATCH(request: NextRequest) {
           `,
         ]);
         [entity] = listingUpdates[1];
+        if (entity) await notifyRestockIfWatched(String(id));
         if (entity && body.imageUrl) {
           await sql.transaction([
             sql`DELETE FROM listing_images WHERE listing_id = ${id}`,
