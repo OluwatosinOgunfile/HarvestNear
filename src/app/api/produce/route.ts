@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Invalid coordinates" }, { status: 400, headers });
     }
 
-    const [rows, statsRows, farmRows] = await Promise.all([sql`
+    const [rows, statsRows, farmRows, categoryRows] = await Promise.all([sql`
       SELECT
         listing.id,
         farm.id AS farm_id,
@@ -137,6 +137,19 @@ export async function GET(request: NextRequest) {
       WHERE farm.verification_status = 'verified'
       ORDER BY sold DESC, rating DESC, review_count DESC, farm.created_at DESC
       LIMIT 8
+    `, sql`
+      SELECT category.id, category.name, category.slug, count(farm.id)::int AS listings
+      FROM produce_categories category
+      LEFT JOIN products product ON product.category_id = category.id
+      LEFT JOIN produce_listings listing ON listing.product_id = product.id
+        AND listing.status = 'active'
+        AND listing.quantity_available > listing.quantity_reserved
+        AND (listing.available_from IS NULL OR listing.available_from <= now())
+        AND (listing.available_until IS NULL OR listing.available_until > now())
+      LEFT JOIN farms farm ON farm.id = listing.farm_id AND farm.verification_status = 'verified'
+      WHERE category.is_active
+      GROUP BY category.id, category.name, category.slug
+      ORDER BY count(farm.id) DESC, category.name
     `]);
 
     const today = new Date();
@@ -180,9 +193,16 @@ export async function GET(request: NextRequest) {
       listings: Number(farm.listings),
     }));
     headers.set("Cache-Control", "private, max-age=15, stale-while-revalidate=30");
+    const categories = categoryRows.map((category) => ({
+      id: String(category.id),
+      name: String(category.name),
+      slug: String(category.slug),
+      listings: Number(category.listings),
+    }));
     return NextResponse.json({
       produce,
       bestSellingFarms,
+      categories,
       proximity: { source: proximitySource, label: proximityLabel },
       stats: {
         farms: Number(stats.farms),

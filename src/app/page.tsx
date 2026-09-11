@@ -104,6 +104,7 @@ const fallbackDeliveryLocations = [
   { name: "Lugbe, Abuja", latitude: 8.9672, longitude: 7.3679 },
   { name: "Kuje, Abuja", latitude: 8.8795, longitude: 7.2276 },
 ];
+type CategoryCount = { id: string; name: string; slug: string; listings: number };
 type DeliveryLocation = { id?: string; name: string; latitude: number; longitude: number };
 type Theme = "light" | "dark";
 type View = "landing" | "market" | "orders" | "farmer" | "admin" | "profile" | "help" | "delivery" | "returns";
@@ -296,6 +297,7 @@ function FarmCoordinateFields({ defaultLatitude = "", defaultLongitude = "" }: {
 export default function Home() {
   const pathname = usePathname();
   const [products, setProducts] = useState<Product[]>([]);
+  const [catalogueCategories, setCatalogueCategories] = useState<CategoryCount[]>([]);
   const [marketplaceStats, setMarketplaceStats] = useState<MarketplaceStats | null>(null);
   const [productsLoading, setProductsLoading] = useState(true);
   const [productsError, setProductsError] = useState(false);
@@ -452,8 +454,9 @@ export default function Home() {
           : "/api/produce";
         const response = await fetch(produceUrl, { signal: controller.signal });
         if (!response.ok) throw new Error("Could not load produce");
-        const data = await readJsonResponse(response) as { produce: Product[]; stats: MarketplaceStats; proximity?: { source: string; label: string | null } };
+        const data = await readJsonResponse(response) as { produce: Product[]; stats: MarketplaceStats; categories?: CategoryCount[]; proximity?: { source: string; label: string | null } };
         setProducts(data.produce);
+        setCatalogueCategories(Array.isArray(data.categories) ? data.categories : []);
         setCart((current) => {
           return clampCartToStock(current, data.produce);
         });
@@ -884,11 +887,20 @@ export default function Home() {
     }
   }
 
-  const availableCategories = useMemo(() => [
-    "All produce",
-    ...new Set(products.map((product) => product.category).filter(Boolean).sort((left, right) => left.localeCompare(right))),
-  ], [products]);
-  const effectiveCategory = availableCategories.includes(category) ? category : "All produce";
+  // Every active category is offered, not only the stocked ones, so a farmer listing the first
+  // catfish or jar of honey lands in a category customers have already seen.
+  const availableCategories = useMemo(() => {
+    const stocked = new Map<string, number>();
+    for (const product of products) if (product.category) stocked.set(product.category, (stocked.get(product.category) || 0) + 1);
+    const names = catalogueCategories.length
+      ? catalogueCategories.map((item) => item.name)
+      : [...new Set(products.map((product) => product.category).filter(Boolean))].sort((left, right) => left.localeCompare(right));
+    return [
+      { name: "All produce", listings: products.length },
+      ...names.map((name) => ({ name, listings: stocked.get(name) ?? 0 })),
+    ];
+  }, [products, catalogueCategories]);
+  const effectiveCategory = availableCategories.some((item) => item.name === category) ? category : "All produce";
   const searchInput = query.trim();
   const fallbackIntent = useMemo(() => searchIntentFallback(searchInput), [searchInput]);
   const localSearchMatchCount = useMemo(() => {
@@ -1154,7 +1166,7 @@ export default function Home() {
             </div>
             <div className="category-row">
               <button className={savedOnly ? "selected saved-produce-filter" : "saved-produce-filter"} onClick={() => { setSavedOnly((current) => { const next = !current; window.history.replaceState({}, "", next ? `${viewPaths.market}?saved=1` : viewPaths.market); return next; }); setCurrentPage(1); }}><Heart size={14} fill={savedOnly ? "currentColor" : "none"}/> Saved <span>{liked.length}</span></button>
-              {availableCategories.map((item) => <button key={item} onClick={() => { setCategory(item); setCurrentPage(1); }} className={effectiveCategory === item ? "selected" : ""}>{item}</button>)}
+              {availableCategories.map((item) => <button key={item.name} onClick={() => { setCategory(item.name); setCurrentPage(1); }} className={`${effectiveCategory === item.name ? "selected" : ""}${item.listings ? "" : " unstocked"}`.trim() || undefined} title={item.listings ? `${item.listings} available` : "No farm has listed this yet"}>{item.name} <span>{item.listings}</span></button>)}
             </div>
 
             {productsLoading ? <ProductGridSkeleton/> : productsError ? <div className="empty-state"><RotateCcw size={28} /><h3>Could not load harvests</h3><p>Please refresh the page to try again.</p></div> : visible.length ? <div className="product-grid">
