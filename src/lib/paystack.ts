@@ -45,6 +45,22 @@ export async function createPayoutRecipient(input: { farmName: string; accountNu
   return { accountName: account.account_name, accountLast4: input.accountNumber.slice(-4), recipientCode: recipient.recipient_code };
 }
 
+export async function paystackNairaBalanceKobo() {
+  const balances = await paystackRequest<Array<{ currency: string; balance: number }>>("/balance");
+  return Number(balances.find((entry) => entry.currency === "NGN")?.balance ?? 0);
+}
+
+export async function initiatePaystackTransfer(input: { amountKobo: number; recipientCode: string; reference: string; reason: string }) {
+  return paystackRequest<{ transfer_code: string; status: string; reference: string }>("/transfer", {
+    method: "POST",
+    body: JSON.stringify({ source: "balance", amount: input.amountKobo, recipient: input.recipientCode, reference: input.reference, reason: input.reason }),
+  });
+}
+
+export async function verifyPaystackTransfer(reference: string) {
+  return paystackRequest<{ status: string; transfer_code: string; reference: string; failures: unknown }>(`/transfer/verify/${encodeURIComponent(reference)}`);
+}
+
 export async function initializePaystackTransaction(input: { email: string; amount: number; reference: string; callbackUrl: string; orderId: string; orderNumber: string }) {
   const response = await fetch(`${PAYSTACK_API}/transaction/initialize`, {
     method: "POST",

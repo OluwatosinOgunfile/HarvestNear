@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { getDatabase } from "@/lib/db";
 import { confirmPaystackPayment, type PaystackTransaction } from "@/lib/paystack";
+import { applyPaystackTransferEvent } from "@/lib/payouts";
 
 export async function POST(request: NextRequest) {
   const secret = process.env.PAYSTACK_SECRET_KEY;
@@ -25,6 +26,7 @@ export async function POST(request: NextRequest) {
   if (stored?.processed_at) return NextResponse.json({ received: true, duplicate: true });
   try {
     if (event.event === "charge.success" && event.data) await confirmPaystackPayment(event.data);
+    else if (event.event.startsWith("transfer.") && event.data) await applyPaystackTransferEvent(event.event, event.data as Parameters<typeof applyPaystackTransferEvent>[1]);
     await sql`UPDATE payment_webhook_events SET processed_at = now() WHERE id = ${stored.id}`;
   } catch (error) {
     await sql`UPDATE payment_webhook_events SET processing_error = ${(error as Error).message || "Processing failed"} WHERE id = ${stored.id}`;
