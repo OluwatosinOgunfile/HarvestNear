@@ -1,0 +1,38 @@
+name: Automatic farmer payouts
+
+# Vercel's Hobby plan allows two cron jobs and only daily schedules, both already used by the
+# notification crons. Until the project moves to a paid plan, the payout sweep is triggered from
+# here instead. Moving it back is a one-line change: add
+#   { "path": "/api/payouts/run", "schedule": "*/10 * * * *" }
+# to vercel.json and disable this workflow.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: payout-run
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger the payout run
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          PAYOUT_RUN_SECRET: ${{ secrets.PAYOUT_RUN_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ] || [ -z "$PAYOUT_RUN_SECRET" ]; then
+            echo "APP_URL and PAYOUT_RUN_SECRET repository secrets are required."
+            exit 1
+          fi
+          response=$(curl --silent --show-error --fail-with-body --max-time 60 \
+            --write-out "\n%{http_code}" \
+            --header "Authorization: Bearer $PAYOUT_RUN_SECRET" \
+            --request POST "$APP_URL/api/payouts/run")
+          status=$(printf '%s' "$response" | tail -n 1)
+          body=$(printf '%s' "$response" | sed '$d')
+          echo "status: $status"
+          echo "$body"
+          if [ "$status" != "200" ]; then exit 1; fi
