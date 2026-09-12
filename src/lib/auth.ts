@@ -25,7 +25,13 @@ function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-export async function createSession(userId: string, options?: { maxAgeMinutes?: number; credentialVersion?: string | null }) {
+/**
+ * Creates a session and, by default, installs it as the browser cookie. Pass `setCookie: false`
+ * when the token is being handed to another client: the native app's Google sign-in completes
+ * inside a browser, and leaving the cookie behind would give the browser and the app one shared
+ * session, so signing out of the browser would end the app's session too.
+ */
+export async function createSession(userId: string, options?: { maxAgeMinutes?: number; credentialVersion?: string | null; setCookie?: boolean }) {
   const token = randomBytes(32).toString("base64url");
   const tokenHash = hashToken(token);
   const expiresAt = options?.maxAgeMinutes
@@ -39,15 +45,17 @@ export async function createSession(userId: string, options?: { maxAgeMinutes?: 
     VALUES (${userId}, ${tokenHash}, ${expiresAt.toISOString()}, ${requestHeaders.get("user-agent")}, ${options?.credentialVersion || null})
   `;
 
-  const cookieStore = await cookies();
-  cookieStore.set(COOKIE_NAME, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    priority: "high",
-    expires: expiresAt,
-  });
+  if (options?.setCookie !== false) {
+    const cookieStore = await cookies();
+    cookieStore.set(COOKIE_NAME, token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      priority: "high",
+      expires: expiresAt,
+    });
+  }
   return { token, expiresAt };
 }
 

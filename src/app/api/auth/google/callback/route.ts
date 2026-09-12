@@ -102,7 +102,10 @@ export async function GET(request: Request) {
       sql`UPDATE users SET email_verified_at = COALESCE(email_verified_at, now()), last_login_at = now(), updated_at = now() WHERE id = ${user.id}`,
       sql`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES (${user.id}, 'user.google_signed_in', 'user', ${user.id}, ${JSON.stringify({ email })}::jsonb)`,
     ]);
-    const session = await createSession(String(user.id));
+    // The native app carries this token itself, so the browser that completed the sign-in is left
+    // without a cookie for it. Otherwise both hold the same session and a browser sign-out ends the
+    // app's session with it.
+    const session = await createSession(String(user.id), { setCookie: !mobile });
     if (mobile) return mobileRedirect("", session.token, created);
     return NextResponse.redirect(new URL(returnTo, url.origin));
   } catch (error) {
