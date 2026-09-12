@@ -8,6 +8,8 @@ import {
   BadgeCheck,
   Bell,
   Check,
+  FileCheck,
+  ShieldCheck,
   ChevronLeft,
   ChevronDown,
   ChevronRight,
@@ -45,7 +47,7 @@ import {
   EyeOff,
   X,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 function playNotificationChime(){try{const AudioContextClass=window.AudioContext||(window as typeof window & {webkitAudioContext?:typeof AudioContext}).webkitAudioContext;if(!AudioContextClass)return;const context=new AudioContextClass();const oscillator=context.createOscillator();const gain=context.createGain();oscillator.frequency.value=740;gain.gain.setValueAtTime(.0001,context.currentTime);gain.gain.exponentialRampToValueAtTime(.12,context.currentTime+.02);gain.gain.exponentialRampToValueAtTime(.0001,context.currentTime+.28);oscillator.connect(gain);gain.connect(context.destination);oscillator.start();oscillator.stop(context.currentTime+.3);oscillator.addEventListener("ended",()=>void context.close());}catch{}}
 import Image from "next/image";
@@ -1631,6 +1633,114 @@ function adminEntityFilterValue(section: AdminEntityType, entity: AdminEntity) {
   return String(entity.entity_type || "system");
 }
 
+type VerificationSubmission = {
+  id: string; status: string; legal_first_name: string; legal_last_name: string; date_of_birth: string;
+  identity_type: string; identity_number_last4: string; identity_expires_on: string | null;
+  business_type: string; cac_number: string | null; bank_account_name: string | null;
+  bank_matched: boolean | null; bank_match_note: string | null; review_note: string | null;
+  submitted_at: string | null; reviewed_at: string | null; farm_id: string; farm_name: string;
+  city: string; state: string; verification_status: string;
+  owner_first_name: string; owner_last_name: string; owner_email: string;
+  duplicate_identity_count: number;
+  documents: { id: string; type: string; contentType: string; bytes: number }[];
+};
+
+const VERIFICATION_DOCUMENT_LABELS: Record<string, string> = {
+  identity_front: "Identity (front)", identity_back: "Identity (back)", selfie: "Selfie with document",
+  cac_certificate: "CAC certificate", address_proof: "Proof of address",
+};
+
+function FarmVerificationReview({ readOnly }: { readOnly: boolean }) {
+  const [submissions, setSubmissions] = useState<VerificationSubmission[]>([]);
+  const [filter, setFilter] = useState<"open" | "approved" | "rejected" | "all">("open");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState("");
+  const [notes, setNotes] = useState<Record<string, string>>({});
+
+  const load = useCallback(async () => {
+    const response = await fetch(`/api/admin/verifications?status=${filter}`, { cache: "no-store" });
+    const data = await readJsonResponse<{ submissions?: VerificationSubmission[]; error?: string }>(response);
+    if (!response.ok) throw new Error(data.error || "Could not load verifications");
+    setSubmissions(data.submissions || []);
+    setError("");
+    setLoading(false);
+  }, [filter]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/admin/verifications?status=${filter}`, { cache: "no-store" }).then(async (response) => {
+      const data = await readJsonResponse(response) as { submissions?: VerificationSubmission[]; error?: string };
+      if (!response.ok) throw new Error(data.error || "Could not load verifications");
+      if (!cancelled) { setSubmissions(data.submissions || []); setError(""); setLoading(false); }
+    }).catch((reason: Error) => { if (!cancelled) { setError(reason.message); setLoading(false); } });
+    return () => { cancelled = true; };
+  }, [filter]);
+
+  async function decide(submission: VerificationSubmission, decision: "under_review" | "approved" | "rejected") {
+    const note = notes[submission.id]?.trim() || "";
+    if (decision === "rejected" && note.length < 5) { setError("Explain why the verification was rejected."); return; }
+    setBusy(submission.id); setError("");
+    try {
+      const response = await fetch("/api/admin/verifications", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: submission.id, decision, note: note || undefined }),
+      });
+      const data = await readJsonResponse<{ error?: string }>(response);
+      if (!response.ok) throw new Error(data.error || "Could not record the decision");
+      await load();
+    } catch (reason) { setError((reason as Error).message); }
+    finally { setBusy(""); }
+  }
+
+  return <section className="verification-review">
+    <header className="verification-head">
+      <div><h2>Farm verification</h2><p>Confirm the person behind each farm before it can sell or be paid. Opening a document is recorded in the audit log.</p></div>
+      <div className="verification-filters">{(["open", "approved", "rejected", "all"] as const).map((value) => <button key={value} className={filter === value ? "selected" : ""} onClick={() => setFilter(value)}>{value === "open" ? "Awaiting review" : value}</button>)}</div>
+    </header>
+    {error && <p className="admin-error" role="alert">{error}</p>}
+    {loading ? <HarvestSpinner label="Loading verifications"/> : submissions.length === 0 ? <div className="panel-empty">No verifications in this view</div> : <div className="verification-list">
+      {submissions.map((submission) => <article key={submission.id} className="verification-card">
+        <header>
+          <div>
+            <p className="eyebrow"><span/> {submission.status.replace("_", " ").toUpperCase()}</p>
+            <h3>{submission.farm_name}</h3>
+            <p className="verification-meta">{submission.city}, {submission.state} · {submission.owner_first_name} {submission.owner_last_name} · {submission.owner_email}</p>
+          </div>
+          {submission.duplicate_identity_count > 0 && <span className="verification-flag">Identity used by {submission.duplicate_identity_count} other farm{submission.duplicate_identity_count === 1 ? "" : "s"}</span>}
+        </header>
+
+        <dl className="verification-facts">
+          <div><dt>Declared name</dt><dd>{submission.legal_first_name} {submission.legal_last_name}</dd></div>
+          <div><dt>Date of birth</dt><dd>{submission.date_of_birth ? new Date(submission.date_of_birth).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" }) : "—"}</dd></div>
+          <div><dt>Identity</dt><dd>{submission.identity_type?.replace("_", " ")} ending {submission.identity_number_last4}</dd></div>
+          <div><dt>Registration</dt><dd>{submission.business_type.replace("_", " ")}{submission.cac_number ? ` · ${submission.cac_number}` : ""}</dd></div>
+          <div><dt>Payout account</dt><dd className={submission.bank_matched === false ? "verification-mismatch" : submission.bank_matched ? "verification-match" : ""}>{submission.bank_account_name || "Not configured"}</dd></div>
+          <div><dt>Submitted</dt><dd>{submission.submitted_at ? relativeTime(submission.submitted_at) : "—"}</dd></div>
+        </dl>
+        {submission.bank_match_note && <p className={`verification-bank ${submission.bank_matched === false ? "mismatch" : ""}`}>{submission.bank_match_note}</p>}
+
+        <div className="verification-documents">
+          {submission.documents.length === 0 ? <span>No documents uploaded</span> : submission.documents.map((document) => <a key={document.id} href={`/api/verification-documents/${document.id}`} target="_blank" rel="noreferrer">
+            <FileCheck size={14}/> {VERIFICATION_DOCUMENT_LABELS[document.type] || document.type} <small>{Math.round(document.bytes / 1024)} KB</small>
+          </a>)}
+        </div>
+
+        {!readOnly && ["submitted", "under_review"].includes(submission.status) && <div className="verification-actions">
+          <label><span className="sr-only">Review note for {submission.farm_name}</span>
+            <textarea placeholder="Note to the farmer (required when rejecting)" value={notes[submission.id] || ""} onChange={(event) => setNotes((current) => ({ ...current, [submission.id]: event.target.value }))}/>
+          </label>
+          <div>
+            {submission.status === "submitted" && <button className="verification-hold" disabled={busy === submission.id} onClick={() => decide(submission, "under_review")}>Start review</button>}
+            <button className="verification-reject" disabled={busy === submission.id} onClick={() => decide(submission, "rejected")}>Reject</button>
+            <button className="verification-approve" disabled={busy === submission.id} onClick={() => decide(submission, "approved")}><BadgeCheck size={15}/> Approve and verify</button>
+          </div>
+        </div>}
+        {submission.review_note && !["submitted", "under_review"].includes(submission.status) && <p className="verification-decision">{submission.review_note}</p>}
+      </article>)}
+    </div>}
+  </section>;
+}
+
 function AdminAnalyticsView({ analytics, loading, error }: { analytics: AdminAnalytics | null; loading: boolean; error: string }) {
   if (loading && !analytics) return <div className="analytics-loading"><LoaderCircle className="spin" size={24}/><strong>Calculating marketplace performance...</strong></div>;
   if (error && !analytics) return <div className="entity-empty"><BarChart3 size={24}/><strong>Analytics unavailable</strong><p>{error}</p></div>;
@@ -1660,7 +1770,7 @@ function AdminAnalyticsView({ analytics, loading, error }: { analytics: AdminAna
 function AdminPage({ user, readOnly, supportAccess, onImpersonated }: { user: CurrentUser; readOnly: boolean; supportAccess: boolean; onImpersonated: (user: CurrentUser) => void }) {
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [analytics, setAnalytics] = useState<AdminAnalytics | null>(null);
-  const [section, setSection] = useState<"overview" | "analytics" | "tickets" | AdminEntityType>(supportAccess ? "tickets" : "overview");
+  const [section, setSection] = useState<"overview" | "analytics" | "tickets" | "verifications" | AdminEntityType>(supportAccess ? "tickets" : "overview");
   const [entities, setEntities] = useState<AdminEntity[]>([]);
   const [selected, setSelected] = useState<AdminEntity | null>(null);
   const [options, setOptions] = useState<AdminOptions>({ owners: [], farms: [], categories: [], areas: [] });
@@ -1725,7 +1835,7 @@ function AdminPage({ user, readOnly, supportAccess, onImpersonated }: { user: Cu
   }, []);
 
   useEffect(() => {
-    if (section === "overview" || section === "tickets") return;
+    if (section === "overview" || section === "tickets" || section === "verifications") return;
     let cancelled = false;
     if (section === "analytics") {
       fetch("/api/admin/analytics").then(async (response) => {
@@ -1745,7 +1855,7 @@ function AdminPage({ user, readOnly, supportAccess, onImpersonated }: { user: Cu
 
   const filterOptions = useMemo(() => {
     if (section === "overview" || section === "analytics" || section === "tickets") return [];
-    const values = new Set(entities.map((entity) => adminEntityFilterValue(section, entity)).filter(Boolean));
+    const values = new Set(entities.map((entity) => adminEntityFilterValue(section as AdminEntityType, entity)).filter(Boolean));
     return [...values].sort((left, right) => left.localeCompare(right));
   }, [entities, section]);
   const effectiveEntityFilter = filterOptions.includes(entityFilter) ? entityFilter : "all";
@@ -1755,7 +1865,7 @@ function AdminPage({ user, readOnly, supportAccess, onImpersonated }: { user: Cu
     if (section === "overview" || section === "analytics" || section === "tickets") return entities;
     const query = entitySearch.trim().toLowerCase();
     const filtered = entities.filter((entity) => {
-      if (effectiveEntityFilter !== "all" && adminEntityFilterValue(section, entity) !== effectiveEntityFilter) return false;
+      if (effectiveEntityFilter !== "all" && adminEntityFilterValue(section as AdminEntityType, entity) !== effectiveEntityFilter) return false;
       if (section === "users" && balanceOnly && Number(entity.account_credit_kobo || 0) <= 0) return false;
       if (section === "users" && joinedDateFilter !== "all") {
         const joinedAt = new Date(String(entity.created_at)).getTime();
@@ -1830,7 +1940,7 @@ function AdminPage({ user, readOnly, supportAccess, onImpersonated }: { user: Cu
     setAddOpen(false);
     setPickupCentreModal(null);
     setAreaModal(null);
-    await Promise.all([loadEntities(section), loadOverview(), section === "areas" ? loadOptions() : Promise.resolve()]);
+    await Promise.all([loadEntities(section as AdminEntityType), loadOverview(), section === "areas" ? loadOptions() : Promise.resolve()]);
   }
 
   async function removeEntity() {
@@ -1840,7 +1950,7 @@ function AdminPage({ user, readOnly, supportAccess, onImpersonated }: { user: Cu
     const data = await readJsonResponse(response) as { error?: string };
     if (!response.ok) { setError(data.error || "Could not remove record"); setBusy(false); return; }
     setSelected(null);
-    await Promise.all([loadEntities(section), loadOverview(), section === "areas" ? loadOptions() : Promise.resolve()]);
+    await Promise.all([loadEntities(section as AdminEntityType), loadOverview(), section === "areas" ? loadOptions() : Promise.resolve()]);
   }
 
   async function editEntity(event: FormEvent<HTMLFormElement>) {
@@ -1864,8 +1974,8 @@ function AdminPage({ user, readOnly, supportAccess, onImpersonated }: { user: Cu
       setEditOpen(false);
       setPickupCentreModal(null);
       setAreaModal(null);
-      await Promise.all([loadEntities(section), loadOverview(), section === "areas" ? loadOptions() : Promise.resolve()]);
-      await openDetails(section, selected.id);
+      await Promise.all([loadEntities(section as AdminEntityType), loadOverview(), section === "areas" ? loadOptions() : Promise.resolve()]);
+      await openDetails(section as AdminEntityType, selected.id);
     } catch (reason) {
       if (uploadedUrl) void fetch("/api/uploads/listing-image", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: uploadedUrl }) });
       setError((reason as Error).message || "Could not update record");
@@ -1971,14 +2081,14 @@ function AdminPage({ user, readOnly, supportAccess, onImpersonated }: { user: Cu
     <header className="admin-heading"><div><p className="eyebrow"><span/> MARKETPLACE OPERATIONS</p><h1>Administration</h1><p>Monitor people, farms, listings, orders, and customer resolutions.</p></div><div className="admin-heading-tools">{!readOnly && <button onClick={() => { setError(""); setPaymentSettingsOpen(true); }}><AtSign size={15}/> Bank payment details</button>}<span className="admin-live"><i/> {readOnly ? "Read-only support access" : "Live database"}</span></div></header>
     {section === "produce" && !readOnly && <ProduceCategoryCreator onCreated={(category) => setOptions((current) => ({ ...current, categories: [...current.categories.filter((item) => item.id !== category.id), category].sort((a,b) => a.name.localeCompare(b.name)) }))}/>} 
     <div className="admin-workspace">
-      <label className="admin-mobile-section"><span className="sr-only">Administration section</span><select aria-label="Administration section" value={section} onChange={(event) => { const next = event.target.value as typeof section; setSection(next); setSelected(null); setError(""); setBusy(next !== "overview" && next !== "tickets"); }}>{(["overview", "tickets", "analytics", "users", "farms", "produce", "areas", "pickup_centres", "orders", "refunds", "payouts", "reviews", "subscribers", "activity"] as const).filter((item) => supportAccess ? !["analytics", "subscribers", "activity"].includes(item) : true).map((item) => <option key={item} value={item}>{item === "produce" ? "Produce listings" : item === "pickup_centres" ? "Pickup centres" : item === "tickets" ? "Support tickets" : item === "subscribers" ? "Campaign subscribers" : item[0].toUpperCase() + item.slice(1)}{item === "refunds" && metrics.open_refunds > 0 ? ` (${metrics.open_refunds})` : item === "payouts" && metrics.open_payouts > 0 ? ` (${metrics.open_payouts})` : ""}</option>)}</select><ChevronDown size={16}/></label>
-      <nav className="admin-tabs" aria-label="Administration sections"><small>Workspace</small>{(["overview", "tickets", "analytics", "users", "farms", "produce", "areas", "pickup_centres", "orders", "refunds", "payouts", "reviews", "subscribers", "activity"] as const).filter((item) => supportAccess ? !["analytics", "subscribers", "activity"].includes(item) : true).map((item) => <button key={item} className={section === item ? "active" : ""} onClick={() => { setSection(item); setSelected(null); setError(""); setBusy(item !== "overview" && item !== "tickets"); }}>{item === "overview" ? <House size={15}/> : item === "tickets" ? <Headphones size={15}/> : item === "analytics" ? <BarChart3 size={15}/> : item === "users" ? <UserRound size={15}/> : item === "farms" ? <Store size={15}/> : item === "produce" ? <Leaf size={15}/> : item === "areas" || item === "pickup_centres" ? <MapPin size={15}/> : item === "orders" ? <PackageCheck size={15}/> : item === "refunds" ? <RotateCcw size={15}/> : item === "payouts" ? <CreditCard size={15}/> : item === "reviews" ? <Star size={15}/> : item === "subscribers" ? <Mail size={15}/> : <Clock3 size={15}/>}<span>{item === "pickup_centres" ? "Pickup centres" : item === "tickets" ? "Support tickets" : item === "subscribers" ? "Campaign subscribers" : item}</span>{item === "refunds" && metrics.open_refunds > 0 && <b className="admin-tab-count">{metrics.open_refunds}</b>}{item === "payouts" && metrics.open_payouts > 0 && <b className="admin-tab-count">{metrics.open_payouts}</b>}</button>)}</nav>
+      <label className="admin-mobile-section"><span className="sr-only">Administration section</span><select aria-label="Administration section" value={section} onChange={(event) => { const next = event.target.value as typeof section; setSection(next); setSelected(null); setError(""); setBusy(next !== "overview" && next !== "tickets"); }}>{(["overview", "tickets", "verifications", "analytics", "users", "farms", "produce", "areas", "pickup_centres", "orders", "refunds", "payouts", "reviews", "subscribers", "activity"] as const).filter((item) => supportAccess ? !["analytics", "subscribers", "activity"].includes(item) : true).map((item) => <option key={item} value={item}>{item === "produce" ? "Produce listings" : item === "pickup_centres" ? "Pickup centres" : item === "tickets" ? "Support tickets" : item === "subscribers" ? "Campaign subscribers" : item[0].toUpperCase() + item.slice(1)}{item === "refunds" && metrics.open_refunds > 0 ? ` (${metrics.open_refunds})` : item === "payouts" && metrics.open_payouts > 0 ? ` (${metrics.open_payouts})` : ""}</option>)}</select><ChevronDown size={16}/></label>
+      <nav className="admin-tabs" aria-label="Administration sections"><small>Workspace</small>{(["overview", "tickets", "verifications", "analytics", "users", "farms", "produce", "areas", "pickup_centres", "orders", "refunds", "payouts", "reviews", "subscribers", "activity"] as const).filter((item) => supportAccess ? !["analytics", "subscribers", "activity"].includes(item) : true).map((item) => <button key={item} className={section === item ? "active" : ""} onClick={() => { setSection(item); setSelected(null); setError(""); setBusy(item !== "overview" && item !== "tickets"); }}>{item === "overview" ? <House size={15}/> : item === "tickets" ? <Headphones size={15}/> : item === "analytics" ? <BarChart3 size={15}/> : item === "users" ? <UserRound size={15}/> : item === "farms" ? <Store size={15}/> : item === "produce" ? <Leaf size={15}/> : item === "areas" || item === "pickup_centres" ? <MapPin size={15}/> : item === "orders" ? <PackageCheck size={15}/> : item === "refunds" ? <RotateCcw size={15}/> : item === "payouts" ? <CreditCard size={15}/> : item === "reviews" ? <Star size={15}/> : item === "subscribers" ? <Mail size={15}/> : <Clock3 size={15}/>}<span>{item === "pickup_centres" ? "Pickup centres" : item === "tickets" ? "Support tickets" : item === "subscribers" ? "Campaign subscribers" : item}</span>{item === "refunds" && metrics.open_refunds > 0 && <b className="admin-tab-count">{metrics.open_refunds}</b>}{item === "payouts" && metrics.open_payouts > 0 && <b className="admin-tab-count">{metrics.open_payouts}</b>}</button>)}</nav>
       <div className="admin-workspace-content">
     {section === "overview" ? <>
       <section className="admin-metrics"><article><span><UserRound size={19}/></span><small>ACTIVE USERS</small><strong>{metrics.users}</strong><p>{metrics.active_carts} active shopping carts</p></article><article><span><Store size={19}/></span><small>VERIFIED FARMS</small><strong>{metrics.verified_farms}</strong><p>{metrics.pending_farms} awaiting review</p></article><article><span><Leaf size={19}/></span><small>ACTIVE LISTINGS</small><strong>{metrics.listings}</strong><p>Available marketplace harvests</p></article><article><span><PackageCheck size={19}/></span><small>OPEN ORDERS</small><strong>{metrics.open_orders}</strong><p>{metrics.orders} orders recorded</p></article><article><span><RotateCcw size={19}/></span><small>OPEN REFUNDS</small><strong>{metrics.open_refunds}</strong><p>Awaiting a resolution</p></article><article><span><CreditCard size={19}/></span><small>OPEN PAYOUTS</small><strong>{metrics.open_payouts}</strong><p>Farmer requests requiring action</p></article><article><span><AtSign size={19}/></span><small>CUMULATIVE GROSS SALES</small><strong>{money(Number(metrics.cumulative_gross_kobo) / 100)}</strong><p>Completed produce sales</p></article><article><span><Minus size={19}/></span><small>PROCESSING FEES</small><strong>{money(Number(metrics.cumulative_fee_kobo) / 100)}</strong><p>Cumulative platform revenue</p></article><article><span><Check size={19}/></span><small>FARMER NET SALES</small><strong>{money(Number(metrics.cumulative_net_kobo) / 100)}</strong><p>Earned after processing fees</p></article><article><span><Truck size={19}/></span><small>DELIVERY ISSUES</small><strong>{metrics.failed_deliveries}</strong><p>Failed deliveries</p></article><article><span><Bell size={19}/></span><small>UNREAD UPDATES</small><strong>{metrics.unread_notifications}</strong><p>{metrics.hidden_reviews} hidden reviews</p></article></section>
       <section className="admin-credit-balance"><span><AtSign size={20}/></span><div><small>OUTSTANDING ACCOUNT CREDIT</small><strong>{money(Number(metrics.outstanding_credit_kobo) / 100)}</strong><p>Total customer credit currently available for future marketplace purchases.</p></div><button onClick={() => { setBusy(true); setSection("users"); }}>View customer balances <ArrowRight size={15}/></button></section>
       <div className="admin-grid"><section className="admin-panel"><div className="admin-panel-head"><div><h2>Recent users</h2><p>Latest accounts across the marketplace</p></div><button onClick={() => { setBusy(true); setSection("users"); }}>View all <ArrowRight size={15}/></button></div><div className="admin-user-list">{overview.users.slice(0, 8).map((user) => <button className="admin-user-row" key={user.id} onClick={() => { setBusy(true); setSection("users"); setTimeout(() => openDetails("users", user.id), 0); }}><span>{user.first_name[0]}{user.last_name[0]}</span><div><strong>{user.first_name} {user.last_name}</strong><small>{user.email}</small></div><b className={`role-badge ${user.role}`}>{user.role}</b><i className={user.is_active ? "active" : ""}>{user.is_active ? "Active" : "Disabled"}</i></button>)}</div></section><aside className="admin-side"><section><div className="admin-panel-head"><div><h2>Attention needed</h2><p>Items requiring administrator action</p></div></div><button onClick={() => { setBusy(true); setSection("farms"); }}><span><Store size={17}/></span><div><strong>Farm verification</strong><small>{metrics.pending_farms} pending applications</small></div><ChevronRight size={16}/></button><button onClick={() => { setBusy(true); setSection("refunds"); }}><span><RotateCcw size={17}/></span><div><strong>Refund requests</strong><small>{metrics.open_refunds} open cases</small></div><ChevronRight size={16}/></button><button onClick={() => { setBusy(true); setSection("payouts"); }}><span><CreditCard size={17}/></span><div><strong>Farmer payouts</strong><small>{metrics.open_payouts} awaiting action</small></div><ChevronRight size={16}/></button><button onClick={() => { setBusy(true); setSection("orders"); }}><span><Truck size={17}/></span><div><strong>Delivery exceptions</strong><small>{metrics.failed_deliveries} failed deliveries</small></div><ChevronRight size={16}/></button></section><section className="admin-health"><div className="admin-panel-head"><div><h2>System status</h2><p>Core marketplace services</p></div></div><div><span><i/> Neon database</span><strong>Operational</strong></div><div><span><i/> Blob image storage</span><strong>Operational</strong></div><div><span><i/> Authentication</span><strong>Operational</strong></div></section></aside></div>
-    </> : section === "tickets" ? <SupportTicketCentre user={user} onSignIn={() => undefined}/> : section === "analytics" ? <AdminAnalyticsView analytics={analytics} loading={busy} error={error}/> : <section className="entity-manager">
+    </> : section === "tickets" ? <SupportTicketCentre user={user} onSignIn={() => undefined}/> : section === "verifications" ? <FarmVerificationReview readOnly={readOnly}/> : section === "analytics" ? <AdminAnalyticsView analytics={analytics} loading={busy} error={error}/> : <section className="entity-manager">
       <div className="entity-toolbar"><div><h2>{section === "produce" ? "Produce listings" : section === "pickup_centres" ? "Pickup centres" : section === "subscribers" ? "Campaign subscribers" : section[0].toUpperCase() + section.slice(1)}</h2><p>{entities.length} database records</p></div>{!readOnly && ["users","farms","produce","areas","pickup_centres"].includes(section) && <button onClick={() => { setError(""); if (section === "pickup_centres") setPickupCentreModal("add"); else if (section === "areas") setAreaModal("add"); else setAddOpen(true); }}><Plus size={16}/> Add {section === "produce" ? "produce" : section === "pickup_centres" ? "pickup centre" : section.slice(0, -1)}</button>}</div>
       <div className="entity-list-controls">
         <div className="entity-search"><Search size={16}/><input type="search" aria-label={`Search ${section}`} value={entitySearch} onChange={(event) => setEntitySearch(event.target.value)} placeholder={`Search ${section === "produce" ? "produce listings" : section}...`}/>{entitySearch && <button type="button" onClick={() => setEntitySearch("")} aria-label="Clear search"><X size={14}/></button>}</div>
@@ -2002,7 +2112,7 @@ function AdminPage({ user, readOnly, supportAccess, onImpersonated }: { user: Cu
 
     {selected && section !== "overview" && section !== "tickets" && section !== "analytics" && <div className="admin-drawer-overlay" onMouseDown={() => setSelected(null)}>
       <aside className="admin-detail" onMouseDown={(event) => event.stopPropagation()}>
-        <header><div><small>{section === "produce" ? "PRODUCE LISTING" : section === "activity" ? "AUDIT EVENT" : section.slice(0, -1).toUpperCase()}</small><h2>{entityTitle(section, selected)}</h2></div><button onClick={() => setSelected(null)} aria-label="Close details"><X size={19}/></button></header>
+        <header><div><small>{section === "produce" ? "PRODUCE LISTING" : section === "activity" ? "AUDIT EVENT" : section.slice(0, -1).toUpperCase()}</small><h2>{entityTitle(section as AdminEntityType, selected)}</h2></div><button onClick={() => setSelected(null)} aria-label="Close details"><X size={19}/></button></header>
         {["orders", "refunds"].includes(section) && Boolean(selected.payment_receipt_name) && <section className="admin-payment-review"><span><PackageCheck size={19}/></span><div><strong>Manual payment receipt</strong><small>Submitted {formatEntityValue("submitted_at", selected.payment_receipt_submitted_at)}</small></div><a href={`/api/payments/manual/${section === "orders" ? selected.id : selected.order_id}`} target="_blank" rel="noreferrer">Open receipt</a></section>}
         {section === "payouts" && <section className="admin-payment-review"><span><CreditCard size={19}/></span><div><strong>Payout destination</strong><small>{selected.account_name ? `${String(selected.account_name)} · account ending ${String(selected.account_last4)}` : "No payout account configured"}</small></div><b>{money(Number(selected.net_amount_kobo) / 100)}</b></section>}
         {section === "payouts" && Array.isArray(selected.orders) && <section className="payout-drawer-breakdown"><header><div><small>SETTLEMENT BREAKDOWN</small><strong>{String(selected.order_count)} fulfilled {Number(selected.order_count) === 1 ? "order" : "orders"}</strong></div><span>{money(Number(selected.net_amount_kobo) / 100)} net</span></header><div className="payout-drawer-orders">{(selected.orders as Array<Record<string, unknown>>).map((order, index) => <article key={`${String(order.order_number)}-${index}`}><strong>Order #{String(order.order_number)}</strong><dl><div><dt>Gross</dt><dd>{money(Number(order.gross_kobo) / 100)}</dd></div><div><dt>Fee</dt><dd className="fee">-{money(Number(order.fee_kobo) / 100)}</dd></div><div><dt>Net</dt><dd>{money(Number(order.net_kobo) / 100)}</dd></div></dl></article>)}</div></section>}
@@ -2023,7 +2133,7 @@ function AdminPage({ user, readOnly, supportAccess, onImpersonated }: { user: Cu
     </div>}
 
     {addOpen && section !== "overview" && <div className="modal-overlay" onMouseDown={() => setAddOpen(false)}><div className="admin-add-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close-modal" onClick={() => setAddOpen(false)}><X size={19}/></button><p className="auth-kicker">NEW {section === "produce" ? "LISTING" : section.slice(0, -1).toUpperCase()}</p><h2>Add {section === "produce" ? "produce" : section.slice(0, -1)}</h2><p>Create a new marketplace record. Required fields are marked.</p><form onSubmit={addEntity}>{section === "users" ? <><div className="form-row"><label>First name<input name="firstName" required/></label><label>Last name<input name="lastName" required/></label></div><label>Email<input name="email" type="email" required/></label><label>Phone<input name="phone" required/></label><label>Role<select name="role" required><option value="consumer">Consumer</option><option value="farmer">Farmer</option><option value="support">Support</option><option value="admin">Administrator</option></select></label><label>Temporary password<input name="password" type="password" minLength={8} required/></label></> : section === "farms" ? <><label>Farmer owner<select name="ownerId" required><option value="">Select owner</option>{options.owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.name}</option>)}</select></label><label>Farm name<input name="name" required/></label><div className="form-row"><label>Phone<input name="phone" required/></label><label>Email<input name="email" type="email"/></label></div><label>Address<input name="address" required/></label><div className="form-row"><label>City<input name="city" required/></label><label>State<input name="state" required/></label></div><label className="admin-check"><input type="checkbox" name="offersDelivery" value="true"/> Offers delivery</label></> : <><label>Farm<select name="farmId" required><option value="">Select farm</option>{options.farms.map((farm) => <option key={farm.id} value={farm.id}>{farm.name}</option>)}</select></label><label>Category<select name="categoryId" required><option value="">Select category</option>{options.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>Produce name<input name="name" required/></label><div className="form-row"><label>Unit<input name="unit" placeholder="basket" required/></label><label>Price (NGN)<input name="price" type="number" min="1" required/></label></div><div className="form-row"><label>Stock quantity<input name="stock" type="number" min="1" required/></label><label>Harvest date<input name="harvestDate" type="date" required/></label></div><div className="form-row"><label>Available from (optional)<input name="availableFrom" type="datetime-local"/></label><label>Available until (optional)<input name="availableUntil" type="datetime-local"/></label></div><label>Produce picture<input name="image" type="file" accept="image/png,image/jpeg,image/webp" required/><small>Required. JPG, PNG, or WebP up to 4 MB.</small></label><label>Badge<input name="badge" placeholder="New harvest"/></label></>} {error && <p className="admin-error" role="alert">{error}</p>}<button className="admin-submit" disabled={busy}>{busy ? "Saving..." : "Create record"} {!busy && <ArrowRight size={16}/>}</button></form></div></div>}
-    {editOpen && selected && section !== "overview" && <div className="modal-overlay admin-edit-overlay" onMouseDown={() => setEditOpen(false)}><div className="admin-add-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close-modal" onClick={() => setEditOpen(false)}><X size={19}/></button><p className="auth-kicker">EDIT {section === "produce" ? "LISTING" : section.slice(0, -1).toUpperCase()}</p><h2>{entityTitle(section, selected)}</h2><p>Update this record. Changes are saved to the audit log.</p><form onSubmit={editEntity}>{section === "orders" ? <label>Order status<select name="status" defaultValue={String(selected.status)} required>{["paid","confirmed","preparing","ready","dispatched","delivered","collected","cancelled","refunded"].map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}</select></label> : section === "refunds" ? <><label>Refund status<select name="status" defaultValue={String(selected.status)} required>{["requested","under_review","approved","rejected","processing","completed","failed"].map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}</select></label><label>Resolution note<textarea name="adminNote" defaultValue={String(selected.resolution_note || "")} placeholder="Explain the decision or next action"/></label></> : section === "reviews" ? <><label>Visibility<select name="isVisible" defaultValue={selected.is_visible ? "true" : "false"}><option value="true">Visible</option><option value="false">Hidden</option></select></label><label>Farmer reply<textarea name="farmerReply" defaultValue={String(selected.farmer_reply || "")} placeholder="Optional public response"/></label></> : section === "users" ? <><div className="form-row"><label>First name<input name="firstName" defaultValue={String(selected.first_name)} required/></label><label>Last name<input name="lastName" defaultValue={String(selected.last_name)} required/></label></div><label>Email<input name="email" type="email" defaultValue={String(selected.email)} required/></label><label>Phone<input name="phone" defaultValue={String(selected.phone || "")} required/></label><label>Role<select name="role" defaultValue={String(selected.role)} required><option value="consumer">Consumer</option><option value="farmer">Farmer</option><option value="support">Support</option><option value="admin">Administrator</option></select></label><label>Account status<select name="isActive" defaultValue={selected.is_active ? "true" : "false"}><option value="true">Active</option><option value="false">Disabled</option></select></label></> : section === "farms" ? <><label>Farmer owner<select name="ownerId" defaultValue={String(selected.owner_id)} required>{options.owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.name}</option>)}</select></label><label>Farm name<input name="name" defaultValue={String(selected.name)} required/></label><div className="form-row"><label>Phone<input name="phone" defaultValue={String(selected.phone)} required/></label><label>Email<input name="email" type="email" defaultValue={String(selected.email || "")}/></label></div><label>Address<input name="address" defaultValue={String(selected.address_text)} required/></label><div className="form-row"><label>City<input name="city" defaultValue={String(selected.city)} required/></label><label>State<input name="state" defaultValue={String(selected.state)} required/></label></div><label className="admin-check"><input type="checkbox" name="offersDelivery" value="true" defaultChecked={Boolean(selected.offers_delivery)}/> Offers delivery</label></> : <><label>Farm<select name="farmId" defaultValue={String(selected.farm_id)} required>{options.farms.map((farm) => <option key={farm.id} value={farm.id}>{farm.name}</option>)}</select></label>
+    {editOpen && selected && section !== "overview" && <div className="modal-overlay admin-edit-overlay" onMouseDown={() => setEditOpen(false)}><div className="admin-add-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close-modal" onClick={() => setEditOpen(false)}><X size={19}/></button><p className="auth-kicker">EDIT {section === "produce" ? "LISTING" : section.slice(0, -1).toUpperCase()}</p><h2>{entityTitle(section as AdminEntityType, selected)}</h2><p>Update this record. Changes are saved to the audit log.</p><form onSubmit={editEntity}>{section === "orders" ? <label>Order status<select name="status" defaultValue={String(selected.status)} required>{["paid","confirmed","preparing","ready","dispatched","delivered","collected","cancelled","refunded"].map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}</select></label> : section === "refunds" ? <><label>Refund status<select name="status" defaultValue={String(selected.status)} required>{["requested","under_review","approved","rejected","processing","completed","failed"].map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}</select></label><label>Resolution note<textarea name="adminNote" defaultValue={String(selected.resolution_note || "")} placeholder="Explain the decision or next action"/></label></> : section === "reviews" ? <><label>Visibility<select name="isVisible" defaultValue={selected.is_visible ? "true" : "false"}><option value="true">Visible</option><option value="false">Hidden</option></select></label><label>Farmer reply<textarea name="farmerReply" defaultValue={String(selected.farmer_reply || "")} placeholder="Optional public response"/></label></> : section === "users" ? <><div className="form-row"><label>First name<input name="firstName" defaultValue={String(selected.first_name)} required/></label><label>Last name<input name="lastName" defaultValue={String(selected.last_name)} required/></label></div><label>Email<input name="email" type="email" defaultValue={String(selected.email)} required/></label><label>Phone<input name="phone" defaultValue={String(selected.phone || "")} required/></label><label>Role<select name="role" defaultValue={String(selected.role)} required><option value="consumer">Consumer</option><option value="farmer">Farmer</option><option value="support">Support</option><option value="admin">Administrator</option></select></label><label>Account status<select name="isActive" defaultValue={selected.is_active ? "true" : "false"}><option value="true">Active</option><option value="false">Disabled</option></select></label></> : section === "farms" ? <><label>Farmer owner<select name="ownerId" defaultValue={String(selected.owner_id)} required>{options.owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.name}</option>)}</select></label><label>Farm name<input name="name" defaultValue={String(selected.name)} required/></label><div className="form-row"><label>Phone<input name="phone" defaultValue={String(selected.phone)} required/></label><label>Email<input name="email" type="email" defaultValue={String(selected.email || "")}/></label></div><label>Address<input name="address" defaultValue={String(selected.address_text)} required/></label><div className="form-row"><label>City<input name="city" defaultValue={String(selected.city)} required/></label><label>State<input name="state" defaultValue={String(selected.state)} required/></label></div><label className="admin-check"><input type="checkbox" name="offersDelivery" value="true" defaultChecked={Boolean(selected.offers_delivery)}/> Offers delivery</label></> : <><label>Farm<select name="farmId" defaultValue={String(selected.farm_id)} required>{options.farms.map((farm) => <option key={farm.id} value={farm.id}>{farm.name}</option>)}</select></label>
 <label>Category<select name="categoryId" defaultValue={String(selected.category_id)} required>{options.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>Listing title<input name="title" defaultValue={String(selected.title)} required/></label><div className="form-row"><label>Unit<input name="unit" defaultValue={String(selected.unit)} required/></label><label>Price (NGN)<input name="price" type="number" min="1" defaultValue={Number(selected.unit_price_kobo) / 100} required/></label></div><div className="form-row"><label>Available stock<input name="stock" type="number" min={Number(selected.quantity_reserved || 0)} defaultValue={Number(selected.quantity_available)} required/></label><label>Harvest date<input name="harvestDate" type="date" defaultValue={String(selected.harvest_date).slice(0, 10)} required/></label></div><div className="form-row"><label>Available from (optional)<input name="availableFrom" type="datetime-local" defaultValue={lagosDateTimeInput(selected.available_from)}/></label><label>Available until (optional)<input name="availableUntil" type="datetime-local" defaultValue={lagosDateTimeInput(selected.available_until)}/></label></div><label>Status<select name="status" defaultValue={String(selected.status)}><option value="draft">Draft</option><option value="active">Active</option><option value="paused">Paused</option><option value="sold_out">Out of stock</option><option value="expired">Expired</option></select></label>{selected.image_url && <div className="listing-image-preview"><img src={String(selected.image_url)} alt={`Current ${String(selected.title)}`}/><span>Current picture</span></div>}<label>Replace picture<input name="image" type="file" accept="image/png,image/jpeg,image/webp"/><small>Select a JPG, PNG, or WebP image up to 4 MB. Leave empty to keep the current picture.</small></label><label>Badge<input name="badge" defaultValue={String(selected.badge || "")}/></label></>} {error && <p className="admin-error" role="alert">{error}</p>}<button className="admin-submit" disabled={busy}>{busy ? "Saving changes..." : "Save changes"} {!busy && <ArrowRight size={16}/>}</button></form></div></div>}
     {paymentSettingsOpen && <div className="modal-overlay admin-edit-overlay" onMouseDown={() => setPaymentSettingsOpen(false)}><div className="admin-add-modal payment-settings-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close-modal" onClick={() => setPaymentSettingsOpen(false)}><X size={19}/></button><p className="auth-kicker">MANUAL PAYMENTS</p><h2>Company bank account</h2><p>These details are displayed to signed-in customers during checkout.</p><form onSubmit={savePaymentSettings}><label>Bank name<input name="bankName" defaultValue={paymentSettings.bank_name} maxLength={120} required/></label><label>Account name<input name="accountName" defaultValue={paymentSettings.account_name} maxLength={160} required/></label><label>Account number<input name="accountNumber" inputMode="numeric" pattern="[0-9 -]+" defaultValue={paymentSettings.account_number} maxLength={30} required/></label><label>Payment instructions<textarea name="instructions" defaultValue={paymentSettings.instructions || ""} maxLength={500} placeholder="Optional transfer reference or processing guidance"/></label><label className="admin-check"><input name="isEnabled" type="checkbox" value="true" defaultChecked={paymentSettings.is_enabled}/> Enable manual bank payments</label>{error && <p className="admin-error" role="alert">{error}</p>}<button className="admin-submit" disabled={busy}>{busy ? "Saving details..." : "Save payment details"}</button></form></div></div>}
   </main>;
@@ -2499,6 +2609,147 @@ function ExpandedFarmerOrders({ orders, busy, readOnly, onAdvance, onChat }: { o
   }) : <div className="panel-empty">No orders to fulfil.</div>}</section>;
 }
 
+type VerificationView = {
+  farm: { id: string; name: string; verificationStatus: string; exempt: boolean };
+  submission: (Partial<VerificationSubmission> & { id: string; status: string }) | null;
+  documents: { document_type: string; byte_size: number }[];
+  payoutAccountName: string | null;
+  policy: {
+    identityTypes: { value: string; label: string }[];
+    businessTypes: { value: string; label: string; requiresCac: boolean }[];
+    requiredDocuments: string[]; optionalDocuments: string[]; maxDocumentBytes: number;
+  };
+};
+
+function FarmVerificationPanel({ farmId, verified, readOnly }: { farmId: string; verified: boolean; readOnly: boolean }) {
+  const [view, setView] = useState<VerificationView | null>(null);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [form, setForm] = useState({ legalFirstName: "", legalLastName: "", dateOfBirth: "", identityType: "nin", identityNumber: "", businessType: "individual", cacNumber: "" });
+
+  const applyView = useCallback((data: VerificationView) => {
+    setView(data);
+    if (data.submission) setForm((current) => ({
+      ...current,
+      legalFirstName: data.submission?.legal_first_name || current.legalFirstName,
+      legalLastName: data.submission?.legal_last_name || current.legalLastName,
+      dateOfBirth: data.submission?.date_of_birth?.slice(0, 10) || current.dateOfBirth,
+      identityType: data.submission?.identity_type || current.identityType,
+      businessType: data.submission?.business_type || current.businessType,
+      cacNumber: data.submission?.cac_number || current.cacNumber,
+    }));
+  }, []);
+  const load = useCallback(async () => {
+    const response = await fetch(`/api/farmer/verification?farmId=${encodeURIComponent(farmId)}`, { cache: "no-store" });
+    const data = await readJsonResponse<VerificationView & { error?: string }>(response);
+    if (!response.ok) throw new Error(data.error || "Could not load verification");
+    applyView(data);
+  }, [farmId, applyView]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/farmer/verification?farmId=${encodeURIComponent(farmId)}`, { cache: "no-store" }).then(async (response) => {
+      const data = await readJsonResponse(response) as VerificationView & { error?: string };
+      if (!response.ok) throw new Error(data.error || "Could not load verification");
+      if (!cancelled) applyView(data);
+    }).catch((reason: Error) => { if (!cancelled) setError(reason.message); });
+    return () => { cancelled = true; };
+  }, [farmId, applyView]);
+
+  if (!view) return null;
+  if (view.farm.exempt && verified) return null;
+
+  const submission = view.submission;
+  const locked = submission ? ["submitted", "under_review", "approved"].includes(submission.status) : false;
+  const uploaded = new Set(view.documents.map((document) => document.document_type));
+  const missing = view.policy.requiredDocuments.filter((type) => !uploaded.has(type));
+  const requiresCac = Boolean(view.policy.businessTypes.find((entry) => entry.value === form.businessType)?.requiresCac);
+
+  async function save(submit: boolean) {
+    setBusy(submit ? "submit" : "save"); setError(""); setMessage("");
+    try {
+      const response = await fetch("/api/farmer/verification", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ farmId, ...form, submit }),
+      });
+      const data = await readJsonResponse<{ bankMatchNote?: string; error?: string }>(response);
+      if (!response.ok) throw new Error(data.error || "Could not save verification");
+      setMessage(submit ? "Submitted for review." : `Saved. ${data.bankMatchNote || ""}`);
+      await load();
+    } catch (reason) { setError((reason as Error).message); }
+    finally { setBusy(""); }
+  }
+
+  async function uploadDocument(documentType: string, file: File | undefined) {
+    if (!file || !submission?.id) return;
+    if (file.size > view!.policy.maxDocumentBytes) { setError("Each document must be 6 MB or smaller."); return; }
+    setBusy(documentType); setError(""); setMessage("");
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      body.append("submissionId", submission.id);
+      body.append("documentType", documentType);
+      const response = await fetch("/api/farmer/verification/document", { method: "POST", body });
+      const data = await readJsonResponse<{ error?: string }>(response);
+      if (!response.ok) throw new Error(data.error || "Could not upload the document");
+      setMessage("Document uploaded.");
+      await load();
+    } catch (reason) { setError((reason as Error).message); }
+    finally { setBusy(""); }
+  }
+
+  const status = submission?.status;
+  const tone = status === "approved" ? "verified" : status === "rejected" ? "rejected" : status ? "pending" : "required";
+
+  return <section className={`farm-verification-panel ${tone}`}>
+    <header>
+      <span>{status === "approved" ? <BadgeCheck size={19}/> : status === "rejected" ? <X size={19}/> : <ShieldCheck size={19}/>}</span>
+      <div>
+        <strong>{status === "approved" ? "Farm verified" : status === "rejected" ? "Verification not approved" : status ? "Verification under review" : "Farm verification required"}</strong>
+        <p>{status === "approved" ? "This farm can publish produce and receive payouts."
+          : status === "rejected" ? (submission?.review_note || "Correct the details and submit again.")
+          : status ? "We are checking your documents and will let you know as soon as there is a decision."
+          : "Confirm who owns this farm before publishing produce or requesting a payout."}</p>
+      </div>
+      {!readOnly && status !== "approved" && <button onClick={() => setOpen((current) => !current)}>{open ? "Close" : status === "rejected" ? "Fix and resubmit" : "Start verification"}</button>}
+    </header>
+
+    {open && !readOnly && status !== "approved" && <div className="farm-verification-form">
+      <p className="farm-verification-hint">Enter the names exactly as they appear on the identity document. Only the last four digits of the number are stored, and documents can be opened only by a reviewer.</p>
+      <div className="form-row">
+        <label>First name<input value={form.legalFirstName} disabled={locked} onChange={(event) => setForm({ ...form, legalFirstName: event.target.value })}/></label>
+        <label>Last name<input value={form.legalLastName} disabled={locked} onChange={(event) => setForm({ ...form, legalLastName: event.target.value })}/></label>
+      </div>
+      <div className="form-row">
+        <label>Date of birth<input type="date" value={form.dateOfBirth} disabled={locked} onChange={(event) => setForm({ ...form, dateOfBirth: event.target.value })}/></label>
+        <label>Identity document<select value={form.identityType} disabled={locked} onChange={(event) => setForm({ ...form, identityType: event.target.value })}>{view.policy.identityTypes.map((entry) => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></label>
+      </div>
+      <div className="form-row">
+        <label>Identity number{submission?.identity_number_last4 ? ` (saved ending ${submission.identity_number_last4})` : ""}<input value={form.identityNumber} disabled={locked} onChange={(event) => setForm({ ...form, identityNumber: event.target.value })}/></label>
+        <label>Registration<select value={form.businessType} disabled={locked} onChange={(event) => setForm({ ...form, businessType: event.target.value })}>{view.policy.businessTypes.map((entry) => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></label>
+      </div>
+      {requiresCac && <label>CAC registration number<input value={form.cacNumber} disabled={locked} onChange={(event) => setForm({ ...form, cacNumber: event.target.value })}/></label>}
+      {view.payoutAccountName && <p className={`farm-verification-bank ${submission?.bank_matched === false ? "mismatch" : ""}`}>{submission?.bank_match_note || `Your payout account is held by ${view.payoutAccountName}. The name must match the identity document.`}</p>}
+      {!locked && <button className="farm-verification-save" disabled={Boolean(busy)} onClick={() => save(false)}>{busy === "save" ? "Saving..." : "Save details"}</button>}
+
+      <div className="farm-verification-documents">
+        {[...view.policy.requiredDocuments, ...view.policy.optionalDocuments].map((type) => <label key={type} className={uploaded.has(type) ? "uploaded" : ""}>
+          <span>{VERIFICATION_DOCUMENT_LABELS[type] || type} <small>{view.policy.requiredDocuments.includes(type) ? "Required" : "Optional"}</small></span>
+          <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" disabled={locked || !submission?.id || Boolean(busy)} onChange={(event) => uploadDocument(type, event.target.files?.[0])}/>
+          {uploaded.has(type) && <em><Check size={14}/> Uploaded</em>}
+        </label>)}
+        {!submission?.id && <p className="farm-verification-hint">Save your details first to enable document uploads.</p>}
+      </div>
+
+      {!locked && <button className="farm-verification-submit" disabled={Boolean(busy) || missing.length > 0} onClick={() => save(true)}><ShieldCheck size={16}/> {busy === "submit" ? "Submitting..." : "Submit for review"}</button>}
+      {missing.length > 0 && !locked && <p className="farm-verification-hint">Still needed: {missing.map((type) => VERIFICATION_DOCUMENT_LABELS[type] || type).join(", ")}</p>}
+      {message && <p className="farm-verification-message">{message}</p>}
+      {error && <p className="admin-error" role="alert">{error}</p>}
+    </div>}
+  </section>;
+}
+
 function FarmerWorkspace({ onShop }: { onShop: () => void }) {
   const [data, setData] = useState<FarmerWorkspaceData | null>(null);
   const [error, setError] = useState("");
@@ -2629,7 +2880,7 @@ function FarmerWorkspace({ onShop }: { onShop: () => void }) {
     {!data.user.impersonating && <ProduceCategoryCreator onCreated={(category) => setData((current) => current ? ({ ...current, categories: [...current.categories.filter((item) => item.id !== category.id), category].sort((a,b) => a.name.localeCompare(b.name)) }) : current)}/>} 
     <div className="farm-rating-summary" aria-label={`${Number(data.farm.average_rating).toFixed(1)} out of 5 from ${data.farm.review_count} reviews`}><span><Star size={17} fill="currentColor"/></span><div><small>FARM RATING</small><strong>{Number(data.farm.average_rating).toFixed(1)}<i>/5</i></strong></div><p>{data.farm.review_count ? `${data.farm.review_count} verified customer review${data.farm.review_count === 1 ? "" : "s"}` : "No customer reviews yet"}</p></div>
     {data.user.impersonating && <div className="farmer-readonly-notice"><Eye size={18}/><span><strong>Read-only administrator preview</strong>Fulfilment, listings, and farm changes are disabled while viewing another user&apos;s account.</span></div>}
-    {data.farm.verification_status !== "verified" && <div className="farmer-notice"><Clock3 size={18}/><span><strong>Farm verification required</strong>Your farm must be verified before produce can be published.</span></div>}
+    <FarmVerificationPanel farmId={data.farm.id} verified={data.farm.verification_status === "verified"} readOnly={Boolean(data.user.impersonating)}/>
     {error && <p className="admin-error" role="alert">{error}</p>}
     <div className="metric-grid"><div><span>Today&apos;s sales</span><strong>{money(Number(data.metrics.today_sales_kobo) / 100)}</strong><small>Net earnings from paid orders</small></div><div><span>Open orders</span><strong>{data.metrics.open_orders}</strong><small>Orders requiring fulfilment</small></div><div><span>Produce listed</span><strong>{Number(data.metrics.available_stock)} <i>units</i></strong><small>Across {data.metrics.active_listings} active listings</small></div><div className="payout-metric"><span>Available payout</span><strong>{money(Number(data.metrics.next_payout_kobo) / 100)}</strong><div className="payout-breakdown"><p><span>Gross sales</span><b>{money(Number(data.metrics.payout_gross_kobo) / 100)}</b></p><p><span>Platform fee (10%)</span><b>{deductionMoney(Number(data.metrics.payout_fee_kobo) / 100)}</b></p><p><span>Net payout</span><b>{money(Number(data.metrics.next_payout_kobo) / 100)}</b></p></div><button className="admin-submit" disabled={busy || Number(data.metrics.next_payout_kobo) <= 0} onClick={requestPayout}>{busy ? "Submitting..." : "Request payout"}</button><small>{data.payoutRequests?.[0] ? `Latest request: ${statusLabel(data.payoutRequests[0].status)}` : "Fulfilled orders awaiting settlement"}</small></div></div>
     <section className="farmer-payout-history"><header><div><small>PAYOUTS</small><h2>Payout account and history</h2><p>Manage where this farm is paid and keep printable settlement statements.</p></div><button onClick={()=>void openPayoutAccount()}><CreditCard size={16}/> {payoutAccount?.account_last4?"Update payout account":"Configure payout account"}</button></header>{data.payoutRequests?.length?<div>{data.payoutRequests.map((request)=><article key={request.id}><span><strong>{money(Number(request.net_amount_kobo)/100)}</strong><small>{new Date(request.requested_at).toLocaleDateString("en-NG",{dateStyle:"medium"})} · {statusLabel(request.status)}</small></span><a href={`/farmer/payouts/${request.id}/receipt`} target="_blank" rel="noreferrer"><Printer size={15}/> View or print</a></article>)}</div>:<p className="payout-history-empty">No payout requests yet.</p>}</section><section className="cumulative-sales-card"><div className="cumulative-sales-heading"><span><AtSign size={19}/></span><div><small>CUMULATIVE EARNINGS</small><h2>Lifetime net sales</h2><p>Completed farm orders since joining HarvestNearU.</p></div></div><strong>{money(Number(data.metrics.cumulative_net_kobo) / 100)}</strong><div className="cumulative-sales-breakdown"><span><small>Gross sales processed</small><b>{money(Number(data.metrics.cumulative_gross_kobo) / 100)}</b></span><span className="fees"><small>Processing fees</small><b>{deductionMoney(Number(data.metrics.cumulative_fee_kobo) / 100)}</b></span><span className="net"><small>Net sales earned</small><b>{money(Number(data.metrics.cumulative_net_kobo) / 100)}</b></span></div></section>

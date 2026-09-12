@@ -73,6 +73,10 @@ async function claimNextRequest(): Promise<ClaimedRequest | null> {
         AND candidate.eligible_at IS NOT NULL
         AND candidate.eligible_at <= now()
         AND candidate_farm.verification_status = 'verified'
+        AND (candidate_farm.verification_exempt OR EXISTS (
+          SELECT 1 FROM farm_verification_submissions approved
+          WHERE approved.farm_id = candidate.farm_id AND approved.status = 'approved'
+        ))
         AND candidate_account.recipient_code <> ''
         AND NOT EXISTS (
           SELECT 1 FROM payout_request_orders link

@@ -54,6 +54,16 @@ Private Blob images are exposed through versioned application routes. Upload rou
 
 Add numbered SQL files to `database/migrations`. The migration runner records applied filenames in `schema_migrations`. Migrations must be valid as a single prepared statement; wrap multiple commands in a PostgreSQL `DO` block when needed.
 
+## Farmer verification
+
+A farm may sell and be paid only when it has cleared verification. `farms.verification_exempt` marks farms that were already trading before documented checks existed; every other farm needs an approved row in `farm_verification_submissions`. `farmVerificationState` in `src/lib/farm-verification.ts` is the single place that decides this, and both the payout request route and the automatic payout run consult it.
+
+Identity numbers are never stored in readable form. `hashIdentityNumber` keeps a peppered SHA-256 digest plus the last four digits, which is enough to spot one identity behind several farms and to recognise a resubmission, but useless to anyone who obtains the row. Rotating `IDENTITY_HASH_PEPPER` invalidates duplicate detection for every existing submission.
+
+Uploaded evidence goes to private Vercel Blob storage and is readable only through `/api/verification-documents/[id]`, which admits a reviewer or the owning farmer, refuses impersonating administrators outright, and writes every reviewer read to the audit log. The declared legal name is compared against the account name Paystack already resolved for the farm's payout destination; a mismatch is surfaced to the reviewer rather than blocking automatically.
+
+The provider seam is `IDENTITY_VERIFICATION_PROVIDER` with the `provider`, `provider_reference`, and `provider_result` columns reserved on the submission. An automated NIN, BVN, or CAC lookup can populate those without changing the submission or review flow.
+
 ## Security invariants
 
 - Keep database, Blob, Paystack, and OAuth secrets server-only.

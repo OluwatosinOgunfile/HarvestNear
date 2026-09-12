@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
+import { farmVerificationState } from "@/lib/farm-verification";
 import { dispatchNotificationEmailsAfterResponse } from "@/lib/notification-email";
 import { AUTO_APPROVAL_LIMIT_KOBO, DISPUTE_WINDOW_MINUTES, payoutPolicy, qualifiesForAutomaticPayout } from "@/lib/payouts";
 import { canMutateAs, checkRateLimit } from "@/lib/security";
@@ -40,6 +41,8 @@ export async function POST(request: Request) {
   const sql = getDatabase();
   const [farm] = await sql`SELECT id, name FROM farms WHERE id=${body.farmId} AND owner_id=${user.id}`;
   if (!farm) return NextResponse.json({ error: "Farm not found" }, { status: 404 });
+  const verification = await farmVerificationState(String(farm.id));
+  if (!verification?.cleared) return NextResponse.json({ error: "Complete farm verification before requesting a payout", verificationRequired: true }, { status: 403 });
   const orders = await sql`SELECT farm_order.id, farm_order.subtotal_kobo, farm_order.platform_fee_kobo, farm_order.farmer_net_kobo,
       coalesce((SELECT max(item.received_at) FROM order_items item WHERE item.farm_order_id = farm_order.id), farm_order.updated_at) AS acknowledged_at
     FROM farm_orders farm_order
