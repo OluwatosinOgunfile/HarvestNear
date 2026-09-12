@@ -240,3 +240,7 @@
 .app-shell[data-theme="dark"] .verification-decision{background:#1c2821;color:#b6c2b9}
 .app-shell[data-theme="dark"] .farm-verification-bank,.app-shell[data-theme="dark"] .verification-bank,.app-shell[data-theme="dark"] .farm-verification-message{color:#9fd1ae;background:#22362a}
 .app-shell[data-theme="dark"] .farm-verification-bank.mismatch,.app-shell[data-theme="dark"] .verification-bank.mismatch{color:#f0b0a4;background:#3a201c}
+.fee-note{display:block;margin-top:7px;color:#6d6144;background:#fff9e8;border:1px solid #e8dcb6;border-radius:6px;padding:8px 10px;font-size:11px;line-height:1.5;font-weight:600}
+.fee-note strong{color:#5b4f34;font-weight:800}
+.app-shell[data-theme="dark"] .fee-note{color:#e3d5aa;background:#2a2517;border-color:#544a2c}
+.app-shell[data-theme="dark"] .fee-note strong{color:#f2e6c2}

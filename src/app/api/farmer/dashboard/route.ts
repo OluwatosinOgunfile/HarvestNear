@@ -6,6 +6,7 @@ import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
 import { DEFAULT_LISTING_IMAGE, listingImageUrl, profileImageUrl } from "@/lib/images";
 import { notifyNearbyProduce } from "@/lib/nearby-produce-notifications";
+import { platformFeePolicy } from "@/lib/fees";
 import { notifyRestockIfWatched } from "@/lib/restock-alerts";
 import { dispatchNotificationEmailsAfterResponse } from "@/lib/notification-email";
 import { canMutateAs, checkRateLimit, validText } from "@/lib/security";
@@ -86,7 +87,7 @@ export async function GET(request: Request) {
   return NextResponse.json({ user, farm, farms, metrics: metricRows[0], payoutRequests, orders: orders.map((order) => {
     const itemTracking = order.items as Array<{ id: string; name: string; quantity: number; unit: string; status: string; preparing_at: string | null; ready_at: string | null; dispatched_at: string | null; received_at: string | null; updated_at: string }>;
     return { ...order, items: itemTracking.map((item) => `${item.quantity} ${item.unit} · ${item.name} (${item.status.replaceAll("_", " ")})`).join(", "), itemTracking, customer_avatar: order.customer_avatar ? profileImageUrl(String(order.customer_id), order.customer_avatar) : null };
-  }), listings: listings.map((listing) => ({ ...listing, stored_image_url: listing.image_url, image_url: listing.image_url ? listingImageUrl(String(listing.id), listing.image_url) : DEFAULT_LISTING_IMAGE })), categories, reviews });
+  }), listings: listings.map((listing) => ({ ...listing, stored_image_url: listing.image_url, image_url: listing.image_url ? listingImageUrl(String(listing.id), listing.image_url) : DEFAULT_LISTING_IMAGE })), categories, reviews, fees: platformFeePolicy() });
 }
 
 export async function POST(request: Request) {

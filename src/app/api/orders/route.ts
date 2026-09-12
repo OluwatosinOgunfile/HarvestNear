@@ -8,6 +8,7 @@ import { dispatchNotificationEmailsAfterResponse } from "@/lib/notification-emai
 import { listingImageUrl } from "@/lib/images";
 import { paystackEnabled } from "@/lib/paystack";
 import { doorstepDeliveryFeeKobo } from "@/lib/delivery";
+import { farmerNetKobo, platformFeeKobo } from "@/lib/fees";
 import { canMutateAs, checkRateLimit } from "@/lib/security";
 
 export const dynamic = "force-dynamic";
@@ -134,7 +135,7 @@ export async function POST(request: Request) {
   for (const [farmId, farmListings] of farms) {
     const farmOrderId = randomUUID();
     const farmSubtotal = farmListings.reduce((sum, listing) => sum + Number(listing.unit_price_kobo) * Number(requested.get(String(listing.id))), 0);
-    queries.push(sql`INSERT INTO farm_orders (id, order_id, farm_id, status, subtotal_kobo, platform_fee_kobo, farmer_net_kobo, confirmed_at) VALUES (${farmOrderId}, ${orderId}, ${farmId}, ${paidWithCredit ? "confirmed" : "pending_payment"}::order_status, ${farmSubtotal}, ${Math.round(farmSubtotal * .1)}, ${Math.round(farmSubtotal * .9)}, ${paidWithCredit ? new Date() : null})`);
+    queries.push(sql`INSERT INTO farm_orders (id, order_id, farm_id, status, subtotal_kobo, platform_fee_kobo, farmer_net_kobo, confirmed_at) VALUES (${farmOrderId}, ${orderId}, ${farmId}, ${paidWithCredit ? "confirmed" : "pending_payment"}::order_status, ${farmSubtotal}, ${platformFeeKobo(farmSubtotal)}, ${farmerNetKobo(farmSubtotal)}, ${paidWithCredit ? new Date() : null})`);
     for (const listing of farmListings) {
       const quantity = Number(requested.get(String(listing.id)));
       queries.push(sql`INSERT INTO order_items (order_id, farm_order_id, listing_id, product_name, farm_name, unit, quantity, unit_price_kobo, line_total_kobo, image_url, status) VALUES (${orderId}, ${farmOrderId}, ${listing.id}, ${listing.title}, ${listing.farm_name}, ${listing.unit}, ${quantity}, ${listing.unit_price_kobo}, ${Number(listing.unit_price_kobo) * quantity}, ${listing.image_url}, ${paidWithCredit ? "confirmed" : "pending_payment"}::order_status)`);
