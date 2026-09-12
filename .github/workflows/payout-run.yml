@@ -23,16 +23,28 @@ jobs:
           APP_URL: ${{ secrets.APP_URL }}
           PAYOUT_RUN_SECRET: ${{ secrets.PAYOUT_RUN_SECRET }}
         run: |
+          # Not configured yet is a normal state, not a failure: this runs every ten minutes, and
+          # failing here would email a broken build on every run until the secrets are added.
           if [ -z "$APP_URL" ] || [ -z "$PAYOUT_RUN_SECRET" ]; then
-            echo "APP_URL and PAYOUT_RUN_SECRET repository secrets are required."
-            exit 1
+            echo "::notice::Automatic payouts are not enabled. Add the APP_URL and PAYOUT_RUN_SECRET repository secrets to start paying farmers automatically."
+            exit 0
           fi
-          response=$(curl --silent --show-error --fail-with-body --max-time 60 \
-            --write-out "\n%{http_code}" \
-            --header "Authorization: Bearer $PAYOUT_RUN_SECRET" \
-            --request POST "$APP_URL/api/payouts/run")
-          status=$(printf '%s' "$response" | tail -n 1)
-          body=$(printf '%s' "$response" | sed '$d')
-          echo "status: $status"
-          echo "$body"
-          if [ "$status" != "200" ]; then exit 1; fi
+          # A cold start or a dropped connection is not worth an alert, so only a run that fails
+          # three times in a row is reported as broken.
+          for attempt in 1 2 3; do
+            response=$(curl --silent --show-error --max-time 60 \
+              --write-out "\n%{http_code}" \
+              --header "Authorization: Bearer $PAYOUT_RUN_SECRET" \
+              --request POST "$APP_URL/api/payouts/run") || response=""
+            status=$(printf '%s' "$response" | tail -n 1)
+            body=$(printf '%s' "$response" | sed '$d')
+            if [ "$status" = "200" ]; then
+              echo "$body"
+              exit 0
+            fi
+            echo "Attempt $attempt did not succeed (status ${status:-no response})."
+            if [ -n "$body" ]; then echo "$body"; fi
+            if [ "$attempt" -lt 3 ]; then sleep 15; fi
+          done
+          echo "::error::The payout run did not succeed after three attempts."
+          exit 1
