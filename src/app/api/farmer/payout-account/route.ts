@@ -22,13 +22,20 @@ export async function PUT(request: Request) {
   const user = await getSessionUser();
   if (!user || user.role !== "farmer" || !canMutateAs(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   if (!await checkRateLimit(request, "farmer.payout-account", 5, 60 * 60, user.id)) return NextResponse.json({ error: "Too many account changes. Try again later." }, { status: 429 });
-  const body = await request.json().catch(() => null) as { farmId?: string; bankCode?: string; bankName?: string; accountNumber?: string } | null;
+  const body = await request.json().catch(() => null) as { farmId?: string; bankCode?: string; bankName?: string; accountNumber?: string; confirmedAccountName?: string } | null;
   if (!body?.farmId || !body.bankCode || !body.bankName || !/^\d{10}$/.test(body.accountNumber || "")) return NextResponse.json({ error: "Select a bank and enter a valid 10-digit account number" }, { status: 400 });
+  if (!body.confirmedAccountName?.trim()) return NextResponse.json({ error: "Check the account name before saving this payout account", confirmationRequired: true }, { status: 400 });
   const sql = getDatabase();
   const [farm] = await sql`SELECT id, name FROM farms WHERE id=${body.farmId} AND owner_id=${user.id}`;
   if (!farm) return NextResponse.json({ error: "Farm not found" }, { status: 404 });
   try {
     const recipient = await createPayoutRecipient({ farmName: String(farm.name), accountNumber: body.accountNumber!, bankCode: body.bankCode });
+    // The name shown to the farmer must still be the name the bank returns at the moment of saving,
+    // so a number edited after the check cannot be saved against a name nobody ever saw.
+    const confirmed = body.confirmedAccountName.trim().replace(/\s+/g, " ").toLowerCase();
+    if (recipient.accountName.trim().replace(/\s+/g, " ").toLowerCase() !== confirmed) {
+      return NextResponse.json({ error: `This account now resolves to ${recipient.accountName}. Check the details and confirm again.`, accountName: recipient.accountName, confirmationRequired: true }, { status: 409 });
+    }
     const [existingRecipient] = await sql`SELECT farm_id FROM farmer_payout_accounts WHERE provider='paystack' AND recipient_code=${recipient.recipientCode}`;
     if (existingRecipient && String(existingRecipient.farm_id) !== String(farm.id)) {
       return NextResponse.json({ error: "This payout recipient is already assigned to another farm" }, { status: 409 });

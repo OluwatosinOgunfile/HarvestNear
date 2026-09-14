@@ -39,6 +39,12 @@ export async function listNigerianBanks() {
   return paystackRequest<Array<{ name: string; code: string }>>("/bank?country=nigeria&currency=NGN&perPage=100");
 }
 
+/** Looks up who owns an account without creating a transfer recipient, so it can be shown for checking. */
+export async function resolveNigerianAccount(input: { accountNumber: string; bankCode: string }) {
+  const account = await paystackRequest<{ account_name: string; account_number: string }>(`/bank/resolve?account_number=${encodeURIComponent(input.accountNumber)}&bank_code=${encodeURIComponent(input.bankCode)}`);
+  return { accountName: String(account.account_name || "").trim(), accountLast4: input.accountNumber.slice(-4) };
+}
+
 export async function createPayoutRecipient(input: { farmName: string; accountNumber: string; bankCode: string }) {
   const account = await paystackRequest<{ account_name: string; account_number: string }>(`/bank/resolve?account_number=${encodeURIComponent(input.accountNumber)}&bank_code=${encodeURIComponent(input.bankCode)}`);
   const recipient = await paystackRequest<{ recipient_code: string }>("/transferrecipient", { method: "POST", body: JSON.stringify({ type: "nuban", name: account.account_name || input.farmName, account_number: input.accountNumber, bank_code: input.bankCode, currency: "NGN", description: `${input.farmName} HarvestNearU payout account` }) });
