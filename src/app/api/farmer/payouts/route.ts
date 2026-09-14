@@ -55,8 +55,10 @@ export async function POST(request: Request) {
   const gross = orders.reduce((sum, order) => sum + Number(order.subtotal_kobo), 0);
   const fee = orders.reduce((sum, order) => sum + Number(order.platform_fee_kobo), 0);
   const net = orders.reduce((sum, order) => sum + Number(order.farmer_net_kobo), 0);
-  // Small payouts clear automatically once the dispute window after the last receipt
-  // acknowledgement has passed; larger ones still wait for an administrator.
+  // Every payout begins here, with the farmer asking for it, whatever the amount. Small ones clear
+  // automatically once the dispute window after the last receipt acknowledgement has passed; larger
+  // ones wait for an administrator to release them, and are then sent by the same transfer path
+  // rather than being paid by hand.
   const automatic = qualifiesForAutomaticPayout(net);
   const acknowledgedAt = orders.reduce((latest, order) => {
     const time = new Date(String(order.acknowledged_at)).getTime();
@@ -67,12 +69,12 @@ export async function POST(request: Request) {
     : null;
   const farmerMessage = automatic
     ? `Your payout of NGN ${(net / 100).toLocaleString("en-NG")} for ${farm.name} is scheduled to pay out automatically.`
-    : `Your payout request for ${farm.name} is above the NGN ${(AUTO_APPROVAL_LIMIT_KOBO / 100).toLocaleString("en-NG")} automatic limit and has been sent for approval.`;
+    : `Your payout request for ${farm.name} is above the NGN ${(AUTO_APPROVAL_LIMIT_KOBO / 100).toLocaleString("en-NG")} automatic limit and has been sent for approval. Once approved it is paid straight to your payout account.`;
   try {
     await sql.transaction([
       sql`INSERT INTO payout_requests (id, farm_id, requested_by, gross_amount_kobo, platform_fee_kobo, net_amount_kobo, approval_mode, eligible_at) VALUES (${requestId}, ${farm.id}, ${user.id}, ${gross}, ${fee}, ${net}, ${automatic ? "automatic" : "manual"}, ${eligibleAt})`,
       ...orders.map((order) => sql`INSERT INTO payout_request_orders (payout_request_id, farm_order_id) VALUES (${requestId}, ${order.id})`),
-      ...(automatic ? [] : [sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) SELECT id, 'payment', 'Payout request needs approval', ${`${farm.name} requested a payout of NGN ${(net/100).toLocaleString("en-NG")}, above the automatic limit.`}, '/admin', ${JSON.stringify({ payoutRequestId: requestId, farmId: String(farm.id), netAmountKobo: net, requiresApproval: true })}::jsonb FROM users WHERE role='admin'`]),
+      ...(automatic ? [] : [sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) SELECT id, 'payment', 'Payout request needs approval', ${`${farm.name} requested a payout of NGN ${(net/100).toLocaleString("en-NG")}, above the automatic limit. Releasing it sends the transfer automatically.`}, '/admin', ${JSON.stringify({ payoutRequestId: requestId, farmId: String(farm.id), netAmountKobo: net, requiresApproval: true })}::jsonb FROM users WHERE role='admin'`]),
       sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) VALUES (${user.id}, 'payment', ${automatic ? "Payout scheduled" : "Payout request submitted"}, ${farmerMessage}, '/farmer', ${JSON.stringify({ payoutRequestId: requestId, farmId: String(farm.id), netAmountKobo: net, automatic })}::jsonb)`,
     ]);
   } catch (error) {

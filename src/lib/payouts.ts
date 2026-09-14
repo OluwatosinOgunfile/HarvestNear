@@ -3,12 +3,33 @@ import "server-only";
 import { getDatabase } from "@/lib/db";
 import { initiatePaystackTransfer, paystackEnabled, paystackNairaBalanceKobo, verifyPaystackTransfer } from "@/lib/paystack";
 
-// Payouts at or below this net amount are transferred without an administrator; anything larger
-// waits for approval. Fast payout is a product promise, so the dispute window after the customer
-// acknowledges receipt is deliberately short rather than the multi-day hold a marketplace
-// typically uses. Both are environment-tunable without a deploy.
+// Every payout starts with the farmer asking for it; nothing here creates a request. What these
+// control is the money movement afterwards. A request at or below the automatic limit is transferred
+// without an administrator once the dispute window has passed; anything larger is transferred only
+// after an administrator releases it, and then travels the same audited path rather than being
+// settled by hand. Fast payout is a product promise, so the dispute window after the customer
+// acknowledges receipt is deliberately short rather than the multi-day hold a marketplace typically
+// uses. All of these are environment-tunable without a deploy: raising the automatic limit above the
+// largest payout you expect makes every amount automatic, and lowering it to 0 sends every payout
+// through a person.
 export const AUTO_APPROVAL_LIMIT_KOBO = Math.max(0, Number(process.env.PAYOUT_AUTO_APPROVAL_LIMIT_KOBO || 5_000_000));
 export const DISPUTE_WINDOW_MINUTES = Math.max(0, Number(process.env.PAYOUT_DISPUTE_WINDOW_MINUTES || 60));
+
+// Money is being moved without a person watching, so three limits bound what a single mistake or a
+// stolen farmer login can achieve.
+//
+// A destination account that has just been added or changed is the shape an account takeover takes:
+// the earnings are real, but the bank details are the attacker's. Automatic transfer therefore waits
+// until the default payout account has been in place this long. An administrator release bypasses
+// the wait, because that release *is* the human check, so a genuinely new farm is paid as soon as
+// someone looks at its first request rather than being stuck for a day.
+const ACCOUNT_SETTLED_HOURS = Math.max(0, Number(process.env.PAYOUT_ACCOUNT_SETTLED_HOURS || 24));
+// Never spend the platform balance down to nothing; refunds are paid from the same pot.
+const BALANCE_RESERVE_KOBO = Math.max(0, Number(process.env.PAYOUT_BALANCE_RESERVE_KOBO || 0));
+// A ceiling on the total value one run may move, so a runaway loop cannot empty the balance. The
+// first transfer of a run is always allowed through, or a single large release could never send.
+const RUN_VALUE_CEILING_KOBO = Math.max(0, Number(process.env.PAYOUT_RUN_CEILING_KOBO || 100_000_000));
+
 const STALE_TRANSFER_MINUTES = 15;
 const MAX_TRANSFER_ATTEMPTS = 3;
 
@@ -16,6 +37,7 @@ export function payoutPolicy() {
   return {
     autoApprovalLimitKobo: AUTO_APPROVAL_LIMIT_KOBO,
     disputeWindowMinutes: DISPUTE_WINDOW_MINUTES,
+    accountSettledHours: ACCOUNT_SETTLED_HOURS,
     automaticPaymentAvailable: paystackEnabled(),
   };
 }
@@ -49,6 +71,11 @@ async function releaseClaim(requestId: string, reason: string) {
  * Claims one eligible request by flipping it to processing in a single statement, so two
  * overlapping runs can never pay the same farm twice. The reference carries the attempt count
  * because Paystack rejects a reused transfer reference after a failure.
+ *
+ * This only ever claims a request a farmer already submitted: nothing in this file creates one. A
+ * request must additionally still be clean at the moment of transfer, not merely when it was
+ * approved, so the checks below re-test the farm's verification, the destination account, and every
+ * linked order for cancellation, refund, or an open ticket.
  */
 async function claimNextRequest(): Promise<ClaimedRequest | null> {
   const sql = getDatabase();
@@ -68,7 +95,15 @@ async function claimNextRequest(): Promise<ClaimedRequest | null> {
       JOIN farms candidate_farm ON candidate_farm.id = candidate.farm_id
       JOIN farmer_payout_accounts candidate_account ON candidate_account.farm_id = candidate.farm_id AND candidate_account.is_default
       WHERE candidate.status = 'requested'
-        AND candidate.net_amount_kobo <= ${AUTO_APPROVAL_LIMIT_KOBO}
+        -- Either the amount is small enough to send unattended and the destination account has been
+        -- settled long enough to trust, or an administrator has released this specific request.
+        AND (
+          (
+            candidate.net_amount_kobo <= ${AUTO_APPROVAL_LIMIT_KOBO}
+            AND candidate_account.updated_at <= now() - (${ACCOUNT_SETTLED_HOURS} * interval '1 hour')
+          )
+          OR candidate.admin_released_at IS NOT NULL
+        )
         AND candidate.transfer_attempts < ${MAX_TRANSFER_ATTEMPTS}
         AND candidate.eligible_at IS NOT NULL
         AND candidate.eligible_at <= now()
@@ -172,8 +207,12 @@ export async function failPayout(transferReference: string, reason: string) {
   if (!request || request.status === "paid") return { applied: false };
   const exhausted = Number(request.transfer_attempts) >= MAX_TRANSFER_ATTEMPTS;
   await sql.transaction([
+    // Exhausting the retries drops the administrator's release as well, so a repeatedly failing
+    // transfer needs a fresh human decision rather than retrying forever on the old one.
     sql`UPDATE payout_requests SET status = 'requested', approval_mode = ${exhausted ? "manual" : "automatic"},
       transfer_reference = NULL, transfer_code = NULL, transfer_started_at = NULL,
+      admin_released_by = CASE WHEN ${exhausted} THEN NULL ELSE admin_released_by END,
+      admin_released_at = CASE WHEN ${exhausted} THEN NULL ELSE admin_released_at END,
       failure_reason = ${reason.slice(0, 500)}, updated_at = now()
       WHERE id = ${request.id} AND status <> 'paid'`,
     sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) VALUES
@@ -213,7 +252,9 @@ export async function runAutomaticPayouts(options?: { maxTransfers?: number }) {
   }
 
   const ceiling = Math.max(1, Math.min(options?.maxTransfers ?? 25, 50));
-  let remainingBalance = summary.balanceKobo;
+  // Refunds are paid from the same balance, so the reserve is not available to payouts.
+  let remainingBalance = summary.balanceKobo - BALANCE_RESERVE_KOBO;
+  let movedKobo = 0;
 
   for (let index = 0; index < ceiling; index += 1) {
     const request = await claimNextRequest();
@@ -222,6 +263,13 @@ export async function runAutomaticPayouts(options?: { maxTransfers?: number }) {
     const amount = Number(request.net_amount_kobo);
     if (amount > remainingBalance) {
       await releaseClaim(request.id, "Insufficient platform balance for this payout");
+      summary.skipped += 1;
+      break;
+    }
+    // Bound the value one run can move. The first transfer always goes, so a single large release
+    // is never stuck behind its own ceiling; the rest wait for the next run.
+    if (summary.submitted > 0 && movedKobo + amount > RUN_VALUE_CEILING_KOBO) {
+      await releaseClaim(request.id, "Run value ceiling reached; queued for the next run");
       summary.skipped += 1;
       break;
     }
@@ -237,6 +285,7 @@ export async function runAutomaticPayouts(options?: { maxTransfers?: number }) {
       // Paystack can settle instantly; the webhook is still the authority for terminal state.
       if (transfer.status === "success") await completePayout(request.transfer_reference, transfer.transfer_code);
       remainingBalance -= amount;
+      movedKobo += amount;
       summary.submitted += 1;
     } catch (error) {
       const message = (error as Error).message || "Transfer failed";

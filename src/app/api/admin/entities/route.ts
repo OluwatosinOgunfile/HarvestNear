@@ -5,6 +5,7 @@ import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
 import { dispatchNotificationEmailsAfterResponse } from "@/lib/notification-email";
 import { DEFAULT_LISTING_IMAGE, listingImageUrl, profileImageUrl } from "@/lib/images";
+import { paystackEnabled } from "@/lib/paystack";
 import { notifyRestockIfWatched } from "@/lib/restock-alerts";
 import { isSuperAdminAccount } from "@/lib/super-admin";
 
@@ -532,11 +533,41 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (type === "payouts") {
-      const allowed = ["requested", "processing", "paid", "rejected", "cancelled"];
+      // "released" is an instruction, not a stored status: it hands the request to the automatic
+      // Paystack transfer path, which is what moves the money and then records it as paid. Marking a
+      // request paid by hand remains available for settling outside Paystack, but it only writes
+      // bookkeeping, so it is recorded as a manual override.
+      const allowed = ["requested", "released", "processing", "paid", "rejected", "cancelled"];
       if (!allowed.includes(body.status)) return NextResponse.json({ error: "Invalid payout status" }, { status: 400 });
-      const [before] = await sql`SELECT status, requested_by, farm_id FROM payout_requests WHERE id=${id}`;
+      const [before] = await sql`SELECT status, requested_by, farm_id, net_amount_kobo, admin_released_at FROM payout_requests WHERE id=${id}`;
       if (!before) return NextResponse.json({ error: "Payout request not found" }, { status: 404 });
       if (["paid", "rejected", "cancelled"].includes(String(before.status)) && body.status !== before.status) return NextResponse.json({ error: "A completed payout decision cannot be changed" }, { status: 409 });
+
+      if (body.status === "released") {
+        if (!paystackEnabled()) return NextResponse.json({ error: "Automatic transfers are unavailable because Paystack is not configured" }, { status: 409 });
+        if (String(before.status) !== "requested") return NextResponse.json({ error: "Only a request still awaiting a decision can be released" }, { status: 409 });
+        const [releaseAccount] = await sql`SELECT id, recipient_code FROM farmer_payout_accounts WHERE farm_id=${before.farm_id} AND is_default LIMIT 1`;
+        if (!releaseAccount?.recipient_code) return NextResponse.json({ error: "This farm must configure a verified payout account before a payout can be released" }, { status: 409 });
+        const [farmForRelease] = await sql`SELECT name FROM farms WHERE id=${before.farm_id}`;
+        await sql.transaction([
+          // eligible_at is null on requests that were never automatic, and the transfer runner will
+          // not claim a request without one. The administrator's review replaces the dispute window
+          // here; the runner still re-checks refunds, tickets and order state when it claims it.
+          sql`UPDATE payout_requests SET approval_mode='automatic', admin_released_by=${administrator.id}, admin_released_at=now(),
+            eligible_at=coalesce(eligible_at, now()), reviewed_by=${administrator.id}, reviewed_at=coalesce(reviewed_at, now()),
+            review_note=${body.adminNote || null}, failure_reason=NULL, transfer_attempts=0, updated_at=now()
+            WHERE id=${id} AND status='requested'`,
+          sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata) VALUES
+            (${before.requested_by}, 'payment', 'Payout approved',
+            ${`Your payout of NGN ${(Number(before.net_amount_kobo) / 100).toLocaleString("en-NG")} for ${String(farmForRelease?.name || "your farm")} has been approved and is being sent to your payout account.`}, '/farmer',
+            ${JSON.stringify({ payoutRequestId: id, status: "requested", released: true })}::jsonb)`,
+          sql`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES
+            (${administrator.id}, 'payout.released_for_transfer', 'payout', ${id},
+            ${JSON.stringify({ netAmountKobo: Number(before.net_amount_kobo), payoutAccountId: String(releaseAccount.id), reviewNote: body.adminNote || null })}::jsonb)`,
+        ]);
+        const [released] = await sql`SELECT id, status, requested_by, farm_id, net_amount_kobo, approval_mode, admin_released_at FROM payout_requests WHERE id=${id}`;
+        return NextResponse.json({ entity: released });
+      }
       const [payoutAccount] = body.status === "paid" ? await sql`SELECT id FROM farmer_payout_accounts WHERE farm_id=${before.farm_id} AND is_default LIMIT 1` : [null];
       if (body.status === "paid" && !payoutAccount) return NextResponse.json({ error: "This farm must configure a payout account before payment can be completed" }, { status: 409 });
       const updateRequest = sql`UPDATE payout_requests SET status=${body.status}, review_note=${body.adminNote || null},
@@ -557,7 +588,7 @@ export async function PATCH(request: NextRequest) {
         ${`Your payout request for ${String(farm?.name || "your farm")} is now ${body.status}.`}, '/farmer',
         ${JSON.stringify({ payoutRequestId: id, status: body.status })}::jsonb)`;
       await sql`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES
-        (${administrator.id}, 'payout.status_updated', 'payout', ${id}, ${JSON.stringify({ status: body.status, reviewNote: body.adminNote || null })}::jsonb)`;
+        (${administrator.id}, 'payout.status_updated', 'payout', ${id}, ${JSON.stringify({ status: body.status, reviewNote: body.adminNote || null, settlement: body.status === "paid" ? "manual_override" : null })}::jsonb)`;
       return NextResponse.json({ entity });
     }
 

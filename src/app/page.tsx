@@ -2167,9 +2167,15 @@ function AdminPage({ user, readOnly, supportAccess, onImpersonated }: { user: Cu
       await Promise.all([loadEntities("orders"), loadOverview()]);
     } catch (reason) { setError((reason as Error).message); setBusy(false); }
   }
-  async function updatePayout(status: "processing" | "paid" | "rejected" | "cancelled") {
+  async function updatePayout(status: "processing" | "released" | "paid" | "rejected" | "cancelled") {
     if (!selected || section !== "payouts") return;
-    const action = status === "paid" ? "mark this payout as paid" : `${status} this payout request`;
+    // Releasing and recording a manual payment both concern money, so both spell out what will
+    // happen rather than asking a generic "are you sure".
+    const action = status === "released"
+      ? "approve this payout and send it to the farmer's payout account now"
+      : status === "paid"
+        ? "record this payout as paid without sending a transfer, because you have already settled it outside Paystack"
+        : `${status} this payout request`;
     if (!window.confirm(`Are you sure you want to ${action}?`)) return;
     setBusy(true); setError("");
     try {
@@ -2262,7 +2268,8 @@ function AdminPage({ user, readOnly, supportAccess, onImpersonated }: { user: Cu
           {section === "orders" && selected.status === "pending_payment" && Boolean(selected.payment_receipt_name) && <button className="confirm-manual-payment" onClick={confirmManualPayment} disabled={busy}><Check size={16}/> {busy ? "Confirming..." : "Confirm payment"}</button>}
           {section === "orders" && selected.status !== "cancelled" && <button className="cancel-admin-order" onClick={cancelAdminOrder} disabled={busy}><X size={16}/> {busy ? "Working..." : "Cancel order"}</button>}
           {section === "payouts" && selected.status === "requested" && <button className="edit-entity" onClick={() => void updatePayout("processing")} disabled={busy}><Eye size={16}/> Begin review</button>}
-          {section === "payouts" && ["requested", "processing"].includes(String(selected.status)) && <button className="verify-farm" onClick={() => void updatePayout("paid")} disabled={busy}><Check size={16}/> Mark as paid</button>}
+          {section === "payouts" && selected.status === "requested" && <button className="verify-farm" onClick={() => void updatePayout("released")} disabled={busy}><Check size={16}/> Approve and send</button>}
+          {section === "payouts" && ["requested", "processing"].includes(String(selected.status)) && <button className="edit-entity" onClick={() => void updatePayout("paid")} disabled={busy}><Check size={16}/> Record manual payment</button>}
           {section === "payouts" && ["requested", "processing"].includes(String(selected.status)) && <button className="reject-farm" onClick={() => void updatePayout("rejected")} disabled={busy}><X size={16}/> Reject request</button>}
           {section !== "payouts" && !(section === "orders" && selected.status === "pending_payment") && <button className="edit-entity" onClick={() => { setError(""); if (section === "pickup_centres") setPickupCentreModal("edit"); else if (section === "areas") setAreaModal("edit"); else setEditOpen(true); }} disabled={busy}>{["orders","refunds","reviews"].includes(section) ? "Manage record" : "Edit details"}</button>}
           {section === "farms" && selected.verification_status !== "verified" && <button className="verify-farm" onClick={() => updateFarmVerification("verified")} disabled={busy}><Check size={16}/> Verify farm</button>}
