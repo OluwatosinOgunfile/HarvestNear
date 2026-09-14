@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import "server-only";
 
 import { createHash } from "node:crypto";
@@ -38,6 +39,18 @@ export async function checkRateLimit(request: Request, action: string, limit: nu
 
 export function canMutateAs(user: SessionUser | null): user is SessionUser {
   return Boolean(user && !user.impersonating);
+}
+
+/**
+ * Compares a supplied secret against the configured one without leaking length or content through
+ * timing. Used for the machine-to-machine run secrets, where the caller can retry freely.
+ */
+export function secretMatches(supplied: string | null | undefined, configured: string | null | undefined) {
+  if (!supplied || !configured) return false;
+  const suppliedBytes = Buffer.from(supplied);
+  const configuredBytes = Buffer.from(configured);
+  if (suppliedBytes.length !== configuredBytes.length) return false;
+  return timingSafeEqual(suppliedBytes, configuredBytes);
 }
 
 export function validText(value: unknown, maximum: number, minimum = 1) {

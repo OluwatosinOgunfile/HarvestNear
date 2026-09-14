@@ -11,6 +11,7 @@ import { FarmDirectionsLink } from "@/components/FarmDirectionsLink";
 import { RestockAlertButton } from "@/components/RestockAlertButton";
 import { getSessionUser } from "@/lib/auth";
 import { NewsletterSignup } from "@/app/NewsletterSignup";
+import { jsonLd } from "@/lib/structured-data";
 
 export const dynamic = "force-dynamic";
 type Props = { params: Promise<{ id: string }> };
@@ -124,7 +125,7 @@ export default async function FarmStorePage({ params }: Props) {
     ],
   };
   return <FarmStoreTheme>
-    <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(farmStructuredData) }}/>
+    <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(farmStructuredData) }}/>
     <header className="topbar store-app-header"><Link className="brand brand-image" href="/" aria-label="HarvestNearU home"><Image className="brand-lockup" src="/brand/harvestnearu-opaque-seal-se2-lockup.png" width={190} height={44} alt="HarvestNearU" priority/></Link><nav className="main-nav" aria-label="Main navigation"><Link href="/">Home</Link><Link className="active" href="/produce">Shop produce</Link><Link href="/orders">My orders</Link></nav><div className="header-actions"><FarmStoreThemeToggle/><Link className="cart-button store-header-icon" href="/produce" aria-label="Open shop"><ShoppingBag size={18}/></Link><Link className="account-menu-trigger" href="/profile" aria-label="Open account"><span className="account-avatar"><UserRound size={17}/></span><ChevronDown size={15}/></Link></div></header>
     <nav className="mobile-nav store-mobile-nav" aria-label="Mobile navigation"><Link href="/"><House size={17}/><span>Home</span></Link><Link className="active" href="/produce"><ShoppingBag size={17}/><span>Shop</span></Link><Link href="/orders"><PackageCheck size={17}/><span>Orders</span></Link></nav>
     <main>

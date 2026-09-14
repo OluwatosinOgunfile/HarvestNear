@@ -1,3 +1,4 @@
+import { jsonLd } from "@/lib/structured-data";
 const faqStructuredData = {
   "@context": "https://schema.org",
   "@type": "FAQPage",
@@ -70,5 +71,5 @@ const faqStructuredData = {
 };
 
 export default function HelpLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <>{children}<script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqStructuredData) }}/></>;
+  return <>{children}<script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(faqStructuredData) }}/></>;
 }

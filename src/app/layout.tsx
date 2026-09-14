@@ -22,6 +22,7 @@ import "./consistency.css";
 import "./readability.css";
 import "./farm-store.css";
 import "./receipt.css";
+import { jsonLd } from "@/lib/structured-data";
 
 const manrope = Manrope({
   subsets: ["latin"],
@@ -95,5 +96,5 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       },
     ],
   };
-  return <html lang="en-NG"><body className={manrope.variable}>{children}<Suspense fallback={null}><PageViewTracker/></Suspense><script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}/></body></html>;
+  return <html lang="en-NG"><body className={manrope.variable}>{children}<Suspense fallback={null}><PageViewTracker/></Suspense><script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(structuredData) }}/></body></html>;
 }

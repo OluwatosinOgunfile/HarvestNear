@@ -1,5 +1,6 @@
 import { getDatabase } from "@/lib/db";
 import { DEFAULT_LISTING_IMAGE, listingImageUrl } from "@/lib/images";
+import { jsonLd } from "@/lib/structured-data";
 
 export const dynamic = "force-dynamic";
 
@@ -49,5 +50,5 @@ export default async function ProduceLayout({ children }: Readonly<{ children: R
       };
     }),
   };
-  return <>{children}<script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(itemList) }}/></>;
+  return <>{children}<script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(itemList) }}/></>;
 }
