@@ -1741,6 +1741,138 @@ function FarmVerificationReview({ readOnly }: { readOnly: boolean }) {
   </section>;
 }
 
+type WebAnalytics = {
+  days: number;
+  totals: { views: number; visitors: number; sessions: number; views_today: number };
+  series: Array<{ day: string; views: number; visitors: number }>;
+  pages: Array<{ path: string; views: number; visitors: number }>;
+  referrers: Array<{ source: string; views: number }>;
+  devices: Array<{ device: string; client: string; views: number }>;
+};
+
+// Two series, so two hues, checked against the light and dark chart surfaces for colour-vision
+// separation and contrast rather than picked by eye. Both are also labelled directly.
+const TRAFFIC_VIEWS = "#3f9468";
+const TRAFFIC_VISITORS = "#b4791f";
+
+function TrafficChart({ series }: { series: WebAnalytics["series"] }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const width = 720;
+  const height = 190;
+  const padding = { top: 14, right: 16, bottom: 26, left: 40 };
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+  const peak = Math.max(1, ...series.map((point) => point.views));
+  const step = series.length > 1 ? plotWidth / (series.length - 1) : plotWidth;
+  const x = (index: number) => padding.left + index * step;
+  const y = (value: number) => padding.top + plotHeight - (value / peak) * plotHeight;
+  const line = (key: "views" | "visitors") => series.map((point, index) => `${index ? "L" : "M"}${x(index).toFixed(1)},${y(point[key]).toFixed(1)}`).join(" ");
+  const ticks = [0, Math.round(peak / 2), peak];
+  const active = hover === null ? null : series[hover];
+
+  return <figure className="traffic-figure">
+    <figcaption>
+      <span className="traffic-key"><i style={{ background: TRAFFIC_VIEWS }}/> Page views</span>
+      <span className="traffic-key"><i style={{ background: TRAFFIC_VISITORS }}/> Visitors</span>
+    </figcaption>
+    <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Page views and visitors for the last ${series.length} days`} preserveAspectRatio="none">
+      {ticks.map((tick) => <g key={tick}>
+        <line x1={padding.left} x2={width - padding.right} y1={y(tick)} y2={y(tick)} className="traffic-grid"/>
+        <text x={padding.left - 8} y={y(tick) + 4} className="traffic-axis" textAnchor="end">{tick}</text>
+      </g>)}
+      <path d={line("views")} fill="none" stroke={TRAFFIC_VIEWS} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round"/>
+      <path d={line("visitors")} fill="none" stroke={TRAFFIC_VISITORS} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round"/>
+      {active && hover !== null && <>
+        <line x1={x(hover)} x2={x(hover)} y1={padding.top} y2={padding.top + plotHeight} className="traffic-crosshair"/>
+        <circle cx={x(hover)} cy={y(active.views)} r={4} fill={TRAFFIC_VIEWS} className="traffic-dot"/>
+        <circle cx={x(hover)} cy={y(active.visitors)} r={4} fill={TRAFFIC_VISITORS} className="traffic-dot"/>
+      </>}
+      {series.map((point, index) => <rect key={point.day} x={x(index) - step / 2} y={padding.top} width={Math.max(step, 6)} height={plotHeight}
+        fill="transparent" onMouseEnter={() => setHover(index)} onMouseLeave={() => setHover(null)}/>)}
+      {series.length > 0 && <>
+        <text x={padding.left} y={height - 8} className="traffic-axis">{series[0]?.day.slice(5)}</text>
+        <text x={width - padding.right} y={height - 8} className="traffic-axis" textAnchor="end">{series[series.length - 1]?.day.slice(5)}</text>
+      </>}
+    </svg>
+    <p className="traffic-readout" aria-live="polite">
+      {active ? <>{active.day} · <strong style={{ color: TRAFFIC_VIEWS }}>{active.views} views</strong> · <strong style={{ color: TRAFFIC_VISITORS }}>{active.visitors} visitors</strong></>
+        : <>Hover the chart for a day. Peak {peak} views.</>}
+    </p>
+  </figure>;
+}
+
+function TrafficBars({ title, caption, rows, empty }: { title: string; caption: string; rows: Array<{ label: string; value: number; detail?: string }>; empty: string }) {
+  const peak = Math.max(1, ...rows.map((row) => row.value));
+  return <section className="traffic-panel">
+    <header><h3>{title}</h3><p>{caption}</p></header>
+    {rows.length === 0 ? <div className="panel-empty">{empty}</div> : <ol className="traffic-bars">
+      {rows.map((row) => <li key={row.label}>
+        <span className="traffic-bar-label" title={row.label}>{row.label}</span>
+        <span className="traffic-bar-track"><i style={{ width: `${Math.max(2, (row.value / peak) * 100)}%`, background: TRAFFIC_VIEWS }}/></span>
+        <span className="traffic-bar-value">{row.value.toLocaleString("en-NG")}{row.detail ? <small>{row.detail}</small> : null}</span>
+      </li>)}
+    </ol>}
+  </section>;
+}
+
+function WebTrafficView() {
+  const [data, setData] = useState<WebAnalytics | null>(null);
+  const [days, setDays] = useState(30);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [showTable, setShowTable] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/admin/web-analytics?days=${days}`, { cache: "no-store" }).then(async (response) => {
+      const result = await readJsonResponse(response) as WebAnalytics & { error?: string };
+      if (!response.ok) throw new Error(result.error || "Could not load web traffic");
+      if (!cancelled) { setData(result); setError(""); setLoading(false); }
+    }).catch((reason: Error) => { if (!cancelled) { setError(reason.message); setLoading(false); } });
+    return () => { cancelled = true; };
+  }, [days]);
+
+  if (loading && !data) return <HarvestSpinner label="Loading web traffic"/>;
+
+  return <section className="traffic-page">
+    <header className="traffic-head">
+      <div><h2>Web traffic</h2><p>How people reach and move through HarvestNearU. Readers are counted with a daily rotating hash, so no address or identity is stored.</p></div>
+      <div className="traffic-ranges">{[7, 30, 90].map((range) => <button key={range} className={days === range ? "selected" : ""} onClick={() => { setLoading(true); setDays(range); }}>{range} days</button>)}</div>
+    </header>
+    {error && <p className="admin-error" role="alert">{error}</p>}
+    {data && <>
+      <div className="traffic-tiles">
+        <article><small>PAGE VIEWS</small><strong>{data.totals.views.toLocaleString("en-NG")}</strong><p>over {data.days} days</p></article>
+        <article><small>VISITORS</small><strong>{data.totals.visitors.toLocaleString("en-NG")}</strong><p>distinct readers</p></article>
+        <article><small>SESSIONS</small><strong>{data.totals.sessions.toLocaleString("en-NG")}</strong><p>visits counted hourly</p></article>
+        <article><small>LAST 24 HOURS</small><strong>{data.totals.views_today.toLocaleString("en-NG")}</strong><p>page views today</p></article>
+      </div>
+
+      <section className="traffic-panel traffic-trend">
+        <header>
+          <div><h3>Views and visitors</h3><p>Daily totals across the selected period</p></div>
+          <button className="traffic-table-toggle" onClick={() => setShowTable((current) => !current)}>{showTable ? "Show chart" : "Show table"}</button>
+        </header>
+        {showTable
+          ? <div className="traffic-table-wrap"><table className="traffic-table"><thead><tr><th>Day</th><th>Views</th><th>Visitors</th></tr></thead><tbody>{data.series.map((point) => <tr key={point.day}><td>{point.day}</td><td>{point.views}</td><td>{point.visitors}</td></tr>)}</tbody></table></div>
+          : <TrafficChart series={data.series}/>}
+      </section>
+
+      <div className="traffic-grid-panels">
+        <TrafficBars title="Most visited pages" caption="Identifiers are grouped so a page counts once"
+          rows={data.pages.map((page) => ({ label: page.path, value: page.views, detail: `${page.visitors} visitors` }))}
+          empty="No page views recorded yet"/>
+        <TrafficBars title="Where visitors come from" caption="Referring site, or direct when none was sent"
+          rows={data.referrers.map((row) => ({ label: row.source, value: row.views }))}
+          empty="No referrers recorded yet"/>
+        <TrafficBars title="Devices and clients" caption="Screen size reported by the browser, plus native app traffic"
+          rows={data.devices.map((row) => ({ label: `${row.device}${row.client === "mobile" ? " · app" : ""}`, value: row.views }))}
+          empty="No device information recorded yet"/>
+      </div>
+    </>}
+  </section>;
+}
+
 function AdminAnalyticsView({ analytics, loading, error }: { analytics: AdminAnalytics | null; loading: boolean; error: string }) {
   if (loading && !analytics) return <div className="analytics-loading"><LoaderCircle className="spin" size={24}/><strong>Calculating marketplace performance...</strong></div>;
   if (error && !analytics) return <div className="entity-empty"><BarChart3 size={24}/><strong>Analytics unavailable</strong><p>{error}</p></div>;
@@ -1770,7 +1902,7 @@ function AdminAnalyticsView({ analytics, loading, error }: { analytics: AdminAna
 function AdminPage({ user, readOnly, supportAccess, onImpersonated }: { user: CurrentUser; readOnly: boolean; supportAccess: boolean; onImpersonated: (user: CurrentUser) => void }) {
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [analytics, setAnalytics] = useState<AdminAnalytics | null>(null);
-  const [section, setSection] = useState<"overview" | "analytics" | "tickets" | "verifications" | AdminEntityType>(supportAccess ? "tickets" : "overview");
+  const [section, setSection] = useState<"overview" | "analytics" | "traffic" | "tickets" | "verifications" | AdminEntityType>(supportAccess ? "tickets" : "overview");
   const [entities, setEntities] = useState<AdminEntity[]>([]);
   const [selected, setSelected] = useState<AdminEntity | null>(null);
   const [options, setOptions] = useState<AdminOptions>({ owners: [], farms: [], categories: [], areas: [] });
@@ -1835,7 +1967,7 @@ function AdminPage({ user, readOnly, supportAccess, onImpersonated }: { user: Cu
   }, []);
 
   useEffect(() => {
-    if (section === "overview" || section === "tickets" || section === "verifications") return;
+    if (section === "overview" || section === "tickets" || section === "verifications" || section === "traffic") return;
     let cancelled = false;
     if (section === "analytics") {
       fetch("/api/admin/analytics").then(async (response) => {
@@ -2081,14 +2213,14 @@ function AdminPage({ user, readOnly, supportAccess, onImpersonated }: { user: Cu
     <header className="admin-heading"><div><p className="eyebrow"><span/> MARKETPLACE OPERATIONS</p><h1>Administration</h1><p>Monitor people, farms, listings, orders, and customer resolutions.</p></div><div className="admin-heading-tools">{!readOnly && <button onClick={() => { setError(""); setPaymentSettingsOpen(true); }}><AtSign size={15}/> Bank payment details</button>}<span className="admin-live"><i/> {readOnly ? "Read-only support access" : "Live database"}</span></div></header>
     {section === "produce" && !readOnly && <ProduceCategoryCreator onCreated={(category) => setOptions((current) => ({ ...current, categories: [...current.categories.filter((item) => item.id !== category.id), category].sort((a,b) => a.name.localeCompare(b.name)) }))}/>} 
     <div className="admin-workspace">
-      <label className="admin-mobile-section"><span className="sr-only">Administration section</span><select aria-label="Administration section" value={section} onChange={(event) => { const next = event.target.value as typeof section; setSection(next); setSelected(null); setError(""); setBusy(next !== "overview" && next !== "tickets"); }}>{(["overview", "tickets", "verifications", "analytics", "users", "farms", "produce", "areas", "pickup_centres", "orders", "refunds", "payouts", "reviews", "subscribers", "activity"] as const).filter((item) => supportAccess ? !["analytics", "subscribers", "activity"].includes(item) : true).map((item) => <option key={item} value={item}>{item === "produce" ? "Produce listings" : item === "pickup_centres" ? "Pickup centres" : item === "tickets" ? "Support tickets" : item === "subscribers" ? "Campaign subscribers" : item[0].toUpperCase() + item.slice(1)}{item === "refunds" && metrics.open_refunds > 0 ? ` (${metrics.open_refunds})` : item === "payouts" && metrics.open_payouts > 0 ? ` (${metrics.open_payouts})` : ""}</option>)}</select><ChevronDown size={16}/></label>
-      <nav className="admin-tabs" aria-label="Administration sections"><small>Workspace</small>{(["overview", "tickets", "verifications", "analytics", "users", "farms", "produce", "areas", "pickup_centres", "orders", "refunds", "payouts", "reviews", "subscribers", "activity"] as const).filter((item) => supportAccess ? !["analytics", "subscribers", "activity"].includes(item) : true).map((item) => <button key={item} className={section === item ? "active" : ""} onClick={() => { setSection(item); setSelected(null); setError(""); setBusy(item !== "overview" && item !== "tickets"); }}>{item === "overview" ? <House size={15}/> : item === "tickets" ? <Headphones size={15}/> : item === "analytics" ? <BarChart3 size={15}/> : item === "users" ? <UserRound size={15}/> : item === "farms" ? <Store size={15}/> : item === "produce" ? <Leaf size={15}/> : item === "areas" || item === "pickup_centres" ? <MapPin size={15}/> : item === "orders" ? <PackageCheck size={15}/> : item === "refunds" ? <RotateCcw size={15}/> : item === "payouts" ? <CreditCard size={15}/> : item === "reviews" ? <Star size={15}/> : item === "subscribers" ? <Mail size={15}/> : <Clock3 size={15}/>}<span>{item === "pickup_centres" ? "Pickup centres" : item === "tickets" ? "Support tickets" : item === "subscribers" ? "Campaign subscribers" : item}</span>{item === "refunds" && metrics.open_refunds > 0 && <b className="admin-tab-count">{metrics.open_refunds}</b>}{item === "payouts" && metrics.open_payouts > 0 && <b className="admin-tab-count">{metrics.open_payouts}</b>}</button>)}</nav>
+      <label className="admin-mobile-section"><span className="sr-only">Administration section</span><select aria-label="Administration section" value={section} onChange={(event) => { const next = event.target.value as typeof section; setSection(next); setSelected(null); setError(""); setBusy(next !== "overview" && next !== "tickets"); }}>{(["overview", "tickets", "verifications", "analytics", "traffic", "users", "farms", "produce", "areas", "pickup_centres", "orders", "refunds", "payouts", "reviews", "subscribers", "activity"] as const).filter((item) => supportAccess ? !["analytics", "traffic", "subscribers", "activity"].includes(item) : true).map((item) => <option key={item} value={item}>{item === "produce" ? "Produce listings" : item === "pickup_centres" ? "Pickup centres" : item === "tickets" ? "Support tickets" : item === "subscribers" ? "Campaign subscribers" : item[0].toUpperCase() + item.slice(1)}{item === "refunds" && metrics.open_refunds > 0 ? ` (${metrics.open_refunds})` : item === "payouts" && metrics.open_payouts > 0 ? ` (${metrics.open_payouts})` : ""}</option>)}</select><ChevronDown size={16}/></label>
+      <nav className="admin-tabs" aria-label="Administration sections"><small>Workspace</small>{(["overview", "tickets", "verifications", "analytics", "traffic", "users", "farms", "produce", "areas", "pickup_centres", "orders", "refunds", "payouts", "reviews", "subscribers", "activity"] as const).filter((item) => supportAccess ? !["analytics", "traffic", "subscribers", "activity"].includes(item) : true).map((item) => <button key={item} className={section === item ? "active" : ""} onClick={() => { setSection(item); setSelected(null); setError(""); setBusy(item !== "overview" && item !== "tickets"); }}>{item === "overview" ? <House size={15}/> : item === "tickets" ? <Headphones size={15}/> : item === "analytics" ? <BarChart3 size={15}/> : item === "users" ? <UserRound size={15}/> : item === "farms" ? <Store size={15}/> : item === "produce" ? <Leaf size={15}/> : item === "areas" || item === "pickup_centres" ? <MapPin size={15}/> : item === "orders" ? <PackageCheck size={15}/> : item === "refunds" ? <RotateCcw size={15}/> : item === "payouts" ? <CreditCard size={15}/> : item === "reviews" ? <Star size={15}/> : item === "subscribers" ? <Mail size={15}/> : <Clock3 size={15}/>}<span>{item === "pickup_centres" ? "Pickup centres" : item === "tickets" ? "Support tickets" : item === "subscribers" ? "Campaign subscribers" : item}</span>{item === "refunds" && metrics.open_refunds > 0 && <b className="admin-tab-count">{metrics.open_refunds}</b>}{item === "payouts" && metrics.open_payouts > 0 && <b className="admin-tab-count">{metrics.open_payouts}</b>}</button>)}</nav>
       <div className="admin-workspace-content">
     {section === "overview" ? <>
       <section className="admin-metrics"><article><span><UserRound size={19}/></span><small>ACTIVE USERS</small><strong>{metrics.users}</strong><p>{metrics.active_carts} active shopping carts</p></article><article><span><Store size={19}/></span><small>VERIFIED FARMS</small><strong>{metrics.verified_farms}</strong><p>{metrics.pending_farms} awaiting review</p></article><article><span><Leaf size={19}/></span><small>ACTIVE LISTINGS</small><strong>{metrics.listings}</strong><p>Available marketplace harvests</p></article><article><span><PackageCheck size={19}/></span><small>OPEN ORDERS</small><strong>{metrics.open_orders}</strong><p>{metrics.orders} orders recorded</p></article><article><span><RotateCcw size={19}/></span><small>OPEN REFUNDS</small><strong>{metrics.open_refunds}</strong><p>Awaiting a resolution</p></article><article><span><CreditCard size={19}/></span><small>OPEN PAYOUTS</small><strong>{metrics.open_payouts}</strong><p>Farmer requests requiring action</p></article><article><span><AtSign size={19}/></span><small>CUMULATIVE GROSS SALES</small><strong>{money(Number(metrics.cumulative_gross_kobo) / 100)}</strong><p>Completed produce sales</p></article><article><span><Minus size={19}/></span><small>PROCESSING FEES</small><strong>{money(Number(metrics.cumulative_fee_kobo) / 100)}</strong><p>Cumulative platform revenue</p></article><article><span><Check size={19}/></span><small>FARMER NET SALES</small><strong>{money(Number(metrics.cumulative_net_kobo) / 100)}</strong><p>Earned after processing fees</p></article><article><span><Truck size={19}/></span><small>DELIVERY ISSUES</small><strong>{metrics.failed_deliveries}</strong><p>Failed deliveries</p></article><article><span><Bell size={19}/></span><small>UNREAD UPDATES</small><strong>{metrics.unread_notifications}</strong><p>{metrics.hidden_reviews} hidden reviews</p></article></section>
       <section className="admin-credit-balance"><span><AtSign size={20}/></span><div><small>OUTSTANDING ACCOUNT CREDIT</small><strong>{money(Number(metrics.outstanding_credit_kobo) / 100)}</strong><p>Total customer credit currently available for future marketplace purchases.</p></div><button onClick={() => { setBusy(true); setSection("users"); }}>View customer balances <ArrowRight size={15}/></button></section>
       <div className="admin-grid"><section className="admin-panel"><div className="admin-panel-head"><div><h2>Recent users</h2><p>Latest accounts across the marketplace</p></div><button onClick={() => { setBusy(true); setSection("users"); }}>View all <ArrowRight size={15}/></button></div><div className="admin-user-list">{overview.users.slice(0, 8).map((user) => <button className="admin-user-row" key={user.id} onClick={() => { setBusy(true); setSection("users"); setTimeout(() => openDetails("users", user.id), 0); }}><span>{user.first_name[0]}{user.last_name[0]}</span><div><strong>{user.first_name} {user.last_name}</strong><small>{user.email}</small></div><b className={`role-badge ${user.role}`}>{user.role}</b><i className={user.is_active ? "active" : ""}>{user.is_active ? "Active" : "Disabled"}</i></button>)}</div></section><aside className="admin-side"><section><div className="admin-panel-head"><div><h2>Attention needed</h2><p>Items requiring administrator action</p></div></div><button onClick={() => { setBusy(true); setSection("farms"); }}><span><Store size={17}/></span><div><strong>Farm verification</strong><small>{metrics.pending_farms} pending applications</small></div><ChevronRight size={16}/></button><button onClick={() => { setBusy(true); setSection("refunds"); }}><span><RotateCcw size={17}/></span><div><strong>Refund requests</strong><small>{metrics.open_refunds} open cases</small></div><ChevronRight size={16}/></button><button onClick={() => { setBusy(true); setSection("payouts"); }}><span><CreditCard size={17}/></span><div><strong>Farmer payouts</strong><small>{metrics.open_payouts} awaiting action</small></div><ChevronRight size={16}/></button><button onClick={() => { setBusy(true); setSection("orders"); }}><span><Truck size={17}/></span><div><strong>Delivery exceptions</strong><small>{metrics.failed_deliveries} failed deliveries</small></div><ChevronRight size={16}/></button></section><section className="admin-health"><div className="admin-panel-head"><div><h2>System status</h2><p>Core marketplace services</p></div></div><div><span><i/> Neon database</span><strong>Operational</strong></div><div><span><i/> Blob image storage</span><strong>Operational</strong></div><div><span><i/> Authentication</span><strong>Operational</strong></div></section></aside></div>
-    </> : section === "tickets" ? <SupportTicketCentre user={user} onSignIn={() => undefined}/> : section === "verifications" ? <FarmVerificationReview readOnly={readOnly}/> : section === "analytics" ? <AdminAnalyticsView analytics={analytics} loading={busy} error={error}/> : <section className="entity-manager">
+    </> : section === "tickets" ? <SupportTicketCentre user={user} onSignIn={() => undefined}/> : section === "verifications" ? <FarmVerificationReview readOnly={readOnly}/> : section === "traffic" ? <WebTrafficView/> : section === "analytics" ? <AdminAnalyticsView analytics={analytics} loading={busy} error={error}/> : <section className="entity-manager">
       <div className="entity-toolbar"><div><h2>{section === "produce" ? "Produce listings" : section === "pickup_centres" ? "Pickup centres" : section === "subscribers" ? "Campaign subscribers" : section[0].toUpperCase() + section.slice(1)}</h2><p>{entities.length} database records</p></div>{!readOnly && ["users","farms","produce","areas","pickup_centres"].includes(section) && <button onClick={() => { setError(""); if (section === "pickup_centres") setPickupCentreModal("add"); else if (section === "areas") setAreaModal("add"); else setAddOpen(true); }}><Plus size={16}/> Add {section === "produce" ? "produce" : section === "pickup_centres" ? "pickup centre" : section.slice(0, -1)}</button>}</div>
       <div className="entity-list-controls">
         <div className="entity-search"><Search size={16}/><input type="search" aria-label={`Search ${section}`} value={entitySearch} onChange={(event) => setEntitySearch(event.target.value)} placeholder={`Search ${section === "produce" ? "produce listings" : section}...`}/>{entitySearch && <button type="button" onClick={() => setEntitySearch("")} aria-label="Clear search"><X size={14}/></button>}</div>

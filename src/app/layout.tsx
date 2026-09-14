@@ -1,4 +1,6 @@
 import type { Metadata, Viewport } from "next";
+import { Suspense } from "react";
+import { PageViewTracker } from "@/components/PageViewTracker";
 import { Manrope } from "next/font/google";
 import "./globals.css";
 import "./theme.css";
@@ -93,5 +95,5 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       },
     ],
   };
-  return <html lang="en-NG"><body className={manrope.variable}>{children}<script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}/></body></html>;
+  return <html lang="en-NG"><body className={manrope.variable}>{children}<Suspense fallback={null}><PageViewTracker/></Suspense><script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}/></body></html>;
 }

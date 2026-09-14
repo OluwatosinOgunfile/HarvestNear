@@ -24,6 +24,7 @@ HarvestNearU is a Nigerian farm-to-consumer marketplace built with Next.js. Cust
 - Farm-specific payout accounts, farmer payout requests, administrative review, and printable payout statements
 - Automatic Paystack payouts for requests at or below the approval limit, with larger requests held for an administrator
 - Branded transactional email, configurable email preferences, real-time in-app updates, and native push notifications
+- Web traffic reporting in the administration console, counting readers with a daily rotating hash rather than storing addresses
 - Administrator management, payout processing, audit activity, refunds, moderation, and read-only impersonation
 - Support tickets, staff assignment, internal notes, replies, and product feedback
 - Responsive web experience plus a separate Expo/React Native mobile application for customers and farmers, with secure web-console handoff for administrators and support staff
