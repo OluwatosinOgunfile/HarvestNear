@@ -109,7 +109,11 @@ export async function POST(request: Request) {
   if (!ownedFarm) return NextResponse.json({ error: "Only verified farms can publish listings" }, { status: 403 });
   const slug = body.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
   try {
-    const [product] = await sql`INSERT INTO products (category_id, name, slug, default_unit) VALUES (${body.categoryId}, ${body.name}, ${slug}, ${body.unit}) ON CONFLICT (slug) DO UPDATE SET default_unit = excluded.default_unit RETURNING id`;
+    // The farmer picked a category on this form, so honour it. Keeping only the default_unit on a
+    // slug collision silently threw that choice away and left the listing filed whichever way the
+    // product happened to be created the first time, which is how a turkey ended up under Tubers.
+    // The edit path below already updates both, so this makes creating and editing agree.
+    const [product] = await sql`INSERT INTO products (category_id, name, slug, default_unit) VALUES (${body.categoryId}, ${body.name}, ${slug}, ${body.unit}) ON CONFLICT (slug) DO UPDATE SET category_id = excluded.category_id, name = excluded.name, default_unit = excluded.default_unit RETURNING id`;
     const [listing] = await sql`
       INSERT INTO produce_listings (farm_id, product_id, title, unit, unit_price_kobo, quantity_available, last_restock_total, last_restocked_at, harvest_date, available_from, available_until, status, badge)
       VALUES (${ownedFarm.id}, ${product.id}, ${body.name}, ${body.unit}, ${Math.round(Number(body.price) * 100)}, ${Number(body.stock)}, ${Number(body.stock)}, now(), ${body.harvestDate}, ${availability.availableFrom}, ${availability.availableUntil}, 'active', ${body.badge || null}) RETURNING id
