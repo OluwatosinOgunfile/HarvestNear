@@ -24,7 +24,11 @@ export const DISPUTE_WINDOW_MINUTES = Math.max(0, Number(process.env.PAYOUT_DISP
 // the wait, because that release *is* the human check, so a genuinely new farm is paid as soon as
 // someone looks at its first request rather than being stuck for a day.
 const ACCOUNT_SETTLED_HOURS = Math.max(0, Number(process.env.PAYOUT_ACCOUNT_SETTLED_HOURS || 24));
-// Never spend the platform balance down to nothing; refunds are paid from the same pot.
+// A floor the automation will not spend below. Transfers draw on the Paystack NGN balance with
+// source: "balance", and Paystack's own transfer fee comes out of it too, so a balance exactly equal
+// to a payout is not enough to send it. Bank refunds are settled by a person from the same account
+// and nothing in the code sets money aside for them. Zero by default, which is the behaviour before
+// this existed; set it once there is a float worth protecting.
 const BALANCE_RESERVE_KOBO = Math.max(0, Number(process.env.PAYOUT_BALANCE_RESERVE_KOBO || 0));
 // A ceiling on the total value one run may move, so a runaway loop cannot empty the balance. The
 // first transfer of a run is always allowed through, or a single large release could never send.
@@ -252,7 +256,9 @@ export async function runAutomaticPayouts(options?: { maxTransfers?: number }) {
   }
 
   const ceiling = Math.max(1, Math.min(options?.maxTransfers ?? 25, 50));
-  // Refunds are paid from the same balance, so the reserve is not available to payouts.
+  // The reserve is not available to payouts, so a run sees the balance less that floor. If the
+  // reserve is set above the current balance this goes negative and nothing is sent, which is the
+  // intended fail-safe; the run reports it as skipped rather than failing the request.
   let remainingBalance = summary.balanceKobo - BALANCE_RESERVE_KOBO;
   let movedKobo = 0;
 
