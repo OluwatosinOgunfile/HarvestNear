@@ -5,6 +5,7 @@ import { getDatabase } from "@/lib/db";
 import { mobileCorsHeaders, mobileOptions } from "@/lib/mobile-cors";
 import { checkRateLimit } from "@/lib/security";
 import { isSuperAdminAccount } from "@/lib/super-admin";
+import { BREACHED_PASSWORD_MESSAGE, passwordIsBreached } from "@/lib/passwords";
 
 export const OPTIONS = mobileOptions;
 
@@ -17,6 +18,7 @@ export async function POST(request: Request) {
   if (!email.includes("@") || !/^\d{6}$/.test(code)) return NextResponse.json({ error: "Enter your email and six-digit code" }, { status: 400, headers });
   if (!body?.password || body.password.length < 8 || body.password.length > 128) return NextResponse.json({ error: "Password must contain between 8 and 128 characters" }, { status: 400, headers });
   if (body.password !== body.confirmPassword) return NextResponse.json({ error: "Passwords do not match" }, { status: 400, headers });
+  if (await passwordIsBreached(body.password)) return NextResponse.json({ error: BREACHED_PASSWORD_MESSAGE }, { status: 400, headers });
 
   const sql = getDatabase();
   const [user] = await sql`SELECT id, email, role FROM users WHERE lower(email) = ${email} AND is_active LIMIT 1`;

@@ -37,7 +37,7 @@ function hashToken(token: string) {
  * inside a browser, and leaving the cookie behind would give the browser and the app one shared
  * session, so signing out of the browser would end the app's session too.
  */
-export async function createSession(userId: string, options?: { maxAgeMinutes?: number; credentialVersion?: string | null; setCookie?: boolean }) {
+export async function createSession(userId: string, options?: { maxAgeMinutes?: number; credentialVersion?: string | null; setCookie?: boolean; remember?: boolean }) {
   const token = randomBytes(32).toString("base64url");
   const tokenHash = hashToken(token);
   const requestHeaders = await headers();
@@ -61,13 +61,17 @@ export async function createSession(userId: string, options?: { maxAgeMinutes?: 
 
   if (options?.setCookie !== false) {
     const cookieStore = await cookies();
+    // Without an expiry the browser keeps the cookie only until it closes. That is what someone who
+    // did not ask to be remembered gets, which matters on a shared or public computer. The session
+    // row keeps its own expiry either way, so this changes how long the browser holds the token, not
+    // how long the server honours it.
     cookieStore.set(COOKIE_NAME, token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       path: "/",
       priority: "high",
-      expires: expiresAt,
+      ...(options?.remember === false ? {} : { expires: expiresAt }),
     });
   }
   return { token, expiresAt };

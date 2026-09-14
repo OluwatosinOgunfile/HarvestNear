@@ -349,6 +349,9 @@ export default function Home() {
   const [signinIdentifier, setSigninIdentifier] = useState("");
   const [signinPassword, setSigninPassword] = useState("");
   const [signinError, setSigninError] = useState("");
+  // The checkbox below used to be decorative. It now decides whether the browser keeps the cookie
+  // after it closes, which is what protects a shared or public computer.
+  const [rememberMe, setRememberMe] = useState(true);
   const [signinBusy, setSigninBusy] = useState(false);
   const [recoveryStage, setRecoveryStage] = useState<"signin" | "request" | "reset" | "done">("signin");
   const [recoveryEmail, setRecoveryEmail] = useState("");
@@ -688,7 +691,7 @@ export default function Home() {
     setSigninBusy(true);
     setSigninError("");
     try {
-      const response = await fetch("/api/auth/signin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ identifier: signinIdentifier, password: signinPassword }) });
+      const response = await fetch("/api/auth/signin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ identifier: signinIdentifier, password: signinPassword, remember: rememberMe }) });
       const contentType = response.headers.get("content-type") || "";
       const data = contentType.includes("application/json")
         ? await readJsonResponse(response) as { user?: CurrentUser; error?: string }
@@ -1323,7 +1326,7 @@ export default function Home() {
             <label>Email or phone number<input required autoComplete="username" value={signinIdentifier} onChange={(event) => setSigninIdentifier(event.target.value)} placeholder="you@example.com or +234..." /></label>
             <label>Password<div className="password-field"><input required autoComplete="current-password" value={signinPassword} onChange={(event) => setSigninPassword(event.target.value)} type={showSigninPassword ? "text" : "password"} placeholder="Enter your password"/><button type="button" onClick={() => setShowSigninPassword((value) => !value)} aria-label={showSigninPassword ? "Hide password" : "Show password"} aria-pressed={showSigninPassword} title={showSigninPassword ? "Hide password" : "Show password"}>{showSigninPassword ? <EyeOff size={17}/> : <Eye size={17}/>}</button></div></label>
             {signinError && <p className="auth-error" role="alert">{signinError}</p>}
-            <div className="signin-options"><label><input type="checkbox" /> Keep me signed in</label><button type="button" onClick={() => { setSigninError(""); setRecoveryEmail(signinIdentifier.includes("@") ? signinIdentifier : ""); setRecoveryStage("request"); }}>Forgot password?</button></div>
+            <div className="signin-options"><label><input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)}/> Keep me signed in</label><button type="button" onClick={() => { setSigninError(""); setRecoveryEmail(signinIdentifier.includes("@") ? signinIdentifier : ""); setRecoveryStage("request"); }}>Forgot password?</button></div>
             <button className={`signin-submit${signinBusy ? " is-loading" : ""}`} type="submit" disabled={signinBusy} aria-busy={signinBusy}>
               {signinBusy ? <><LoaderCircle className="signin-spinner" size={18}/> <span>Signing in...</span></> : <><span>Sign in securely</span> <ArrowRight size={17}/></>}
             </button>

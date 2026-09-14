@@ -7,8 +7,9 @@ import { getDatabase } from "@/lib/db";
 import { checkRateLimit, validText } from "@/lib/security";
 import { isMobileClient, mobileCorsHeaders, mobileOptions } from "@/lib/mobile-cors";
 import { dispatchNotificationEmails } from "@/lib/notification-email";
+import { BREACHED_PASSWORD_MESSAGE, passwordIsBreached } from "@/lib/passwords";
 
-type SignupBody = { firstName?: string; lastName?: string; phone?: string; email?: string; password?: string; confirmPassword?: string; role?: string; farmName?: string; farmLocation?: string; latitude?: string; longitude?: string };
+type SignupBody = { firstName?: string; lastName?: string; phone?: string; email?: string; password?: string; confirmPassword?: string; role?: string; farmName?: string; farmLocation?: string; latitude?: string; longitude?: string; remember?: boolean };
 
 export const OPTIONS = mobileOptions;
 
@@ -25,6 +26,9 @@ export async function POST(request: Request) {
   if (body.password !== body.confirmPassword) return NextResponse.json({ error: "Passwords do not match" }, { status: 400 });
   if (!validText(body.firstName, 80) || !validText(body.lastName, 80) || !validText(email, 254) || !validText(phone, 30)) return NextResponse.json({ error: "One or more account fields are too long" }, { status: 400 });
   if (body.password.length < 8 || body.password.length > 128) return NextResponse.json({ error: "Password must contain between 8 and 128 characters" }, { status: 400 });
+  // Length alone stops nothing: "Password123" satisfies every rule above and appears in breach
+  // corpora over a million times. An unreachable breach service never blocks a sign-up.
+  if (await passwordIsBreached(body.password)) return NextResponse.json({ error: BREACHED_PASSWORD_MESSAGE }, { status: 400 });
   if (role === "farmer" && (!body.farmName?.trim() || !body.farmLocation?.trim())) {
     return NextResponse.json({ error: "Farm name and location are required for farmer accounts" }, { status: 400 });
   }
@@ -79,7 +83,7 @@ export async function POST(request: Request) {
     // Record which version of the terms and privacy policy this account agreed to, and when, so a
     // later dispute can be answered with the text that was actually accepted.
     await recordAgreements(String(user.id), request);
-    const session = await createSession(String(user.id));
+    const session = await createSession(String(user.id), { remember: body.remember !== false });
     return NextResponse.json({ ...(isMobileClient(request) ? { sessionToken: session.token } : {}), user: { id: user.id, email: user.email, firstName: user.first_name, lastName: user.last_name, role: user.role, avatarUrl: null, requiresLocation: true }, farmId }, { status: 201, headers });
   } catch (error) {
     const databaseError = error as { code?: string };

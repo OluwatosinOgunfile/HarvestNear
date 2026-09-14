@@ -8,6 +8,7 @@ import { DEFAULT_LISTING_IMAGE, listingImageUrl, profileImageUrl } from "@/lib/i
 import { paystackEnabled } from "@/lib/paystack";
 import { notifyRestockIfWatched } from "@/lib/restock-alerts";
 import { isSuperAdminAccount } from "@/lib/super-admin";
+import { BREACHED_PASSWORD_MESSAGE, passwordIsBreached } from "@/lib/passwords";
 
 type EntityType = "users" | "farms" | "produce" | "areas" | "pickup_centres" | "orders" | "refunds" | "payouts" | "reviews" | "subscribers" | "activity" | "options";
 
@@ -300,6 +301,8 @@ export async function POST(request: NextRequest) {
   try {
     if (type === "users") {
       if (!body.firstName || !body.lastName || !body.email || !body.phone || !body.role || !body.password) throw new Error("Complete all required fields");
+      if (body.password.length < 8 || body.password.length > 128) throw new Error("Password must contain between 8 and 128 characters");
+      if (await passwordIsBreached(body.password)) throw new Error(BREACHED_PASSWORD_MESSAGE);
       if (!["consumer", "farmer", "admin", "support"].includes(body.role)) throw new Error("Invalid role");
       if (["admin", "support"].includes(body.role) && !isSuperAdminAccount(administrator)) return NextResponse.json({ error: "Only the super administrator can create staff accounts" }, { status: 403 });
       const [entity] = await sql`
