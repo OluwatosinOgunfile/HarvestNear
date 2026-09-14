@@ -12,6 +12,7 @@
 .steps-line article:nth-child(2){--step-delay:120ms}
 .steps-line article:nth-child(3){--step-delay:240ms}
 .steps-line article:nth-child(4){--step-delay:360ms}
+.steps-line article:nth-child(5){--step-delay:480ms}
 .steps-line article{animation-delay:var(--step-delay)}
 
 .steps-line article>span{
@@ -109,7 +110,8 @@
 }
 
 @media(max-width:900px) and (min-width:621px){
-  .steps-line article:nth-child(2)::after{display:none}
+  .steps-line article:nth-child(2)::after,
+  .steps-line article:nth-child(4)::after{display:none}
 }
 
 @media(max-width:620px){

@@ -1381,10 +1381,11 @@ function LandingPage({ stats, signedOut, onShop, onFarmer, onSignup }: { stats: 
     <section className="how-it-works">
       <div className="landing-section-head"><div><p>HOW HARVESTNEARU WORKS</p><h2>From farm gate to your plate.</h2></div><span>A shorter, clearer journey for local food.</span></div>
       <div className="steps-line">
-        <article><span>1</span><div><LocateFixed size={21}/></div><h3>Discover nearby</h3><p>Share your area and see available produce ranked by estimated walking time.</p></article>
-        <article><span>2</span><div><ShoppingBag size={21}/></div><h3>Order what you need</h3><p>Buy practical quantities while live farmer inventory lasts.</p></article>
-        <article><span>3</span><div><Truck size={21}/></div><h3>Choose fulfilment</h3><p>Select doorstep delivery, farmer delivery, or local pickup.</p></article>
-        <article><span>4</span><div><Check size={21}/></div><h3>Pay securely</h3><p>Complete payment in naira and follow the order to delivery.</p></article>
+        <article><span>1</span><div><LocateFixed size={21}/></div><h3>Discover nearby</h3><p>Share your area and see produce from verified farms, ranked by estimated walking time.</p></article>
+        <article><span>2</span><div><ShoppingBag size={21}/></div><h3>Order what you need</h3><p>Buy practical quantities while live farmer inventory lasts, or ask to be told when a sold-out item returns.</p></article>
+        <article><span>3</span><div><Truck size={21}/></div><h3>Choose fulfilment</h3><p>Select distance-priced doorstep delivery, delivery arranged with the farmer, or free farm pickup.</p></article>
+        <article><span>4</span><div><CreditCard size={21}/></div><h3>Pay securely</h3><p>Complete payment in naira before the farm begins preparing, then follow each item on its way.</p></article>
+        <article><span>5</span><div><Check size={21}/></div><h3>Confirm receipt</h3><p>Mark each product received when it arrives. That closes your order and releases the farmer&apos;s payout.</p></article>
       </div>
     </section>
 

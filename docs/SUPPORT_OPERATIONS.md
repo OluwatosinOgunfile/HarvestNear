@@ -28,19 +28,57 @@ Customers choose one of three fulfilment methods before payment: distance-priced
 
 Administrators manage shared collection locations under **Pickup centres**. Capture the coordinates while physically at the centre or enter verified coordinates, record clear opening hours, and deactivate a location that is temporarily or permanently unavailable. Active centres appear in Delivery Areas on web and mobile. Deactivate rather than deleting records so historical order references remain intact.
 
+## Farm directory and restock alerts
+
+Customers can browse every farm rather than only the produce that happens to be in stock. A farm's page shows both its available and its sold-out listings, so a sold-out item is visible instead of disappearing. In-stock items go straight to the basket; a sold-out item offers to notify the customer when it returns.
+
+A restock alert is recorded against the specific listing and fires once, when the farmer puts stock back. Two things follow from that. A customer who asks why they were not told about a restock may have registered against a different listing of the same produce, so check the listing, not just the product name. And an alert already sent will not fire again, so a customer wanting ongoing notice should be pointed at the nearby-produce email option in their profile instead.
+
+## Produce categories
+
+Produce is filed under eighteen categories. Twelve of them cover ground the original six did not: legumes and pulses, nuts and seeds, herbs and spices, leafy greens, peppers and chillies, mushrooms, oils and palm produce, fish and aquaculture, livestock and meat, dairy, honey and bee products, and seedlings and planting material.
+
+The catalogue that predated those categories has been refiled onto them, so a farmer may notice their listing under a more specific heading than the one they chose. That move is recorded in the audit log with the previous category and can be reversed on request. A category with nothing listed in it is shown as coming soon rather than hidden.
+
 ## Farmer payouts
 
-Each farm has its own verified payout account. Fulfilled, unsettled farm orders become available for a payout request. Administrators open **Payouts**, review the included orders and gross sale, platform fee, and net payout, then begin review, mark the request paid, or reject it with a clear note.
+Each farm has its own payout account, and the account number must be resolved against the bank and confirmed by the farmer before it can be saved. Fulfilled, unsettled farm orders become available for a payout request.
+
+Payouts are now largely automatic. A request whose net amount is at or below **NGN 50,000** is transferred without an administrator once a short dispute window has passed; the window runs from the moment the customer acknowledges receipt and defaults to **60 minutes**. Anything above NGN 50,000 waits in **Payouts** for administrator approval. Both the threshold and the window are environment-tunable, so confirm the live values before quoting them to a farmer. Fast payout is a product promise: if automatic transfers appear stalled, treat it as an incident rather than a routine delay.
+
+Transfers that Paystack has not settled are retried, and a transfer left in flight is reconciled automatically rather than being abandoned. A request can therefore be retried several times before it fails. Administrators can still begin review, mark a request paid, or reject it with a clear note.
 
 Farmers can view and print their payout history and settlement statements. Never request a full bank account number through a ticket; direct the farmer to the protected payout-account form. A payout notification alone does not prove settlement: confirm the request status and paid timestamp.
 
+## Platform fee
+
+A platform and processing fee is deducted from each sale and is disclosed to farmers at the point where they set a price. The rate is **10%** by default and is configurable, so check the live rate before answering a fee question. The fee and the farmer's net are calculated so that the two always add back to the exact sale amount, with the remainder going to the farmer rather than being lost to rounding.
+
+A farmer asking why a payout is smaller than the listed price is usually asking about this fee. Point them at the fee note on the pricing form and the payout statement, which itemises gross sale, platform fee, and net payout.
+
 ## Farm verification
 
-Administrators review ownership and farm details before approval. Verification creates a notification for the farmer. A verified farm can publish listings; rejected or suspended farms must not appear in public marketplace results.
+Every new farm is reviewed by a person before it can publish. The farmer submits an individual identity document, and the name on it must match the name on the farm's payout account; a mismatch is a rejection reason, not something to wave through. A CAC registration number is optional and is not required from a smallholder. Administrators review ownership and farm details, and the decision creates a notification for the farmer.
+
+Farms that existed before this review was introduced are permanently exempt and keep publishing without resubmitting anything. If such a farmer is prompted to verify, that is a defect worth escalating rather than a request to comply with.
+
+Identity numbers are never stored in readable form: only a salted hash and the last four digits are kept, so neither support nor an administrator can read one back. Never ask a farmer for a full identity number in a ticket, and never repeat one a farmer volunteers. Uploaded verification documents are deleted automatically after **90 days**.
+
+A verified farm can publish listings; rejected or suspended farms must not appear in public marketplace results.
 
 ## Notifications
 
 Notifications cover accounts, farm verification, payments, payouts, orders, deliveries, ratings, support, and harvest activity. The web client receives in-app updates, and the native app receives actionable Expo push notifications with sound when the device has granted permission. Branded email notifications are dispatched immediately and follow the categories selected in the user profile; essential security, payment, refund, and active-order messages remain enabled. Users who opt into nearby produce announcements receive new-listing and restock emails only when the farm falls within their saved preferred distance and the configured safety cap. Viewed notifications are marked read and later cleaned up.
+
+## Data requests, retention, and agreements
+
+Customers and farmers accept a versioned set of terms and a privacy notice, and the acceptance is recorded against the account with its version. When either document is reissued, users are asked to accept the new version; a user reporting a repeated prompt has probably not completed that acceptance.
+
+A user can export their own data from their profile. Treat an emailed or ticketed request for a copy of someone's data as a request to use that export, not as a reason to assemble records by hand, and never send personal data to an address that is not the one on the account.
+
+Retention is enforced rather than advisory: verification documents are deleted after 90 days, analytics records after 365 days, and financial records are kept for six years because tax and accounting rules require it. A request to delete an account therefore does not remove the order and payment history that the six-year rule covers, and it is better to say so plainly than to imply a complete erasure.
+
+Escalate any suspected personal-data exposure immediately. Nigerian data protection rules oblige notification within 72 hours of becoming aware of a breach, so the clock starts when support learns of it, not when it is confirmed.
 
 ## Escalation checklist
 
