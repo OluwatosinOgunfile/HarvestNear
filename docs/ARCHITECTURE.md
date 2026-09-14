@@ -64,6 +64,12 @@ Uploaded evidence goes to private Vercel Blob storage and is readable only throu
 
 The provider seam is `IDENTITY_VERIFICATION_PROVIDER` with the `provider`, `provider_reference`, and `provider_result` columns reserved on the submission. An automated NIN, BVN, or CAC lookup can populate those without changing the submission or review flow.
 
+## Legal records and retention
+
+Each account records which version of the terms and privacy policy it accepted, when, and a hash of the address it accepted from, in `user_agreements`. `TERMS_VERSION` and `PRIVACY_VERSION` in `src/lib/legal.ts` are the single source for those versions and are shown on the published pages, so a dispute can be answered with the text that was actually agreed rather than the text on the site today. Bump a version only when the wording changes materially; the next acceptance is recorded against the new one.
+
+`RETENTION` in the same file states how long each class of record is kept and is quoted directly in the privacy policy. `/api/retention/run`, scheduled daily from `.github/workflows/retention-run.yml`, destroys verification evidence 90 days after the decision it supported, emptying the blob but keeping the row so the audit trail still shows what was supplied and when it went, and deletes traffic rows beyond the reporting window. `/api/account/export` answers a request for a copy of someone’s own information and deliberately omits password hashes, session tokens and identity-number hashes.
+
 ## Security invariants
 
 - Keep database, Blob, Paystack, and OAuth secrets server-only.

@@ -1,0 +1,44 @@
+name: Data retention
+
+# Deletes personal data whose purpose has passed: verification evidence after the review it was
+# collected for, and traffic rows older than the reporting window. Runs daily because retention is
+# a standing obligation, not a one-off cleanup.
+on:
+  schedule:
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: retention-run
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger the retention run
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          RETENTION_RUN_SECRET: ${{ secrets.RETENTION_RUN_SECRET || secrets.PAYOUT_RUN_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ] || [ -z "$RETENTION_RUN_SECRET" ]; then
+            echo "::notice::Scheduled retention is not enabled. Add the APP_URL and RETENTION_RUN_SECRET repository secrets to turn it on."
+            exit 0
+          fi
+          for attempt in 1 2 3; do
+            response=$(curl --silent --show-error --max-time 60 \
+              --write-out "\n%{http_code}" \
+              --header "Authorization: Bearer $RETENTION_RUN_SECRET" \
+              --request POST "$APP_URL/api/retention/run") || response=""
+            status=$(printf '%s' "$response" | tail -n 1)
+            body=$(printf '%s' "$response" | sed '$d')
+            if [ "$status" = "200" ]; then
+              echo "$body"
+              exit 0
+            fi
+            echo "Attempt $attempt did not succeed (status ${status:-no response})."
+            if [ -n "$body" ]; then echo "$body"; fi
+            if [ "$attempt" -lt 3 ]; then sleep 15; fi
+          done
+          echo "::error::The retention run did not succeed after three attempts."
+          exit 1

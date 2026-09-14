@@ -7,6 +7,7 @@ HarvestNearU is a Nigerian farm-to-consumer marketplace built with Next.js. Cust
 - Consumer and farmer signup, password authentication, and Google authentication
 - Role-aware customer, farmer, support, and administrator experiences
 - Verified farm storefronts with address, ratings, feedback, current listings, and recommendations
+- Terms of service, an NDPA-aligned privacy policy, a recorded acceptance per account, a self-service data download, and scheduled deletion of data whose purpose has passed
 - Documented farmer verification: identity details, uploaded evidence, payout-name matching, and a reviewer queue
 - A directory of every verified farm showing what each has in stock and what is sold out
 - Restock alerts so customers can ask to be notified and emailed when a sold-out listing returns

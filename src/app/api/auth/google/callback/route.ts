@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { createSession } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
+import { recordAgreements } from "@/lib/legal";
 import { GOOGLE_OAUTH_MOBILE_COOKIE, GOOGLE_OAUTH_RETURN_COOKIE, GOOGLE_OAUTH_STATE_COOKIE, GOOGLE_OAUTH_VERIFIER_COOKIE, googleAuthConfigured, validReturnPath } from "@/lib/google-auth";
 import { dispatchNotificationEmails } from "@/lib/notification-email";
 
@@ -88,6 +89,7 @@ export async function GET(request: Request) {
         ON CONFLICT (user_id, provider) DO UPDATE SET provider_account_id = EXCLUDED.provider_account_id, provider_email = EXCLUDED.provider_email, picture_url = EXCLUDED.picture_url, updated_at = now()
       `;
       if (created) {
+        await recordAgreements(String(user.id), request);
         await sql`INSERT INTO notifications (user_id, type, title, message, action_url, metadata)
           VALUES (${user.id}, 'account', 'Welcome to HarvestNearU', 'Your account is ready. Set your delivery location to discover fresh produce from verified farms near you.', '/profile', ${JSON.stringify({ lifecycle: "welcome", role: "consumer", provider: "google" })}::jsonb)`;
         await dispatchNotificationEmails(5, String(user.id)).catch((error) => console.error("Welcome email dispatch failed", error));
