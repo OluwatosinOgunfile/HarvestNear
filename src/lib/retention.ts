@@ -13,7 +13,7 @@ import { RETENTION } from "@/lib/legal";
  */
 export async function runRetention() {
   const sql = getDatabase();
-  const summary = { documentsDeleted: 0, documentsFailed: 0, analyticsRowsDeleted: 0 };
+  const summary = { documentsDeleted: 0, documentsFailed: 0, analyticsRowsDeleted: 0, expiredSessionsDeleted: 0 };
 
   // Decided submissions get a destruction date, counted from the decision.
   await sql`
@@ -43,6 +43,21 @@ export async function runRetention() {
       console.error("Could not delete expired verification document", error);
     }
   }
+
+  // Expired sessions were never removed, so every sign-in since launch left a row behind holding a
+  // token hash and a user agent. They authenticate nobody once expired, but they are personal data
+  // with no reason to exist, and they make the table grow without limit. A day's grace keeps a
+  // just-expired session visible for support questions.
+  const [sessions] = await sql`
+    WITH removed AS (
+      DELETE FROM user_sessions
+      WHERE expires_at < now() - interval '1 day'
+        OR (idle_timeout_minutes IS NOT NULL AND last_seen_at IS NOT NULL
+          AND last_seen_at < now() - (idle_timeout_minutes * interval '1 minute') - interval '1 day')
+      RETURNING 1
+    ) SELECT count(*)::int AS removed FROM removed
+  `;
+  summary.expiredSessionsDeleted = Number(sessions?.removed || 0);
 
   const [analytics] = await sql`
     WITH removed AS (

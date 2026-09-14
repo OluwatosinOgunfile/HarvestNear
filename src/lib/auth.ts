@@ -5,6 +5,7 @@ import { cookies, headers } from "next/headers";
 
 import { getDatabase } from "@/lib/db";
 import { profileImageUrl } from "@/lib/images";
+import { IDLE_TOUCH_THROTTLE_MINUTES, type SessionClient, sessionPolicyFor } from "@/lib/session-policy";
 import { isSuperAdminAccount, superAdminCredentialVersion } from "@/lib/super-admin";
 
 export type SessionUser = {
@@ -19,7 +20,12 @@ export type SessionUser = {
 };
 
 const COOKIE_NAME = process.env.NODE_ENV === "production" ? "__Host-harvestnearu_session" : "harvestnearu_session";
-const SESSION_DAYS = 7;
+
+/** The native client announces itself on every request, so no caller has to remember to say so. */
+async function requestClient(): Promise<SessionClient> {
+  const requestHeaders = await headers();
+  return requestHeaders.get("x-harvestnearu-client")?.toLowerCase() === "mobile" ? "mobile" : "web";
+}
 
 function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
@@ -34,15 +40,23 @@ function hashToken(token: string) {
 export async function createSession(userId: string, options?: { maxAgeMinutes?: number; credentialVersion?: string | null; setCookie?: boolean }) {
   const token = randomBytes(32).toString("base64url");
   const tokenHash = hashToken(token);
-  const expiresAt = options?.maxAgeMinutes
-    ? new Date(Date.now() + options.maxAgeMinutes * 60_000)
-    : new Date(Date.now() + SESSION_DAYS * 86_400_000);
   const requestHeaders = await headers();
   const sql = getDatabase();
 
+  // The lifetime follows the account's role and the client it signed in from, so a staff session
+  // cannot quietly inherit a shopper's. The role is read here rather than passed in, because a
+  // caller that forgets would hand out the wrong lifetime silently.
+  const [account] = await sql`SELECT role FROM users WHERE id = ${userId} LIMIT 1`;
+  const policy = sessionPolicyFor(account?.role as string | undefined, await requestClient());
+  // A caller asking for a shorter life gets it, and its idle window shrinks to match; the mobile
+  // hand-off uses this for a token that must be redeemed within minutes.
+  const absoluteMinutes = options?.maxAgeMinutes ?? policy.absoluteMinutes;
+  const idleMinutes = Math.min(policy.idleMinutes, absoluteMinutes);
+  const expiresAt = new Date(Date.now() + absoluteMinutes * 60_000);
+
   await sql`
-    INSERT INTO user_sessions (user_id, token_hash, expires_at, user_agent, credential_version)
-    VALUES (${userId}, ${tokenHash}, ${expiresAt.toISOString()}, ${requestHeaders.get("user-agent")}, ${options?.credentialVersion || null})
+    INSERT INTO user_sessions (user_id, token_hash, expires_at, user_agent, credential_version, idle_timeout_minutes, last_seen_at)
+    VALUES (${userId}, ${tokenHash}, ${expiresAt.toISOString()}, ${requestHeaders.get("user-agent")}, ${options?.credentialVersion || null}, ${idleMinutes}, now())
   `;
 
   if (options?.setCookie !== false) {
@@ -81,7 +95,22 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   if (!token) return null;
 
   const sql = getDatabase();
+  // Both clocks are checked here, and using the session pushes the inactivity clock forward in the
+  // same statement. The touch is throttled, so an active client costs one write every couple of
+  // minutes rather than one per API call. A session past its idle window is not touched, so it
+  // cannot revive itself; sessions issued before idle windows existed carry NULL and are governed by
+  // their expiry alone.
   const [user] = await sql`
+    WITH touched AS (
+      UPDATE user_sessions
+      SET last_seen_at = now()
+      WHERE token_hash = ${hashToken(token)}
+        AND expires_at > now()
+        AND (idle_timeout_minutes IS NULL OR last_seen_at IS NULL
+          OR last_seen_at > now() - (idle_timeout_minutes * interval '1 minute'))
+        AND (last_seen_at IS NULL OR last_seen_at < now() - (${IDLE_TOUCH_THROTTLE_MINUTES} * interval '1 minute'))
+      RETURNING id
+    )
     SELECT users.id, users.email, users.first_name, users.last_name, users.role, users.avatar_url, users.updated_at, session.credential_version,
       administrator.id AS administrator_id, administrator.first_name AS administrator_first_name, administrator.last_name AS administrator_last_name
     FROM user_sessions session
@@ -89,6 +118,8 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     LEFT JOIN users administrator ON administrator.id = session.impersonator_user_id
     WHERE session.token_hash = ${hashToken(token)}
       AND session.expires_at > now()
+      AND (session.idle_timeout_minutes IS NULL OR session.last_seen_at IS NULL
+        OR session.last_seen_at > now() - (session.idle_timeout_minutes * interval '1 minute'))
       AND users.is_active
     LIMIT 1
   `;
