@@ -59,7 +59,7 @@
 
 @media (min-width: 769px) {
   .app-shell small {
-    font-size: 10px;
+    font-size:12px;
     line-height: 1.45;
   }
 
@@ -72,7 +72,7 @@
   }
 
   .app-shell :is(.profile-data-list dt, .profile-panel-head > span, .panel-head > span) {
-    font-size: 9px;
+    font-size:12px;
   }
 }
 

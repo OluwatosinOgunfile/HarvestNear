@@ -52,12 +52,12 @@
 }
 
 .landing-proof span {
-  font-size: 11px;
+  font-size:12px;
 }
 
 .hero-harvest-note > span,
 .hero-harvest-note > p {
-  font-size: 11px;
+  font-size:12px;
 }
 
 .landing-intro > div p,
@@ -115,7 +115,7 @@
 .status-badge,
 .status-pill,
 .role-badge {
-  font-size: 11px;
+  font-size:12px;
   line-height: 1.2;
 }
 
@@ -350,7 +350,7 @@
   .landing-section-head > div > p,
   .panel-head > div > span,
   .metric-grid > div > span {
-    font-size: 11px;
+    font-size:12px;
     line-height: 1.45;
   }
 
@@ -376,7 +376,7 @@
   }
 
   .steps-line article > span {
-    font-size: 10px;
+    font-size:12px;
   }
 
   .steps-line h3 {
@@ -410,7 +410,7 @@
   .tracking-events small,
   .fulfilment-info small,
   .closed-orders-panel .panel-head > span {
-    font-size: 11px;
+    font-size:12px;
   }
 
   .receipt-confirm span strong,
@@ -472,7 +472,7 @@
 .landing-cta p,
 .app-shell[data-theme="dark"] .landing-cta p {
   color: #174d31;
-  font-size: 11px;
+  font-size:12px;
   line-height: 1.45;
 }
 
@@ -583,7 +583,7 @@
 .ticket-thread > header small,
 .ticket-thread > header > b,
 .ticket-list i {
-  font-size: 11px;
+  font-size:12px;
   line-height: 1.35;
 }
 
