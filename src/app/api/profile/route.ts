@@ -31,16 +31,20 @@ export async function GET(request: Request) {
   if (["admin", "support"].includes(session.role)) {
     return NextResponse.json({ user: { ...user, avatar_url: user.avatar_url ? profileImageUrl(String(user.id), user.avatar_url) : null }, addresses, stats, storeCredit, emailPreferences: emailPreferences ?? defaultEmailPreferences });
   }
+  // Every shopping account keeps its nearby-harvest radius here, farmers included: the recipient
+  // query in notifyNearbyProduce has no role filter, so a farmer was already being notified at the
+  // hardcoded 20 km fallback with nowhere to change it.
+  const [preferences] = await sql`SELECT preferred_radius_km, dietary_preferences, marketing_consent FROM consumer_profiles WHERE user_id = ${session.id}`;
+  const savedPreferences = preferences ?? { preferred_radius_km: 20, dietary_preferences: [], marketing_consent: false };
   if (session.role === "consumer") {
-    const [preferences] = await sql`SELECT preferred_radius_km, dietary_preferences, marketing_consent FROM consumer_profiles WHERE user_id = ${session.id}`;
-    return NextResponse.json({ user: { ...user, avatar_url: user.avatar_url ? profileImageUrl(String(user.id), user.avatar_url) : null }, addresses, stats, storeCredit, emailPreferences: emailPreferences ?? defaultEmailPreferences, preferences: preferences ?? { preferred_radius_km: 20, dietary_preferences: [], marketing_consent: false } });
+    return NextResponse.json({ user: { ...user, avatar_url: user.avatar_url ? profileImageUrl(String(user.id), user.avatar_url) : null }, addresses, stats, storeCredit, emailPreferences: emailPreferences ?? defaultEmailPreferences, preferences: savedPreferences });
   }
   const farms = await sql`SELECT id, name, description, phone, email, address_text, city, state, latitude, longitude, logo_url, cover_image_url, verification_status, delivery_radius_km, offers_pickup, offers_delivery, average_rating, review_count, created_at FROM farms WHERE owner_id = ${session.id} ORDER BY created_at`;
   const requestedFarmId = new URL(request.url).searchParams.get("farmId");
   const farm = farms.find((item) => String(item.id) === requestedFarmId) || farms[0];
   const listings = farm ? await sql`SELECT listing.id, listing.title, listing.unit, listing.unit_price_kobo, listing.quantity_available, listing.status, image.url AS image_url FROM produce_listings listing LEFT JOIN LATERAL (SELECT url FROM listing_images WHERE listing_id = listing.id ORDER BY sort_order LIMIT 1) image ON true WHERE listing.farm_id = ${farm.id} ORDER BY listing.created_at DESC LIMIT 6` : [];
   const [farmStats] = farm ? await sql`SELECT count(DISTINCT fo.id) FILTER (WHERE fo.status IN ('delivered','collected'))::int AS fulfilled_orders, count(DISTINCT o.customer_id)::int AS customers FROM farm_orders fo JOIN orders o ON o.id = fo.order_id WHERE fo.farm_id = ${farm.id}` : [{ fulfilled_orders: 0, customers: 0 }];
-  return NextResponse.json({ user: { ...user, avatar_url: user.avatar_url ? profileImageUrl(String(user.id), user.avatar_url) : null }, addresses, stats, storeCredit, emailPreferences: emailPreferences ?? defaultEmailPreferences, farm, farms, listings: listings.map((listing) => ({ ...listing, image_url: listing.image_url ? listingImageUrl(String(listing.id), listing.image_url) : DEFAULT_LISTING_IMAGE })), farmStats });
+  return NextResponse.json({ user: { ...user, avatar_url: user.avatar_url ? profileImageUrl(String(user.id), user.avatar_url) : null }, addresses, stats, storeCredit, emailPreferences: emailPreferences ?? defaultEmailPreferences, preferences: savedPreferences, farm, farms, listings: listings.map((listing) => ({ ...listing, image_url: listing.image_url ? listingImageUrl(String(listing.id), listing.image_url) : DEFAULT_LISTING_IMAGE })), farmStats });
 }
 
 export async function POST(request: Request) {
@@ -135,27 +139,29 @@ export async function PATCH(request: Request) {
   // patches only the name, email and phone, so reading these as "absent means default" reset every
   // consumer's notification radius to 20 km and dropped their marketing consent on each save.
   const sent = (key: string) => body[key] !== undefined && body[key] !== null && String(body[key]).trim() !== "";
-  // Checked before anything is written: the users row is updated first, so refusing afterwards would
-  // save the name and reject the radius in the same request.
-  const savedRadius = session.role === "consumer"
-    ? sent("preferredRadius") ? parsePreferredRadiusKm(body.preferredRadius) : { km: null }
-    : body.farmId ? parseDeliveryRadiusKm(body.deliveryRadius) : { km: null };
-  if ("error" in savedRadius) return NextResponse.json({ error: savedRadius.error }, { status: 400 });
+  // Two different radii, and a farmer has both: how far they will deliver, and how far they want to
+  // hear about other farms' harvests. Both are checked before anything is written, because the users
+  // row is updated first and refusing afterwards would save the name and reject the radius.
+  const notifyRadius = sent("preferredRadius") ? parsePreferredRadiusKm(body.preferredRadius) : { km: null };
+  if ("error" in notifyRadius) return NextResponse.json({ error: notifyRadius.error }, { status: 400 });
+  const farmRadius = session.role !== "consumer" && body.farmId ? parseDeliveryRadiusKm(body.deliveryRadius) : { km: null };
+  if ("error" in farmRadius) return NextResponse.json({ error: farmRadius.error }, { status: 400 });
   const savedConsent = body.marketingConsent === undefined || body.marketingConsent === null ? null : Boolean(body.marketingConsent);
   const sql = getDatabase();
   try {
     await sql`UPDATE users SET first_name = ${String(body.firstName).trim()}, last_name = ${String(body.lastName).trim()}, email = ${String(body.email).trim().toLowerCase()}, phone = ${body.phone ? String(body.phone).trim() : null}, updated_at = now() WHERE id = ${session.id}`;
-    if (session.role === "consumer") {
+    if (session.role === "consumer" || notifyRadius.km !== null || savedConsent !== null) {
       await sql`
         INSERT INTO consumer_profiles (user_id, preferred_radius_km, marketing_consent)
-        VALUES (${session.id}, coalesce(${savedRadius.km}::numeric, 20), coalesce(${savedConsent}::boolean, false))
+        VALUES (${session.id}, coalesce(${notifyRadius.km}::numeric, 20), coalesce(${savedConsent}::boolean, false))
         ON CONFLICT (user_id) DO UPDATE SET
-          preferred_radius_km = coalesce(${savedRadius.km}::numeric, consumer_profiles.preferred_radius_km),
+          preferred_radius_km = coalesce(${notifyRadius.km}::numeric, consumer_profiles.preferred_radius_km),
           marketing_consent = coalesce(${savedConsent}::boolean, consumer_profiles.marketing_consent),
           updated_at = now()`;
-    } else if (body.farmId) {
+    }
+    if (session.role !== "consumer" && body.farmId) {
       if (!sent("farmName") || !sent("address") || !sent("city") || !sent("state") || !sent("farmPhone")) return NextResponse.json({ error: "The farm name, phone, address, city, and state are all required" }, { status: 400 });
-      await sql`UPDATE farms SET name = ${String(body.farmName || "").trim()}, description = ${body.description ? String(body.description).trim() : null}, phone = ${String(body.farmPhone || body.phone || "").trim()}, email = ${body.farmEmail ? String(body.farmEmail).trim() : null}, address_text = ${String(body.address || "").trim()}, city = ${String(body.city || "").trim()}, state = ${String(body.state || "").trim()}, delivery_radius_km = ${savedRadius.km ?? 0}, offers_pickup = ${Boolean(body.offersPickup)}, offers_delivery = ${Boolean(body.offersDelivery)}, updated_at = now() WHERE id = ${String(body.farmId)} AND owner_id = ${session.id}`;
+      await sql`UPDATE farms SET name = ${String(body.farmName || "").trim()}, description = ${body.description ? String(body.description).trim() : null}, phone = ${String(body.farmPhone || body.phone || "").trim()}, email = ${body.farmEmail ? String(body.farmEmail).trim() : null}, address_text = ${String(body.address || "").trim()}, city = ${String(body.city || "").trim()}, state = ${String(body.state || "").trim()}, delivery_radius_km = ${farmRadius.km ?? 0}, offers_pickup = ${Boolean(body.offersPickup)}, offers_delivery = ${Boolean(body.offersDelivery)}, updated_at = now() WHERE id = ${String(body.farmId)} AND owner_id = ${session.id}`;
     }
     return NextResponse.json({ updated: true });
   } catch (error) {
