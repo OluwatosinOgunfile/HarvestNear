@@ -130,3 +130,6 @@
 .app-shell[data-theme="dark"] .order-chat-day{background:#1f2a23;border-color:#35443a}
 .app-shell[data-theme="dark"] .order-chat-dialog textarea{background:#151d18;border-color:#35443a;color:#e7efe8}
 .app-shell[data-theme="dark"] .order-chat-actions{background:#25362b;border-color:#35443a}
+
+.chat-unread{min-width:19px;height:19px;margin-left:2px;padding:0 5px;border-radius:99px;background:#b64337;color:#fff;font-size:10px;font-weight:900;line-height:19px;text-align:center}
+.app-shell[data-theme="dark"] .chat-unread{background:#d2584a;color:#1a120f}

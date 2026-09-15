@@ -59,6 +59,13 @@ export async function GET(request: Request) {
     sql`SELECT fo.id, o.id AS order_id, o.order_number, fo.status, fo.subtotal_kobo, fo.farmer_net_kobo, o.fulfilment_method, o.placed_at,
       o.delivery_address_snapshot, o.customer_note, users.id AS customer_id, users.email AS customer_email, users.phone AS customer_phone, users.avatar_url AS customer_avatar,
       delivery.tracking_code, delivery.status AS delivery_status,
+      -- Messages from the customer since this farmer last opened the thread; no read row means the
+      -- conversation has never been opened.
+      (SELECT count(*)::int FROM order_farm_messages message
+        WHERE message.order_id = o.id AND message.farm_id = ${farm.id}
+          AND message.sender_id <> ${user.id}
+          AND message.created_at > coalesce((SELECT read.last_read_at FROM order_farm_message_reads read
+            WHERE read.order_id = o.id AND read.farm_id = ${farm.id} AND read.user_id = ${user.id}), 'epoch'::timestamptz)) AS unread_messages,
       users.first_name || ' ' || users.last_name AS customer,
       json_agg(json_build_object(
         'id', items.id, 'name', items.product_name, 'quantity', items.quantity, 'unit', items.unit,

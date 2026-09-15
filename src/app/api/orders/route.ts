@@ -35,7 +35,14 @@ export async function GET() {
         'courier_name', delivery.courier_name, 'courier_phone', delivery.courier_phone,
         'events', coalesce((SELECT json_agg(json_build_object('id', event.id, 'status', event.status, 'message', event.message, 'occurred_at', event.occurred_at) ORDER BY event.occurred_at) FROM delivery_events event WHERE event.delivery_id = delivery.id), '[]'))
         FROM deliveries delivery WHERE delivery.order_id = orders.id) AS tracking,
-      coalesce((SELECT json_agg(json_build_object('id', farm.id, 'name', farm.name, 'rating', review.rating, 'comment', review.comment) ORDER BY farm.name)
+      coalesce((SELECT json_agg(json_build_object('id', farm.id, 'name', farm.name, 'rating', review.rating, 'comment', review.comment,
+          -- Messages from the farm since this customer last opened the thread. No read row means the
+          -- conversation has never been opened, so everything the farm has sent counts.
+          'unread_messages', (SELECT count(*)::int FROM order_farm_messages message
+            WHERE message.order_id = orders.id AND message.farm_id = farm.id
+              AND message.sender_id <> ${user.id}
+              AND message.created_at > coalesce((SELECT read.last_read_at FROM order_farm_message_reads read
+                WHERE read.order_id = orders.id AND read.farm_id = farm.id AND read.user_id = ${user.id}), 'epoch'::timestamptz))) ORDER BY farm.name)
         FROM farm_orders fo JOIN farms farm ON farm.id = fo.farm_id
         LEFT JOIN reviews review ON review.order_id = orders.id AND review.farm_id = farm.id AND review.customer_id = ${user.id}
         WHERE fo.order_id = orders.id), '[]') AS farms,
