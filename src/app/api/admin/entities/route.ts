@@ -576,6 +576,12 @@ export async function PATCH(request: NextRequest) {
       }
       const [payoutAccount] = body.status === "paid" ? await sql`SELECT id FROM farmer_payout_accounts WHERE farm_id=${before.farm_id} AND is_default LIMIT 1` : [null];
       if (body.status === "paid" && !payoutAccount) return NextResponse.json({ error: "This farm must configure a payout account before payment can be completed" }, { status: 409 });
+      // Marking a request paid here records a settlement with no Paystack transfer behind it, so the
+      // note is the only evidence the money ever moved. Eight such rows were once written with no note
+      // at all, leaving NGN 194,400 that looked settled and could not be traced to any transfer. A
+      // bank reference is now required, and it is what a later reconciliation has to work from.
+      const settlementNote = String(body.adminNote || "").trim();
+      if (body.status === "paid" && settlementNote.length < 6) return NextResponse.json({ error: "Record the bank transfer reference or teller number for this settlement. It is the only evidence of payment, because marking a request paid here does not move money through Paystack." }, { status: 400 });
       const updateRequest = sql`UPDATE payout_requests SET status=${body.status}, review_note=${body.adminNote || null},
         reviewed_by=${administrator.id}, reviewed_at=coalesce(reviewed_at, now()), paid_at=CASE WHEN ${body.status}='paid' THEN now() ELSE paid_at END,
         updated_at=now() WHERE id=${id}`;
@@ -594,7 +600,7 @@ export async function PATCH(request: NextRequest) {
         ${`Your payout request for ${String(farm?.name || "your farm")} is now ${body.status}.`}, '/farmer',
         ${JSON.stringify({ payoutRequestId: id, status: body.status })}::jsonb)`;
       await sql`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES
-        (${administrator.id}, 'payout.status_updated', 'payout', ${id}, ${JSON.stringify({ status: body.status, reviewNote: body.adminNote || null, settlement: body.status === "paid" ? "manual_override" : null })}::jsonb)`;
+        (${administrator.id}, 'payout.status_updated', 'payout', ${id}, ${JSON.stringify({ status: body.status, reviewNote: body.adminNote || null, settlement: body.status === "paid" ? "manual_override" : null, settlementReference: body.status === "paid" ? settlementNote : null })}::jsonb)`;
       return NextResponse.json({ entity });
     }
 

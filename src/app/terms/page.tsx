@@ -46,7 +46,7 @@ export default function TermsOfService() {
       </section>
       <section>
         <h2>Acceptable use</h2>
-        <p>Do not misrepresent produce or identity, list anything you may not lawfully sell, interfere with the service or its security, scrape it, or use it to send unlawful or misleading messages. Ratings and reviews must describe a genuine purchase.</p>
+        <p>Do not misrepresent produce or identity, list anything you may not lawfully sell, interfere with the service or its security, scrape it, or use it to send unlawful or misleading messages. Ratings and reviews must describe a genuine purchase. Our <Link href="/acceptable-use">acceptable use policy</Link> forms part of these terms and sets out in full what may be listed, what may not, and how we enforce it.</p>
       </section>
       <section>
         <h2>Our responsibility to you</h2>

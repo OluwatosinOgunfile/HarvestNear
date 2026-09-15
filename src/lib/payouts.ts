@@ -145,13 +145,31 @@ async function claimNextRequest(): Promise<ClaimedRequest | null> {
 /** Recovers requests left in processing when a run died between claiming and confirmation. */
 async function reconcileStaleTransfers() {
   const sql = getDatabase();
+
+  // A request in processing with no reference at all never reached Paystack: the reference is written
+  // in the same statement that claims the row, so its absence means no transfer was ever submitted
+  // and none can be verified. The pass below cannot help these, because it asks Paystack about a
+  // reference, and the claim path only ever sets approval_mode 'automatic' - so a row left this way
+  // by the administrator override matched neither condition and stayed stuck indefinitely, with its
+  // farm orders locked out of any new request by the UNIQUE on payout_request_orders.farm_order_id.
+  // One such row froze a farm's earnings for a month before it was found.
+  const orphaned = await sql`
+    UPDATE payout_requests
+    SET status = 'requested', transfer_started_at = NULL,
+      failure_reason = 'Returned to requested: left processing with no transfer reference, so nothing was ever submitted',
+      updated_at = now()
+    WHERE status = 'processing' AND transfer_reference IS NULL
+      AND updated_at < now() - (${STALE_TRANSFER_MINUTES} * interval '1 minute')
+    RETURNING id
+  `;
+
   const stale = await sql`
     SELECT id, transfer_reference FROM payout_requests
     WHERE status = 'processing' AND approval_mode = 'automatic' AND transfer_reference IS NOT NULL
       AND transfer_started_at < now() - (${STALE_TRANSFER_MINUTES} * interval '1 minute')
     LIMIT 10
   `;
-  let recovered = 0;
+  let recovered = orphaned.length;
   for (const request of stale) {
     try {
       const transfer = await verifyPaystackTransfer(String(request.transfer_reference));
