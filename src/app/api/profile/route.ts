@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
+import { parseDeliveryRadiusKm, parsePreferredRadiusKm } from "@/lib/delivery";
 import { dispatchNotificationEmailsAfterResponse } from "@/lib/notification-email";
 import { dispatchMobilePushAfterResponse } from "@/lib/push-notifications";
 import { DEFAULT_LISTING_IMAGE, listingImageUrl, profileImageUrl } from "@/lib/images";
@@ -130,14 +131,17 @@ export async function PATCH(request: Request) {
   }
   if (!body?.firstName || !body.lastName || !body.email) return NextResponse.json({ error: "Name and email are required" }, { status: 400 });
   if (!validText(body.firstName, 80) || !validText(body.lastName, 80) || !validText(body.email, 254) || (body.phone && !validText(body.phone, 30))) return NextResponse.json({ error: "One or more profile fields are too long" }, { status: 400 });
+  // Checked before anything is written: the users row is updated first, so refusing afterwards would
+  // save the name and reject the radius in the same request.
+  const savedRadius = session.role === "consumer" ? parsePreferredRadiusKm(body.preferredRadius) : body.farmId ? parseDeliveryRadiusKm(body.deliveryRadius) : { km: 0 };
+  if ("error" in savedRadius) return NextResponse.json({ error: savedRadius.error }, { status: 400 });
   const sql = getDatabase();
   try {
     await sql`UPDATE users SET first_name = ${String(body.firstName).trim()}, last_name = ${String(body.lastName).trim()}, email = ${String(body.email).trim().toLowerCase()}, phone = ${body.phone ? String(body.phone).trim() : null}, updated_at = now() WHERE id = ${session.id}`;
     if (session.role === "consumer") {
-      const radius = Math.max(1, Number(body.preferredRadius || 20));
-      await sql`INSERT INTO consumer_profiles (user_id, preferred_radius_km, marketing_consent) VALUES (${session.id}, ${radius}, ${Boolean(body.marketingConsent)}) ON CONFLICT (user_id) DO UPDATE SET preferred_radius_km = excluded.preferred_radius_km, marketing_consent = excluded.marketing_consent, updated_at = now()`;
+      await sql`INSERT INTO consumer_profiles (user_id, preferred_radius_km, marketing_consent) VALUES (${session.id}, ${savedRadius.km}, ${Boolean(body.marketingConsent)}) ON CONFLICT (user_id) DO UPDATE SET preferred_radius_km = excluded.preferred_radius_km, marketing_consent = excluded.marketing_consent, updated_at = now()`;
     } else if (body.farmId) {
-      await sql`UPDATE farms SET name = ${String(body.farmName || "").trim()}, description = ${body.description ? String(body.description).trim() : null}, phone = ${String(body.farmPhone || body.phone || "").trim()}, email = ${body.farmEmail ? String(body.farmEmail).trim() : null}, address_text = ${String(body.address || "").trim()}, city = ${String(body.city || "").trim()}, state = ${String(body.state || "").trim()}, delivery_radius_km = ${Math.max(0, Number(body.deliveryRadius || 0))}, offers_pickup = ${Boolean(body.offersPickup)}, offers_delivery = ${Boolean(body.offersDelivery)}, updated_at = now() WHERE id = ${String(body.farmId)} AND owner_id = ${session.id}`;
+      await sql`UPDATE farms SET name = ${String(body.farmName || "").trim()}, description = ${body.description ? String(body.description).trim() : null}, phone = ${String(body.farmPhone || body.phone || "").trim()}, email = ${body.farmEmail ? String(body.farmEmail).trim() : null}, address_text = ${String(body.address || "").trim()}, city = ${String(body.city || "").trim()}, state = ${String(body.state || "").trim()}, delivery_radius_km = ${savedRadius.km}, offers_pickup = ${Boolean(body.offersPickup)}, offers_delivery = ${Boolean(body.offersDelivery)}, updated_at = now() WHERE id = ${String(body.farmId)} AND owner_id = ${session.id}`;
     }
     return NextResponse.json({ updated: true });
   } catch (error) {
