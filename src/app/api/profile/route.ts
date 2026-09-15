@@ -131,17 +131,31 @@ export async function PATCH(request: Request) {
   }
   if (!body?.firstName || !body.lastName || !body.email) return NextResponse.json({ error: "Name and email are required" }, { status: 400 });
   if (!validText(body.firstName, 80) || !validText(body.lastName, 80) || !validText(body.email, 254) || (body.phone && !validText(body.phone, 30))) return NextResponse.json({ error: "One or more profile fields are too long" }, { status: 400 });
+  // A field the request did not send must keep the value already stored. The mobile profile screen
+  // patches only the name, email and phone, so reading these as "absent means default" reset every
+  // consumer's notification radius to 20 km and dropped their marketing consent on each save.
+  const sent = (key: string) => body[key] !== undefined && body[key] !== null && String(body[key]).trim() !== "";
   // Checked before anything is written: the users row is updated first, so refusing afterwards would
   // save the name and reject the radius in the same request.
-  const savedRadius = session.role === "consumer" ? parsePreferredRadiusKm(body.preferredRadius) : body.farmId ? parseDeliveryRadiusKm(body.deliveryRadius) : { km: 0 };
+  const savedRadius = session.role === "consumer"
+    ? sent("preferredRadius") ? parsePreferredRadiusKm(body.preferredRadius) : { km: null }
+    : body.farmId ? parseDeliveryRadiusKm(body.deliveryRadius) : { km: null };
   if ("error" in savedRadius) return NextResponse.json({ error: savedRadius.error }, { status: 400 });
+  const savedConsent = body.marketingConsent === undefined || body.marketingConsent === null ? null : Boolean(body.marketingConsent);
   const sql = getDatabase();
   try {
     await sql`UPDATE users SET first_name = ${String(body.firstName).trim()}, last_name = ${String(body.lastName).trim()}, email = ${String(body.email).trim().toLowerCase()}, phone = ${body.phone ? String(body.phone).trim() : null}, updated_at = now() WHERE id = ${session.id}`;
     if (session.role === "consumer") {
-      await sql`INSERT INTO consumer_profiles (user_id, preferred_radius_km, marketing_consent) VALUES (${session.id}, ${savedRadius.km}, ${Boolean(body.marketingConsent)}) ON CONFLICT (user_id) DO UPDATE SET preferred_radius_km = excluded.preferred_radius_km, marketing_consent = excluded.marketing_consent, updated_at = now()`;
+      await sql`
+        INSERT INTO consumer_profiles (user_id, preferred_radius_km, marketing_consent)
+        VALUES (${session.id}, coalesce(${savedRadius.km}::numeric, 20), coalesce(${savedConsent}::boolean, false))
+        ON CONFLICT (user_id) DO UPDATE SET
+          preferred_radius_km = coalesce(${savedRadius.km}::numeric, consumer_profiles.preferred_radius_km),
+          marketing_consent = coalesce(${savedConsent}::boolean, consumer_profiles.marketing_consent),
+          updated_at = now()`;
     } else if (body.farmId) {
-      await sql`UPDATE farms SET name = ${String(body.farmName || "").trim()}, description = ${body.description ? String(body.description).trim() : null}, phone = ${String(body.farmPhone || body.phone || "").trim()}, email = ${body.farmEmail ? String(body.farmEmail).trim() : null}, address_text = ${String(body.address || "").trim()}, city = ${String(body.city || "").trim()}, state = ${String(body.state || "").trim()}, delivery_radius_km = ${savedRadius.km}, offers_pickup = ${Boolean(body.offersPickup)}, offers_delivery = ${Boolean(body.offersDelivery)}, updated_at = now() WHERE id = ${String(body.farmId)} AND owner_id = ${session.id}`;
+      if (!sent("farmName") || !sent("address") || !sent("city") || !sent("state") || !sent("farmPhone")) return NextResponse.json({ error: "The farm name, phone, address, city, and state are all required" }, { status: 400 });
+      await sql`UPDATE farms SET name = ${String(body.farmName || "").trim()}, description = ${body.description ? String(body.description).trim() : null}, phone = ${String(body.farmPhone || body.phone || "").trim()}, email = ${body.farmEmail ? String(body.farmEmail).trim() : null}, address_text = ${String(body.address || "").trim()}, city = ${String(body.city || "").trim()}, state = ${String(body.state || "").trim()}, delivery_radius_km = ${savedRadius.km ?? 0}, offers_pickup = ${Boolean(body.offersPickup)}, offers_delivery = ${Boolean(body.offersDelivery)}, updated_at = now() WHERE id = ${String(body.farmId)} AND owner_id = ${session.id}`;
     }
     return NextResponse.json({ updated: true });
   } catch (error) {

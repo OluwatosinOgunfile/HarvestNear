@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
+import { parseDeliveryRadiusKm } from "@/lib/delivery";
 import { DEFAULT_LISTING_IMAGE, listingImageUrl, profileImageUrl } from "@/lib/images";
 import { notifyNearbyProduce } from "@/lib/nearby-produce-notifications";
 import { platformFeePolicy } from "@/lib/fees";
@@ -40,7 +41,7 @@ export async function GET(request: Request) {
   const user = await farmerSession();
   if (!user) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const sql = getDatabase();
-  const farms = await sql`SELECT id, name, verification_status, city, state, average_rating, review_count FROM farms WHERE owner_id = ${user.id} ORDER BY created_at`;
+  const farms = await sql`SELECT id, name, verification_status, city, state, average_rating, review_count, delivery_radius_km, offers_delivery FROM farms WHERE owner_id = ${user.id} ORDER BY created_at`;
   const requestedFarmId = new URL(request.url).searchParams.get("farmId");
   const farm = farms.find((item) => String(item.id) === requestedFarmId) || farms[0];
   if (!farm) return NextResponse.json({ error: "No farm is linked to this account" }, { status: 404 });
@@ -306,6 +307,21 @@ export async function PATCH(request: Request) {
       console.error("Farmer listing update failed", error);
       return NextResponse.json({ error: "Could not update listing" }, { status: 400 });
     }
+  }
+  if (body?.type === "delivery" && body.farmId) {
+    const radius = parseDeliveryRadiusKm(body.deliveryRadius);
+    if ("error" in radius) return NextResponse.json({ error: radius.error }, { status: 400 });
+    // Sent as a boolean by both clients but typed as a string here, so compare on the rendering.
+    const offersDelivery = String((body as Record<string, unknown>).offersDelivery) === "true";
+    // Delivery on with a 0 km radius reaches nobody, which looks enabled to the farmer and shows as
+    // unavailable to every customer. Refusing it is kinder than letting them sit in that state.
+    if (offersDelivery && radius.km <= 0) return NextResponse.json({ error: "Set a delivery radius above 0 km to offer doorstep delivery, or turn doorstep delivery off." }, { status: 400 });
+    const [updated] = await sql`
+      UPDATE farms SET delivery_radius_km = ${radius.km}, offers_delivery = ${offersDelivery}, updated_at = now()
+      WHERE id = ${String(body.farmId)} AND owner_id = ${user.id}
+      RETURNING delivery_radius_km, offers_delivery`;
+    if (!updated) return NextResponse.json({ error: "Farm not found" }, { status: 404 });
+    return NextResponse.json({ updated: true, deliveryRadiusKm: Number(updated.delivery_radius_km), offersDelivery: Boolean(updated.offers_delivery) });
   }
   return NextResponse.json({ error: "Invalid update" }, { status: 400 });
 }
