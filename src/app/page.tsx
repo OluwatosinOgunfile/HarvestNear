@@ -2596,6 +2596,39 @@ function CustomerOrderCard({ order, active, expanded, receiptBusy, onToggle, onU
   </article>;
 }
 
+/**
+ * Keeps the unread badges current without re-fetching the order lists they sit on. Returns nothing
+ * once every thread is read, so the steady state costs almost nothing, and it only asks while the
+ * tab is actually in front of somebody.
+ *
+ * `loaded` matters: before the first result the badge falls back to the count the order list came
+ * with, and after it, a thread missing from the response means zero. Treating a missing thread as
+ * "no information" instead would make a badge reappear the moment its conversation was read.
+ */
+function useUnreadMessages() {
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [loaded, setLoaded] = useState(false);
+  const refresh = useCallback(async () => {
+    try {
+      const response = await fetch("/api/orders/messages/unread", { cache: "no-store" });
+      if (!response.ok) return;
+      const result = await readJsonResponse(response) as { threads?: Array<{ orderId: string; farmId: string; unread: number }> };
+      const next: Record<string, number> = {};
+      for (const thread of result.threads || []) next[`${thread.orderId}:${thread.farmId}`] = Number(thread.unread);
+      setCounts(next);
+      setLoaded(true);
+    } catch { /* a dropped poll is not worth putting on screen; the next one will do */ }
+  }, []);
+  useEffect(() => {
+    const first = window.setTimeout(() => { void refresh(); }, 0);
+    const poll = window.setInterval(() => { if (document.visibilityState === "visible") void refresh(); }, 15000);
+    const onVisible = () => { if (document.visibilityState === "visible") void refresh(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { window.clearTimeout(first); window.clearInterval(poll); document.removeEventListener("visibilitychange", onVisible); };
+  }, [refresh]);
+  return { counts, loaded, refresh };
+}
+
 function OrderChatDialog({ orderId, farmId, onClose }: { orderId: string; farmId: string; onClose: () => void }) {
   const [thread, setThread] = useState<{ order_number: string; farm_name: string } | null>(null);
   const [messages, setMessages] = useState<Array<{ id: string; body: string; sender_id: string; sender_name: string; created_at: string }>>([]);
@@ -2648,6 +2681,7 @@ function OrderChatDialog({ orderId, farmId, onClose }: { orderId: string; farmId
 }
 
 function DatabaseOrdersPage({ onShop, onHelp }: { onShop: () => void; onHelp: () => void }) {
+  const { counts: unreadCounts, loaded: unreadLoaded, refresh: refreshUnread } = useUnreadMessages();
   const [orders, setOrders] = useState<CustomerOrder[]>([]);
   const [tab, setTab] = useState<"active" | "past">("active");
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -2745,7 +2779,16 @@ function DatabaseOrdersPage({ onShop, onHelp }: { onShop: () => void; onHelp: ()
   const pastStatuses = ["delivered", "collected", "cancelled", "refunded"];
   const active = orders.filter((order) => !pastStatuses.includes(order.status));
   const past = orders.filter((order) => pastStatuses.includes(order.status));
-  const shown = tab === "active" ? active : past;
+  // The badges come from the light unread endpoint rather than the order list, so they stay current
+  // while somebody sits on this screen. Overlaying the counts onto the orders here means the card
+  // that draws the badge needs no knowledge of any of it.
+  const shown = (tab === "active" ? active : past).map((order) => ({
+    ...order,
+    farms: order.farms.map((farm) => ({
+      ...farm,
+      unread_messages: unreadLoaded ? (unreadCounts[`${order.id}:${farm.id}`] ?? 0) : farm.unread_messages,
+    })),
+  }));
   const farmsSupported = new Set(orders.flatMap((order) => order.items.map((item) => item.farm))).size;
   return <main className="my-orders-page">
     <header className="orders-heading"><div><p className="eyebrow"><span/> YOUR PURCHASES</p><h1>My orders</h1><p>Follow your fresh produce from farm gate to fulfilment.</p></div><button onClick={onShop}><Plus size={17}/> Shop more produce</button></header>
@@ -2753,7 +2796,7 @@ function DatabaseOrdersPage({ onShop, onHelp }: { onShop: () => void; onHelp: ()
     <div className="orders-toolbar"><div className="order-tabs"><button className={tab === "active" ? "selected" : ""} onClick={() => setTab("active")}>Active orders <b>{active.length}</b></button><button className={tab === "past" ? "selected" : ""} onClick={() => setTab("past")}>Order history <b>{past.length}</b></button></div><button className="order-help" onClick={onHelp} aria-label="Open Help Centre"><Headphones size={16}/> Need help?</button></div>
     {shown.length > 0 && <div className="combined-orders">{shown.map((order) => <CustomerOrderCard key={order.id} order={order} active={tab === "active"} expanded={expanded === order.id} receiptBusy={receiptBusy === order.id} onToggle={() => transitionUpdate(() => setExpanded((current) => current === order.id ? null : order.id))} onUpload={(file) => void uploadPaymentReceipt(order.id, file)} onPaystack={() => void continuePaystackPayment(order.id)} onCancel={() => { setError(""); setCancelTarget(order); }} onConfirm={(item) => void confirmReceipt(order, item)} onRating={(farm) => openRating({ orderId: order.id, farm })} onChat={(farm) => setChatTarget({ orderId: order.id, farmId: farm.id })}/>)}</div>}
     {chatTarget && (
-      <OrderChatDialog {...chatTarget} onClose={() => setChatTarget(null)}/>
+      <OrderChatDialog {...chatTarget} onClose={() => { setChatTarget(null); void refreshUnread(); }}/>
     )}
     {shown.filter((order) => order.refund).map((order) => <section className="order-refund-status" key={`refund-${order.id}`}><span><RotateCcw size={18}/></span><div><strong>{order.refund!.resolution_method === "store_credit" ? "Account credit" : "Bank refund"} · {order.refund!.status.replaceAll("_", " ")}</strong><p>Order #{order.order_number} · {money(Number(order.refund!.amount_kobo) / 100)}{Number(order.refund!.cancellation_fee_kobo) ? ` after ${money(Number(order.refund!.cancellation_fee_kobo) / 100)} fee` : " · No cancellation fee"}</p></div></section>)}
     {tab === "active" && active.filter((order) => order.status === "pending_payment").map((order) => <section className="manual-payment-status" key={`payment-${order.id}`}><span><Clock3 size={20}/></span><div><strong>{order.receipt_submitted ? "Payment receipt under review" : "Payment receipt required"}</strong><p>{order.receipt_submitted ? `An administrator is checking the transfer for order #${order.order_number}.` : `Upload your bank-transfer receipt to continue order #${order.order_number}.`}</p></div><div className="manual-payment-actions">{order.receipt_submitted ? <><a href={`/api/payments/manual/${order.id}`} target="_blank" rel="noreferrer">View receipt</a><button onClick={() => { setError(""); setCancelTarget(order); }}>Cancel order</button></> : <label className={receiptBusy === order.id ? "busy" : ""}><input type="file" accept="image/png,image/jpeg,image/webp,application/pdf" disabled={receiptBusy === order.id} onChange={(event) => void uploadPaymentReceipt(order.id, event.target.files?.[0])}/>{receiptBusy === order.id ? "Uploading..." : "Upload receipt"}</label>}</div></section>)}
@@ -2953,6 +2996,7 @@ function FarmVerificationPanel({ farmId, verified, readOnly }: { farmId: string;
 }
 
 function FarmerWorkspace({ onShop }: { onShop: () => void }) {
+  const { counts: farmerUnread, loaded: farmerUnreadLoaded, refresh: refreshFarmerUnread } = useUnreadMessages();
   const [data, setData] = useState<FarmerWorkspaceData | null>(null);
   const [error, setError] = useState("");
   const [listingOpen, setListingOpen] = useState(false);
@@ -3094,7 +3138,9 @@ function FarmerWorkspace({ onShop }: { onShop: () => void }) {
 
   if (error && !data) return <main className="farmer-page"><div className="empty-state"><X size={28}/><h3>Farmer workspace unavailable</h3><p>{error}</p></div></main>;
   if (!data) return <DataLoading />;
-  const fulfilmentOrders = data.orders.filter((order) => ["paid","confirmed","preparing","ready","dispatched"].includes(order.status));
+  const fulfilmentOrders = data.orders
+    .filter((order) => ["paid","confirmed","preparing","ready","dispatched"].includes(order.status))
+    .map((order) => ({ ...order, unread_messages: farmerUnreadLoaded ? (farmerUnread[`${order.order_id}:${data.farm.id}`] ?? 0) : order.unread_messages }));
   const closedOrders = data.orders.filter((order) => ["delivered","collected","cancelled","refunded"].includes(order.status));
   const shownClosedOrders = showAllOrders ? closedOrders : closedOrders.slice(0, 3);
   const listings = showAllListings ? data.listings : data.listings.slice(0, 3);
@@ -3110,7 +3156,7 @@ function FarmerWorkspace({ onShop }: { onShop: () => void }) {
     <div className="farmer-columns">
       <ExpandedFarmerOrders orders={fulfilmentOrders} busy={busy} readOnly={Boolean(data.user.impersonating)} onAdvance={advanceOrder} onChat={setChatOrder}/>
       {chatOrder && (
-        <OrderChatDialog orderId={chatOrder.order_id} farmId={data.farm.id} onClose={() => setChatOrder(null)}/>
+        <OrderChatDialog orderId={chatOrder.order_id} farmId={data.farm.id} onClose={() => { setChatOrder(null); void refreshFarmerUnread(); }}/>
       )}
       <section className="orders-panel closed-orders-panel"><div className="panel-head"><div><h2>Closed orders</h2><p>Completed, cancelled, and refunded orders</p></div><span>{closedOrders.length} total</span>{closedOrdersOpen && closedOrders.length > 3 && <button onClick={() => setShowAllOrders((value) => !value)}>{showAllOrders ? "Show recent" : "View all"} <ArrowRight className={showAllOrders ? "back" : ""} size={15}/></button>}<button className="workspace-collapse" onClick={() => setClosedOrdersOpen((value) => !value)} aria-expanded={closedOrdersOpen} aria-label={`${closedOrdersOpen ? "Collapse" : "Expand"} closed orders`}><ChevronDown className={closedOrdersOpen ? "open" : ""} size={18}/></button></div>{closedOrdersOpen ? shownClosedOrders.length ? shownClosedOrders.map((order) => <div className="order-row closed-order-row" key={order.id}><span className="order-icon"><PackageCheck size={18}/></span><div><strong>{order.customer}</strong><p>#{order.order_number} · {order.items}</p></div><small>{new Date(order.placed_at).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })}</small><span className={`status-badge ${order.status}`}>{statusLabel(order.status)}</span><b>{["delivered","collected"].includes(order.status) ? `${money(Number(order.farmer_net_kobo) / 100)} net` : money(Number(order.subtotal_kobo) / 100)}</b></div>) : <div className="panel-empty">No closed orders yet.</div> : null}</section>
       <section className="inventory-panel"><div className="panel-head"><div><h2>Inventory pulse</h2><p>Your produce listings</p></div>{inventoryOpen && data.listings.length > 3 && <button onClick={() => setShowAllListings((value) => !value)}>{showAllListings ? "Show recent" : "View all"} <ArrowRight className={showAllListings ? "back" : ""} size={15}/></button>}<button className="workspace-collapse" onClick={() => setInventoryOpen((value) => !value)} aria-expanded={inventoryOpen} aria-label={`${inventoryOpen ? "Collapse" : "Expand"} inventory`}><ChevronDown className={inventoryOpen ? "open" : ""} size={18}/></button></div>{inventoryOpen ? listings.length ? listings.map((listing) => { const available = Number(listing.quantity_available) - Number(listing.quantity_reserved); const restockTotal = Math.max(1, Number(listing.last_restock_total)); const percent = Math.max(0, Math.min(100, Math.round(available / restockTotal * 100))); return <button className="inventory-row farmer-inventory-row" key={listing.id} onClick={() => { setError(""); setManageListing(listing); }}><span className="inventory-image">{listing.image_url ? <img src={listing.image_url} alt="" loading="lazy" decoding="async"/> : <Leaf size={18}/>}</span><div><strong>{listing.title}</strong><p>{quantityLabel(available, listing.unit)} available · {listingStatusLabel(listing.status)}</p><span title={`${percent}% of the last restock remaining`}><i style={{ width: `${percent}%` }}/></span></div><b>{percent}%</b></button>}) : <div className="panel-empty">No listings yet.</div> : null}</section>

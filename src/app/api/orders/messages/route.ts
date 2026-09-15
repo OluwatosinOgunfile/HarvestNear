@@ -39,12 +39,18 @@ export async function GET(request: Request) {
     WHERE message.order_id = ${orderId} AND message.farm_id = ${farmId}
     ORDER BY message.created_at ASC
   `;
-  // Opening the thread is what marks it read. The marker is stamped with the newest message rather
-  // than now(), so a message that lands between this query and the write is not skipped over.
+  // Opening the thread is what marks it read, stamped with the newest message rather than now() so a
+  // message landing between the read and the write is not skipped over. The timestamp is taken in
+  // SQL rather than passed back from the rows above: the driver hands timestamps over as JavaScript
+  // Date objects, and stringifying one produces "Tue Sep 15 2026 07:07:22 GMT+0100 (West Africa
+  // Time)", which Postgres will not accept as a timestamptz.
   await sql`
     INSERT INTO order_farm_message_reads (order_id, farm_id, user_id, last_read_at)
-    VALUES (${orderId}, ${farmId}, ${user.id}, ${messages.length ? String(messages[messages.length - 1].created_at) : new Date().toISOString()})
-    ON CONFLICT (order_id, farm_id, user_id) DO UPDATE SET last_read_at = greatest(order_farm_message_reads.last_read_at, excluded.last_read_at)
+    SELECT ${orderId}, ${farmId}, ${user.id},
+      coalesce((SELECT max(message.created_at) FROM order_farm_messages message
+        WHERE message.order_id = ${orderId} AND message.farm_id = ${farmId}), now())
+    ON CONFLICT (order_id, farm_id, user_id)
+    DO UPDATE SET last_read_at = greatest(order_farm_message_reads.last_read_at, excluded.last_read_at)
   `;
 
   // The clients need to know which side of the conversation the viewer is on to lay the messages
