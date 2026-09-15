@@ -93,7 +93,7 @@ type ManualPaymentSettings = { bank_name: string; account_name: string; account_
 type MarketplaceStats = {
   farms: number;
   listings: number;
-  averageRating: number;
+  averageRating: number | null;
   consumers: number;
   farmers: number;
 };

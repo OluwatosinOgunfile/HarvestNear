@@ -83,7 +83,12 @@ export async function GET(request: NextRequest) {
     `, sql`
       SELECT
         count(*) FILTER (WHERE verification_status = 'verified')::int AS farms,
-        coalesce(round(avg(average_rating) FILTER (WHERE verification_status = 'verified'), 1), 0) AS average_rating,
+        -- Only farms that have actually been rated. A verified farm with no reviews carries an
+        -- average_rating of 0, and counting those as zeroes dragged the marketplace figure well
+        -- below anything a customer had given: 28 verified farms averaged 3.9 while the 23 that had
+        -- been rated averaged 4.7. Null when nothing has been rated yet, so the banner can say so
+        -- instead of claiming a rating of zero.
+        round(avg(average_rating) FILTER (WHERE verification_status = 'verified' AND review_count > 0), 1) AS average_rating,
         (SELECT count(*)::int
           FROM produce_listings listing
           JOIN farms listing_farm ON listing_farm.id = listing.farm_id
@@ -207,7 +212,7 @@ export async function GET(request: NextRequest) {
       stats: {
         farms: Number(stats.farms),
         listings: Number(stats.listings),
-        averageRating: Number(stats.average_rating),
+        averageRating: stats.average_rating === null ? null : Number(stats.average_rating),
         consumers: Number(stats.consumers),
         farmers: Number(stats.farmers),
       },
