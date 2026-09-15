@@ -1,0 +1,53 @@
+name: Mobile push backstop
+
+# Notifications are pushed immediately by the request that creates them, so this is a safety net
+# rather than the delivery path. It carries the ones no request creates: the payout runner, the
+# Paystack webhook, and anything whose immediate dispatch failed.
+#
+# It lives here because Vercel's Hobby plan allows two cron jobs on daily schedules only, and both
+# are already spent on the daily notification sweeps. Moving it back is a one-line change: add
+#   { "path": "/api/notifications/push", "schedule": "*/5 * * * *" }
+# to vercel.json and disable this workflow.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: notification-push
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deliver any pending push notifications
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          # Not configured yet is a normal state, not a failure: this runs every five minutes, and
+          # failing here would email a broken build on every run until the secrets are added.
+          if [ -z "$APP_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "::notice::The push backstop is not enabled. Add the APP_URL and CRON_SECRET repository secrets to deliver notifications that no request created."
+            exit 0
+          fi
+          # A cold start or a dropped connection is not worth an alert, so only a run that fails
+          # three times in a row is reported as broken.
+          for attempt in 1 2 3; do
+            response=$(curl --silent --show-error --max-time 60 \
+              --write-out "\n%{http_code}" \
+              --header "Authorization: Bearer $CRON_SECRET" \
+              "$APP_URL/api/notifications/push") || response=""
+            status=$(printf '%s' "$response" | tail -n 1)
+            body=$(printf '%s' "$response" | sed '$d')
+            if [ "$status" = "200" ]; then
+              echo "$body"
+              exit 0
+            fi
+            echo "Attempt $attempt did not succeed (status ${status:-no response})."
+            if [ -n "$body" ]; then echo "$body"; fi
+            if [ "$attempt" -lt 3 ]; then sleep 15; fi
+          done
+          echo "::error::The push backstop did not succeed after three attempts."
+          exit 1

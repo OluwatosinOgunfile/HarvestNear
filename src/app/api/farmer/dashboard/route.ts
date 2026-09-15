@@ -9,6 +9,7 @@ import { notifyNearbyProduce } from "@/lib/nearby-produce-notifications";
 import { platformFeePolicy } from "@/lib/fees";
 import { notifyRestockIfWatched } from "@/lib/restock-alerts";
 import { dispatchNotificationEmailsAfterResponse } from "@/lib/notification-email";
+import { dispatchMobilePushAfterResponse } from "@/lib/push-notifications";
 import { canMutateAs, checkRateLimit, validText } from "@/lib/security";
 
 async function farmerSession(write = false) {
@@ -99,6 +100,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   dispatchNotificationEmailsAfterResponse();
+  dispatchMobilePushAfterResponse();
   const user = await farmerSession(true);
   if (!user) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   if (!await checkRateLimit(request, "farmer.write", 60, 60 * 60, user.id)) return NextResponse.json({ error: "Update limit reached. Try again later." }, { status: 429 });
@@ -149,6 +151,7 @@ async function POSTFarm(_request: Request, user: { id: string; email: string }, 
 
 export async function PATCH(request: Request) {
   dispatchNotificationEmailsAfterResponse();
+  dispatchMobilePushAfterResponse();
   const session = await farmerSession();
   if (!session) return NextResponse.json({ error: "Sign in with a farmer account to update this workspace" }, { status: 403 });
   if (!canMutateAs(session)) return NextResponse.json({ error: "Administrator impersonation is read-only. Return to administration and sign in as the farmer to update fulfilment." }, { status: 403 });

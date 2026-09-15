@@ -17,6 +17,7 @@ import {
 } from "@/lib/farm-verification";
 import { mobileCorsHeaders, mobileOptions } from "@/lib/mobile-cors";
 import { dispatchNotificationEmailsAfterResponse } from "@/lib/notification-email";
+import { dispatchMobilePushAfterResponse } from "@/lib/push-notifications";
 import { canMutateAs, checkRateLimit, validText } from "@/lib/security";
 
 export const dynamic = "force-dynamic";
@@ -61,6 +62,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   dispatchNotificationEmailsAfterResponse();
+  dispatchMobilePushAfterResponse();
   const headers = mobileCorsHeaders(request);
   const user = await getSessionUser();
   if (!user || user.role !== "farmer" || !canMutateAs(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403, headers });

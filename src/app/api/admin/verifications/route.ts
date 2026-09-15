@@ -4,6 +4,7 @@ import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
 import { recordVerificationAudit } from "@/lib/farm-verification";
 import { dispatchNotificationEmailsAfterResponse } from "@/lib/notification-email";
+import { dispatchMobilePushAfterResponse } from "@/lib/push-notifications";
 import { canMutateAs, validText } from "@/lib/security";
 
 export const dynamic = "force-dynamic";
@@ -43,6 +44,7 @@ export async function GET(request: Request) {
 
 export async function PATCH(request: Request) {
   dispatchNotificationEmailsAfterResponse();
+  dispatchMobilePushAfterResponse();
   const user = await getSessionUser();
   if (!user || user.role !== "admin" || !canMutateAs(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await request.json().catch(() => null) as { id?: string; decision?: string; note?: string } | null;

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { getSessionUser } from "@/lib/auth";
 import { payoutPolicy, runAutomaticPayouts } from "@/lib/payouts";
+import { dispatchMobilePushAfterResponse } from "@/lib/push-notifications";
 import { canMutateAs } from "@/lib/security";
 
 export const dynamic = "force-dynamic";
@@ -41,5 +42,6 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  dispatchMobilePushAfterResponse();
   return handle(request);
 }

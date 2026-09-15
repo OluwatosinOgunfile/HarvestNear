@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
 import { dispatchNotificationEmailsAfterResponse } from "@/lib/notification-email";
+import { dispatchMobilePushAfterResponse } from "@/lib/push-notifications";
 import { canMutateAs, checkRateLimit } from "@/lib/security";
 
 export const dynamic = "force-dynamic";
@@ -61,6 +62,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   dispatchNotificationEmailsAfterResponse();
+  dispatchMobilePushAfterResponse();
   const user = await getSessionUser();
   if (!user || !canMutateAs(user)) return NextResponse.json({ error: "Sign in to send a message" }, { status: 401 });
   if (!await checkRateLimit(request, "orders.messages", 60, 60 * 60, user.id)) return NextResponse.json({ error: "Message limit reached. Try again later." }, { status: 429 });

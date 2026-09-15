@@ -5,8 +5,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDatabase } from "@/lib/db";
 import { confirmPaystackPayment, type PaystackTransaction } from "@/lib/paystack";
 import { applyPaystackTransferEvent } from "@/lib/payouts";
+import { dispatchMobilePushAfterResponse } from "@/lib/push-notifications";
 
 export async function POST(request: NextRequest) {
+  dispatchMobilePushAfterResponse();
   const secret = process.env.PAYSTACK_SECRET_KEY;
   if (!secret) return NextResponse.json({ error: "Not configured" }, { status: 503 });
   const rawBody = await request.text();

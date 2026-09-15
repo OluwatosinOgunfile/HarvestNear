@@ -3,12 +3,14 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
 import { dispatchNotificationEmailsAfterResponse } from "@/lib/notification-email";
+import { dispatchMobilePushAfterResponse } from "@/lib/push-notifications";
 import { canMutateAs, checkRateLimit } from "@/lib/security";
 
 const CANCELLATION_FEE_KOBO = 50_000;
 
 export async function POST(request: Request) {
   dispatchNotificationEmailsAfterResponse();
+  dispatchMobilePushAfterResponse();
   const user = await getSessionUser();
   if (!user || !["consumer", "farmer"].includes(user.role) || !canMutateAs(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   if (!await checkRateLimit(request, "orders.cancel", 10, 60 * 60, user.id)) return NextResponse.json({ error: "Cancellation limit reached. Try again later." }, { status: 429 });

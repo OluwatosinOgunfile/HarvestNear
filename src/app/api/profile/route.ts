@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
 import { dispatchNotificationEmailsAfterResponse } from "@/lib/notification-email";
+import { dispatchMobilePushAfterResponse } from "@/lib/push-notifications";
 import { DEFAULT_LISTING_IMAGE, listingImageUrl, profileImageUrl } from "@/lib/images";
 import { canMutateAs, checkRateLimit, validText } from "@/lib/security";
 
@@ -43,6 +44,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   dispatchNotificationEmailsAfterResponse();
+  dispatchMobilePushAfterResponse();
   const session = await getSessionUser();
   if (!session || !["consumer", "farmer"].includes(session.role) || session.impersonating) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   if (!await checkRateLimit(request, "farms.create", 8, 60 * 60, session.id)) return NextResponse.json({ error: "Farm creation limit reached. Try again later." }, { status: 429 });
