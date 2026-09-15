@@ -2669,10 +2669,12 @@ function OrderChatDialog({ orderId, farmId, onClose }: { orderId: string; farmId
       const mine = Boolean(viewerId) && message.sender_id === viewerId;
       const day = new Date(message.created_at).toLocaleDateString("en-NG", { dateStyle: "medium" });
       const previousDay = index ? new Date(messages[index - 1].created_at).toLocaleDateString("en-NG", { dateStyle: "medium" }) : null;
+      const newDay = day !== previousDay;
+      const startsRun = newDay || !index || messages[index - 1].sender_id !== message.sender_id;
       return <Fragment key={message.id}>
-        {day !== previousDay && <span className="order-chat-day">{day}</span>}
-        <article className={mine ? "mine" : "theirs"}>
-          <strong>{mine ? "You" : message.sender_name}</strong>
+        {newDay && <span className="order-chat-day">{day}</span>}
+        <article className={`${mine ? "mine" : "theirs"}${startsRun ? "" : " run-on"}`}>
+          {startsRun && <strong>{mine ? "You" : message.sender_name}</strong>}
           <p>{message.body}</p>
           <small>{new Date(message.created_at).toLocaleTimeString("en-NG", { timeStyle: "short" })}</small>
         </article>
