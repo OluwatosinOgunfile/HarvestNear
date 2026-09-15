@@ -39,7 +39,10 @@ export async function GET(request: Request) {
     WHERE message.order_id = ${orderId} AND message.farm_id = ${farmId}
     ORDER BY message.created_at ASC
   `;
-  return NextResponse.json({ thread, messages });
+  // The clients need to know which side of the conversation the viewer is on to lay the messages
+  // out, and the server already knows. Sending it saves every caller from threading the signed-in
+  // user down to wherever the thread is rendered.
+  return NextResponse.json({ thread, messages, viewerId: user.id });
 }
 
 export async function POST(request: Request) {

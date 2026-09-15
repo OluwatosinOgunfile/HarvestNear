@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-:root { --ink:#17231b; --muted:#68736c; --green:#1f5b3a; --green-2:#2d7650; --gold:#c58d00; --lime:#dce9a7; --paper:#f7f8f3; --line:#dfe4dc; --white:#fff; --orange:#e9763d; }
+:root { --ink:#17231b; --muted:#68736c; --green:#1f5b3a; --green-2:#2d7650; --gold:#c58d00; --lime:#dce9a7; --paper:#f7f8f3;--soft-green:#eaf4e8; --line:#dfe4dc; --white:#fff; --orange:#e9763d; }
 * { box-sizing:border-box; }
 html { background:var(--paper); }
 body { margin:0; color:var(--ink); background:var(--paper); font-family:var(--font-manrope), "Segoe UI", sans-serif; letter-spacing:0; }

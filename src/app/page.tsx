@@ -47,7 +47,7 @@ import {
   EyeOff,
   X,
 } from "lucide-react";
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, FormEvent, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 function playNotificationChime(){try{const AudioContextClass=window.AudioContext||(window as typeof window & {webkitAudioContext?:typeof AudioContext}).webkitAudioContext;if(!AudioContextClass)return;const context=new AudioContextClass();const oscillator=context.createOscillator();const gain=context.createGain();oscillator.frequency.value=740;gain.gain.setValueAtTime(.0001,context.currentTime);gain.gain.exponentialRampToValueAtTime(.12,context.currentTime+.02);gain.gain.exponentialRampToValueAtTime(.0001,context.currentTime+.28);oscillator.connect(gain);gain.connect(context.destination);oscillator.start();oscillator.stop(context.currentTime+.3);oscillator.addEventListener("ended",()=>void context.close());}catch{}}
 import Image from "next/image";
@@ -2598,21 +2598,53 @@ function CustomerOrderCard({ order, active, expanded, receiptBusy, onToggle, onU
 
 function OrderChatDialog({ orderId, farmId, onClose }: { orderId: string; farmId: string; onClose: () => void }) {
   const [thread, setThread] = useState<{ order_number: string; farm_name: string } | null>(null);
-  const [messages, setMessages] = useState<Array<{ id: string; body: string; sender_name: string; created_at: string }>>([]);
+  const [messages, setMessages] = useState<Array<{ id: string; body: string; sender_id: string; sender_name: string; created_at: string }>>([]);
+  const [viewerId, setViewerId] = useState("");
+  const threadRef = useRef<HTMLDivElement | null>(null);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  async function load() { const response = await fetch(`/api/orders/messages?orderId=${encodeURIComponent(orderId)}&farmId=${encodeURIComponent(farmId)}`, { cache: "no-store" }); const result = await readJsonResponse(response) as { thread?: typeof thread; messages?: typeof messages; error?: string }; if (!response.ok || !result.thread) throw new Error(result.error || "Could not load conversation"); setThread(result.thread); setMessages(result.messages || []); }
+  async function load() { const response = await fetch(`/api/orders/messages?orderId=${encodeURIComponent(orderId)}&farmId=${encodeURIComponent(farmId)}`, { cache: "no-store" }); const result = await readJsonResponse(response) as { thread?: typeof thread; messages?: typeof messages; viewerId?: string; error?: string }; if (!response.ok || !result.thread) throw new Error(result.error || "Could not load conversation"); setThread(result.thread); setMessages(result.messages || []); if (result.viewerId) setViewerId(result.viewerId); }
   useEffect(() => {
     let active = true;
-    void fetch(`/api/orders/messages?orderId=${encodeURIComponent(orderId)}&farmId=${encodeURIComponent(farmId)}`, { cache: "no-store" })
-      .then(async (response) => ({ response, result: await readJsonResponse(response) as { thread?: typeof thread; messages?: typeof messages; error?: string } }))
-      .then(({ response, result }) => { if (!response.ok || !result.thread) throw new Error(result.error || "Could not load conversation"); if (active) { setThread(result.thread); setMessages(result.messages || []); } })
-      .catch((reason: Error) => { if (active) setError(reason.message); });
-    return () => { active = false; };
+    const fetchThread = (silent = false) => fetch(`/api/orders/messages?orderId=${encodeURIComponent(orderId)}&farmId=${encodeURIComponent(farmId)}`, { cache: "no-store" })
+      .then(async (response) => ({ response, result: await readJsonResponse(response) as { thread?: typeof thread; messages?: typeof messages; viewerId?: string; error?: string } }))
+      .then(({ response, result }) => { if (!response.ok || !result.thread) throw new Error(result.error || "Could not load conversation"); if (active) { setThread(result.thread); setMessages(result.messages || []); if (result.viewerId) setViewerId(result.viewerId); } })
+      // A dropped poll on a patchy connection should not put an error under a working conversation.
+      .catch((reason: Error) => { if (active && !silent) setError(reason.message); });
+    void fetchThread();
+    // A reply used to arrive only if you closed the conversation and opened it again. Polling while
+    // it is open is enough for two people agreeing a handover, and it stops while the tab is hidden
+    // so a forgotten tab is not asking every ten seconds all day.
+    const poll = window.setInterval(() => { if (document.visibilityState === "visible") void fetchThread(true); }, 10000);
+    return () => { active = false; window.clearInterval(poll); };
   }, [orderId, farmId]);
+
+  // Keep the newest message in view, on opening and whenever one arrives or is sent.
+  useEffect(() => { const node = threadRef.current; if (node) node.scrollTop = node.scrollHeight; }, [messages]);
+
+  // Escape closes it, and the page behind stops scrolling while it is open.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = previousOverflow; };
+  }, [onClose]);
   async function send(event: FormEvent) { event.preventDefault(); if (!draft.trim()) return; setBusy(true); setError(""); try { const response = await fetch("/api/orders/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId, farmId, message: draft.trim() }) }); const result = await readJsonResponse(response) as { error?: string }; if (!response.ok) throw new Error(result.error || "Could not send message"); setDraft(""); await load(); } catch (reason) { setError((reason as Error).message); } finally { setBusy(false); } }
-  return <div className="order-chat-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="order-chat-dialog" role="dialog" aria-modal="true" aria-label="Farmer conversation"><header><div><small>ARRANGE DELIVERY</small><h2>{thread?.farm_name || "Farmer conversation"}</h2><p>{thread ? `Order #${thread.order_number}` : "Loading conversation..."}</p></div><button aria-label="Close conversation" onClick={onClose}><X size={19}/></button></header><div className="order-chat-thread">{messages.length ? messages.map((message) => <article key={message.id}><strong>{message.sender_name}</strong><p>{message.body}</p><small>{new Date(message.created_at).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" })}</small></article>) : <p className="order-chat-empty">Start the conversation about timing, location, and the delivery charge.</p>}</div>{error && <p className="form-error">{error}</p>}<form onSubmit={send}><textarea maxLength={2000} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Write a message"/><button disabled={busy || !draft.trim()}>{busy ? "Sending..." : <><MessageCircle size={16}/> Send message</>}</button></form></section></div>;
+  return <div className="order-chat-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="order-chat-dialog" role="dialog" aria-modal="true" aria-label="Farmer conversation"><header><div><small>ARRANGE DELIVERY</small><h2>{thread?.farm_name || "Farmer conversation"}</h2><p>{thread ? `Order #${thread.order_number}` : "Loading conversation..."}</p></div><button aria-label="Close conversation" onClick={onClose}><X size={19}/></button></header><div className="order-chat-thread" ref={threadRef}>{messages.length ? messages.map((message, index) => {
+      const mine = Boolean(viewerId) && message.sender_id === viewerId;
+      const day = new Date(message.created_at).toLocaleDateString("en-NG", { dateStyle: "medium" });
+      const previousDay = index ? new Date(messages[index - 1].created_at).toLocaleDateString("en-NG", { dateStyle: "medium" }) : null;
+      return <Fragment key={message.id}>
+        {day !== previousDay && <span className="order-chat-day">{day}</span>}
+        <article className={mine ? "mine" : "theirs"}>
+          <strong>{mine ? "You" : message.sender_name}</strong>
+          <p>{message.body}</p>
+          <small>{new Date(message.created_at).toLocaleTimeString("en-NG", { timeStyle: "short" })}</small>
+        </article>
+      </Fragment>;
+    }) : <p className="order-chat-empty">Start the conversation about timing, location, and the delivery charge.</p>}</div>{error && <p className="form-error">{error}</p>}<form onSubmit={send}><textarea maxLength={2000} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(event as unknown as FormEvent); } }} placeholder="Write a message"/><button disabled={busy || !draft.trim()}>{busy ? "Sending..." : <><MessageCircle size={16}/> Send message</>}</button></form></section></div>;
 }
 
 function DatabaseOrdersPage({ onShop, onHelp }: { onShop: () => void; onHelp: () => void }) {
