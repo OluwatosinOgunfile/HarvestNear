@@ -585,7 +585,11 @@
   }
 
   .item-tracking-progress {
+    /* The step markers carry a 1px ring outside their border, and the collapse wrapper above clips
+       whatever falls outside it, so sitting flush at the container edge shaved the left of every
+       circle. Two pixels is enough to bring the ring inside. */
     margin-left: 0;
+    padding-left: 2px;
     display: grid;
   }
 
