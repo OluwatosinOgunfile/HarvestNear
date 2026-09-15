@@ -30,19 +30,32 @@ export const RADIUS_MAX_KM = 9999.99;
  * falsy in JavaScript and never compares true, it silently switched a farm's doorstep delivery off
  * and flattened a customer's proximity ranking.
  */
-function parseRadiusKm(raw: unknown, whenBlankKm: number, minimumKm: number, tooSmall: string): { km: number } | { error: string } {
+/**
+ * Nearby-harvest notifications are never sent further than this, whatever radius a shopper asks for,
+ * because `notifyNearbyProduce` takes the lesser of the two. It lived inline in that query, which
+ * meant the forms could accept 40 km and quietly deliver 25. One definition, read by the query, the
+ * parser that refuses larger values, and the profile response the forms set their own limit from.
+ */
+export function nearbyProduceMaxDistanceKm() {
+  const configured = Number(process.env.NEARBY_PRODUCE_MAX_DISTANCE_KM || 25);
+  return Number.isFinite(configured) ? Math.min(Math.max(configured, 1), 100) : 25;
+}
+
+function parseRadiusKm(raw: unknown, whenBlankKm: number, minimumKm: number, maximumKm: number, tooSmall: string): { km: number } | { error: string } {
   const text = String(raw ?? "").trim();
   if (!text) return { km: whenBlankKm };
   const value = Number(text);
   if (!Number.isFinite(value)) return { error: "Enter the distance in kilometres, for example 20." };
   if (value < minimumKm) return { error: tooSmall };
-  if (value > RADIUS_MAX_KM) return { error: `The distance cannot be more than ${RADIUS_MAX_KM} km.` };
+  if (value > maximumKm) return { error: `The distance cannot be more than ${maximumKm} km.` };
   // The columns keep two decimal places, so round here rather than letting Postgres do it silently.
   return { km: Math.round(value * 100) / 100 };
 }
 
 export const parseDeliveryRadiusKm = (raw: unknown) =>
-  parseRadiusKm(raw, 0, 0, "The delivery radius cannot be negative. Use 0 to stop offering doorstep delivery.");
+  parseRadiusKm(raw, 0, 0, RADIUS_MAX_KM, "The delivery radius cannot be negative. Use 0 to stop offering doorstep delivery.");
 
+// Capped at the distance notifications actually reach: a larger number would change nothing and read
+// as though it had.
 export const parsePreferredRadiusKm = (raw: unknown) =>
-  parseRadiusKm(raw, 20, 1, "Your preferred distance must be at least 1 km.");
+  parseRadiusKm(raw, 20, 1, nearbyProduceMaxDistanceKm(), "Your notification radius must be at least 1 km.");

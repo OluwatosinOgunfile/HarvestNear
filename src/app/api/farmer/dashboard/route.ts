@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 
 import { getSessionUser } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
-import { parseDeliveryRadiusKm } from "@/lib/delivery";
+import { parseDeliveryRadiusKm, RADIUS_MAX_KM } from "@/lib/delivery";
 import { DEFAULT_LISTING_IMAGE, listingImageUrl, profileImageUrl } from "@/lib/images";
 import { notifyNearbyProduce } from "@/lib/nearby-produce-notifications";
 import { platformFeePolicy } from "@/lib/fees";
@@ -93,7 +93,7 @@ export async function GET(request: Request) {
       ORDER BY review.created_at DESC LIMIT 50`,
   ]);
   const payoutRequests = await sql`SELECT id, gross_amount_kobo, platform_fee_kobo, net_amount_kobo, status, requested_at, paid_at FROM payout_requests WHERE farm_id=${farm.id} ORDER BY requested_at DESC LIMIT 10`;
-  return NextResponse.json({ user, farm, farms, metrics: metricRows[0], payoutRequests, orders: orders.map((order) => {
+  return NextResponse.json({ user, farm, farms, deliveryRadiusMaxKm: RADIUS_MAX_KM, metrics: metricRows[0], payoutRequests, orders: orders.map((order) => {
     const itemTracking = order.items as Array<{ id: string; name: string; quantity: number; unit: string; status: string; preparing_at: string | null; ready_at: string | null; dispatched_at: string | null; received_at: string | null; updated_at: string }>;
     return { ...order, items: itemTracking.map((item) => `${item.quantity} ${item.unit} · ${item.name} (${item.status.replaceAll("_", " ")})`).join(", "), itemTracking, customer_avatar: order.customer_avatar ? profileImageUrl(String(order.customer_id), order.customer_avatar) : null };
   }), listings: listings.map((listing) => ({ ...listing, stored_image_url: listing.image_url, image_url: listing.image_url ? listingImageUrl(String(listing.id), listing.image_url) : DEFAULT_LISTING_IMAGE })), categories, reviews, fees: platformFeePolicy() });

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getDatabase } from "@/lib/db";
+import { nearbyProduceMaxDistanceKm } from "@/lib/delivery";
 import { dispatchNotificationEmails } from "@/lib/notification-email";
 
 type NearbyProduceUpdate = {
@@ -12,8 +13,7 @@ type NearbyProduceUpdate = {
 
 export async function notifyNearbyProduce(update: NearbyProduceUpdate) {
   const sql = getDatabase();
-  const configuredLimit = Number(process.env.NEARBY_PRODUCE_MAX_DISTANCE_KM || 25);
-  const maximumDistanceKm = Number.isFinite(configuredLimit) ? Math.min(Math.max(configuredLimit, 1), 100) : 25;
+  const maximumDistanceKm = nearbyProduceMaxDistanceKm();
   const [farm] = await sql`SELECT id, owner_id, name, latitude, longitude FROM farms WHERE id=${update.farmId} AND verification_status='verified'`;
   if (!farm || farm.latitude == null || farm.longitude == null) return 0;
 
