@@ -40,7 +40,7 @@ An order may contain items from several farms. `farm_orders` separates farmer ac
 
 Paystack is the primary payment provider. Server initialization and callback/webhook handlers verify amount, currency, and reference. Manual transfer is optional and administrator-configured; its receipt is removed after confirmation. Account credit can partially or fully fund checkout.
 
-Delivery quotes support distance-priced doorstep delivery, free farm pickup, and farmer-arranged delivery. Farm storefronts render OpenStreetMap locations and launch OSRM-backed directions using device coordinates or the saved address fallback.
+Delivery quotes support doorstep delivery priced at ₦250 per kilometre with a ₦250 floor (`src/lib/delivery.ts`), free farm pickup, and farmer-arranged delivery. `POST /api/orders/delivery-quote` and `POST /api/orders` apply the same availability test, so the basket never offers a doorstep that checkout will refuse. Farm storefronts render OpenStreetMap locations and launch OSRM-backed directions using device coordinates or the saved address fallback.
 
 Platform pickup centres are stored in `collection_hubs`. Administrators own their address, coordinates, opening-hours summary, and active state through the administration API. Only active centres are exposed by the cached public collection-hubs endpoint used by web and mobile Delivery Areas screens; deactivation preserves historical order references.
 

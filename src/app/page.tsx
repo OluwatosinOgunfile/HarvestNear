@@ -334,8 +334,13 @@ export default function Home() {
   const [storeCreditKobo, setStoreCreditKobo] = useState(0);
   const [confirmedOrderNumber, setConfirmedOrderNumber] = useState("");
   const [orderAwaitingReview, setOrderAwaitingReview] = useState(true);
-  const [delivery, setDelivery] = useState<"doorstep" | "farm_pickup" | "farmer_delivery">("doorstep");
+  const [deliveryPreference, setDeliveryPreference] = useState<"doorstep" | "farm_pickup" | "farmer_delivery">("doorstep");
   const [deliveryQuote, setDeliveryQuote] = useState<{ available: boolean; feeKobo: number | null; distanceKm: number; radiusKm?: number | null; unavailableReason: string | null } | null>(null);
+  // Doorstep leaves the basket altogether once the quote says no farm in it can reach the saved
+  // location, so the preference is read through this: a choice made for an earlier basket must never
+  // stay the method we price and send to the API after the option itself has gone.
+  const doorstepOffered = !deliveryQuote || deliveryQuote.available;
+  const delivery = deliveryPreference === "doorstep" && !doorstepOffered ? "farm_pickup" : deliveryPreference;
   const [liked, setLiked] = useState<string[]>([]);
   const [savedOnly, setSavedOnly] = useState(false);
   const theme = useSyncExternalStore(subscribeToTheme, getThemeSnapshot, () => "light");
@@ -1066,6 +1071,32 @@ export default function Home() {
     return () => window.clearTimeout(timer);
   }, [basketToast]);
 
+  const basketListingIds = items.map((product) => product.id).sort().join(",");
+
+  // Quoted when the basket opens rather than at checkout, because the fulfilment list has to know
+  // whether doorstep is on offer before the customer chooses. A quote that fails or is refused leaves
+  // this unset, which keeps doorstep listed and priced "At checkout"; the checkout call re-quotes and
+  // remains the one that can refuse, so a dropped request here never lets an unreachable order through.
+  useEffect(() => {
+    if (!cartOpen || !currentUser?.id || !basketListingIds) return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch("/api/orders/delivery-quote", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items: basketListingIds.split(",").map((listingId) => ({ listingId })) }),
+          signal: controller.signal,
+        });
+        const result = await readJsonResponse<{ doorstep?: { available: boolean; feeKobo: number | null; distanceKm: number; radiusKm?: number | null; unavailableReason: string | null } }>(response);
+        if (response.ok && result.doorstep) setDeliveryQuote(result.doorstep);
+      } catch {
+        // An aborted or failed quote is not worth an error in the basket; checkout will say so.
+      }
+    })();
+    return () => controller.abort();
+  }, [cartOpen, currentUser?.id, basketListingIds]);
+
   function update(id: string, delta: number) {
     setCart((current) => {
       const available = products.find((product) => product.id === id)?.stock ?? 0;
@@ -1256,7 +1287,7 @@ export default function Home() {
               <div><h4>{product.name}</h4><p>{product.farmer}</p><strong>{money(product.price * cart[product.id])}</strong></div>
               <div className="stepper"><button onClick={() => update(product.id, -1)} aria-label={`Remove one ${product.name}`}><Minus size={14} /></button><span>{cart[product.id]}</span><button onClick={() => update(product.id, 1)} disabled={cart[product.id] >= product.stock} aria-label={cart[product.id] >= product.stock ? `All available ${product.name} is already in your basket` : `Add one ${product.name}`}><Plus size={14} /></button></div>
             </div>)}</div>
-            <div className="delivery-choice"><p>How would you like it?</p><button className={delivery === "doorstep" ? "selected" : ""} onClick={() => { setDelivery("doorstep"); setBasketCheckoutError(""); }}><Truck size={20} /><span><strong>Doorstep delivery</strong><small>{deliveryQuote?.available ? `${deliveryQuote.distanceKm} km from the farthest farm` : "Calculated from your saved location"}</small></span><b>{deliveryQuote?.feeKobo != null ? money(deliveryQuote.feeKobo / 100) : "At checkout"}</b></button><button className={delivery === "farm_pickup" ? "selected" : ""} onClick={() => { setDelivery("farm_pickup"); setBasketCheckoutError(""); }}><Store size={20} /><span><strong>Farm pickup</strong><small>Collect directly from each supplying farm</small></span><b>Free</b></button><button className={delivery === "farmer_delivery" ? "selected" : ""} onClick={() => { setDelivery("farmer_delivery"); setBasketCheckoutError(""); }}><Handshake size={20}/><span><strong>Arrange with farmer</strong><small>Chat with each farmer after checkout to agree timing and charges</small></span><b>Arrange</b></button>{basketCheckoutError && <p className="basket-checkout-error" role="alert">{basketCheckoutError}</p>}</div>
+            <div className="delivery-choice"><p>How would you like it?</p>{doorstepOffered && <button className={delivery === "doorstep" ? "selected" : ""} onClick={() => { setDeliveryPreference("doorstep"); setBasketCheckoutError(""); }}><Truck size={20} /><span><strong>Doorstep delivery</strong><small>{deliveryQuote ? `${deliveryQuote.distanceKm} km from the farthest farm · ₦250 per km` : "Calculated from your saved location"}</small></span><b>{deliveryQuote?.feeKobo != null ? money(deliveryQuote.feeKobo / 100) : "At checkout"}</b></button>}<button className={delivery === "farm_pickup" ? "selected" : ""} onClick={() => { setDeliveryPreference("farm_pickup"); setBasketCheckoutError(""); }}><Store size={20} /><span><strong>Farm pickup</strong><small>Collect directly from each supplying farm</small></span><b>Free</b></button><button className={delivery === "farmer_delivery" ? "selected" : ""} onClick={() => { setDeliveryPreference("farmer_delivery"); setBasketCheckoutError(""); }}><Handshake size={20}/><span><strong>Arrange with farmer</strong><small>Chat with each farmer after checkout to agree timing and charges</small></span><b>Arrange</b></button>{!doorstepOffered && deliveryQuote?.unavailableReason && <p className="delivery-choice-note">{deliveryQuote.unavailableReason}</p>}{basketCheckoutError && <p className="basket-checkout-error" role="alert">{basketCheckoutError}</p>}</div>
             <div className="cart-total"><p><span>Subtotal</span><strong>{money(subtotal)}</strong></p><p><span>Delivery</span><strong>{deliveryFee ? money(deliveryFee) : "Free"}</strong></p><p className="total"><span>Total</span><strong>{money(subtotal + deliveryFee)}</strong></p><button className="checkout-button" onClick={beginCheckout}>Continue to payment <ArrowRight size={18} /></button><small>Secure payment powered by Paystack</small></div>
           </> : <div className="empty-cart"><div className="empty-cart-visual" aria-hidden="true"><span><ShoppingBag size={34}/></span><i><Leaf size={16}/></i><b><MapPin size={15}/></b></div><span className="empty-cart-kicker">READY WHEN YOU ARE</span><h3>Your next harvest starts here.</h3><p>Your basket is empty. Browse fresh produce available from trusted farms near you.</p><button onClick={() => setCartOpen(false)}><Leaf size={15}/> Explore harvests <ArrowRight size={16}/></button><div className="empty-cart-points"><span><Check size={12}/> Local farms</span><span><Clock3 size={12}/> Daily availability</span></div></div>}
         </aside>
@@ -1386,7 +1417,7 @@ function LandingPage({ stats, signedOut, onShop, onFarmer, onSignup }: { stats: 
       <div className="steps-line">
         <article><span>1</span><div><LocateFixed size={21}/></div><h3>Discover nearby</h3><p>Share your area and see produce from verified farms, ranked by estimated walking time.</p></article>
         <article><span>2</span><div><ShoppingBag size={21}/></div><h3>Order what you need</h3><p>Buy practical quantities while live farmer inventory lasts, or ask to be told when a sold-out item returns.</p></article>
-        <article><span>3</span><div><Truck size={21}/></div><h3>Choose fulfilment</h3><p>Select distance-priced doorstep delivery, delivery arranged with the farmer, or free farm pickup.</p></article>
+        <article><span>3</span><div><Truck size={21}/></div><h3>Choose fulfilment</h3><p>Select doorstep delivery at ₦250 per kilometre, delivery arranged with the farmer, or free farm pickup.</p></article>
         <article><span>4</span><div><CreditCard size={21}/></div><h3>Pay securely</h3><p>Complete payment in naira before the farm begins preparing, then follow each item on its way.</p></article>
         <article><span>5</span><div><Check size={21}/></div><h3>Confirm receipt</h3><p>Mark each product received when it arrives. That closes your order and releases the farmer&apos;s payout.</p></article>
       </div>
@@ -1517,7 +1548,7 @@ function SupportPage({ page, onNavigate, user, onSignIn }: { page: "help" | "del
   }, [page]);
   const faqs = [
     ["Do I need an account to place an order?", "You can browse produce without signing in, but you must create an account or sign in before checkout. Both consumer and farmer accounts can purchase produce and access My orders."],
-    ["How do I place an order?", "Open Shop produce, add the quantities you need to your basket, choose distance-priced doorstep delivery, free farm pickup, or Arrange with farmer, and continue to payment. Your order will appear in My orders after it is submitted."],
+    ["How do I place an order?", "Open Shop produce, add the quantities you need to your basket, choose doorstep delivery at ₦250 per kilometre, free farm pickup, or Arrange with farmer, and continue to payment. Doorstep delivery is only offered when every farm in the basket can reach your saved location. Your order will appear in My orders after it is submitted."],
     ["How are nearby harvests ranked?", "Active produce is shown without a default category or distance filter and is ranked by proximity when you choose Nearest first. Nearby farms show an estimated walking time and farms beyond walking distance show the distance in kilometres, both based on the farm's location; the underlying distance is retained for filtering."],
     ["How is produce availability confirmed?", "Farmers publish quantities and harvest dates from their workspace. Optional Available from and Available until dates restrict a listing only when both are supplied. Stock is reserved during checkout, reduced when orders are created, and marked out of stock when exhausted."],
     ["Can I view a farm and get directions before ordering?", "Yes. Select the farm name on any produce card to open its storefront. You can review its address, verified buyer ratings and feedback, current produce, and related recommendations. The free map shows the farm location, and Get directions routes from your current location or falls back to your saved address."],
@@ -1562,7 +1593,7 @@ function SupportPage({ page, onNavigate, user, onSignIn }: { page: "help" | "del
     {page === "delivery" && <section className="support-content">
       <div className="support-intro"><div><h2>Current delivery coverage</h2><p>Availability depends on your address and the farm supplying each item. Your exact options appear in the basket.</p></div></div>
       <div className="coverage-grid">
-        <article className="coverage-card"><span><Truck size={20}/></span><h3>Central Abuja</h3><p>Doorstep delivery may be offered by farms serving these areas.</p><ul><li><span>Gudu, Wuse, Jabi</span><strong>Check at checkout</strong></li><li><span>Maitama, Asokoro</span><strong>Farm dependent</strong></li><li><span>Lugbe, Gwarinpa</span><strong>Farm dependent</strong></li></ul></article>
+        <article className="coverage-card"><span><Truck size={20}/></span><h3>Central Abuja</h3><p>Doorstep delivery may be offered by farms serving these areas, charged at ₦250 per kilometre with a ₦250 minimum.</p><ul><li><span>Gudu, Wuse, Jabi</span><strong>Check at checkout</strong></li><li><span>Maitama, Asokoro</span><strong>Farm dependent</strong></li><li><span>Lugbe, Gwarinpa</span><strong>Farm dependent</strong></li></ul></article>
         <article className="coverage-card"><span><MapPin size={20}/></span><h3>Greater Abuja</h3><p>Availability depends on each farm&apos;s location, delivery radius, and current circumstances.</p><ul><li><span>Kuje, Bwari</span><strong>Check at checkout</strong></li><li><span>Gwagwalada, Kwali</span><strong>Farm dependent</strong></li><li><span>Karu, Mararaba</span><strong>Farm dependent</strong></li></ul></article>
         {pickupCentres.length ? pickupCentres.map((centre) => <article className="coverage-card pickup-centre-card" key={centre.id}><span><Store size={20}/></span><h3>{centre.name}</h3><p>{centre.address_text}, {centre.city}, {centre.state}</p><ul><li><span>Opening hours</span><strong>{centre.opening_hours?.summary || "Confirm before collection"}</strong></li><li><span>Collection</span><strong>Confirm per item</strong></li></ul><a href={`https://www.openstreetmap.org/?mlat=${centre.latitude}&mlon=${centre.longitude}#map=16/${centre.latitude}/${centre.longitude}`} target="_blank" rel="noreferrer"><MapPin size={14}/> View pickup centre map</a></article>) : <article className="coverage-card"><span><Store size={20}/></span><h3>Farm pickup</h3><p>Pickup is available only from farms that enable it for their listings.</p><ul><li><span>Pickup location</span><strong>Shown in order</strong></li><li><span>Handover timing</span><strong>Coordinate with farm</strong></li><li><span>Receipt</span><strong>Confirm per item</strong></li></ul></article>}
       </div>

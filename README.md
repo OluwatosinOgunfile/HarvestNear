@@ -17,7 +17,7 @@ HarvestNearU is a Nigerian farm-to-consumer marketplace built with Next.js. Cust
 - Multi-farm farmer accounts and consumer-to-farmer account upgrades
 - Live stock enforcement, restock baselines, and automatic out-of-stock status
 - Optional listing availability windows; blank dates do not restrict visibility
-- Three fulfilment choices: distance-priced doorstep delivery, farm pickup, or delivery arranged with the farmer
+- Fulfilment choices: doorstep delivery at ₦250/km (₦250 minimum, offered only when every farm in the basket can reach the saved location), farm pickup, or delivery arranged with the farmer
 - Administrator-managed pickup centres with coordinates, opening hours, active status, and shared web/mobile visibility
 - Paystack hosted checkout with verified callback and webhook processing
 - Optional administrator-configured manual bank transfer with receipt review

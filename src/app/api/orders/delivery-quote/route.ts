@@ -14,18 +14,20 @@ export async function POST(request: Request) {
   const sql = getDatabase();
   const [address] = await sql`SELECT line1, city, state, landmark, latitude, longitude FROM addresses WHERE user_id=${user.id} ORDER BY is_default DESC, created_at DESC LIMIT 1`;
   if (!address) return NextResponse.json({ error: "Add a saved delivery location to use doorstep delivery" }, { status: 409 });
-  const farms = await sql`SELECT DISTINCT farm.id, farm.name, farm.delivery_radius_km,
+  const farms = await sql`SELECT DISTINCT farm.id, farm.name, farm.delivery_radius_km, farm.offers_delivery,
     6371 * 2 * asin(sqrt(power(sin(radians(farm.latitude-${address.latitude})/2),2)+cos(radians(${address.latitude}))*cos(radians(farm.latitude))*power(sin(radians(farm.longitude-${address.longitude})/2),2))) AS distance_km
     FROM produce_listings listing JOIN farms farm ON farm.id=listing.farm_id WHERE listing.id=ANY(${listingIds}::uuid[])`;
   if (!farms.length) return NextResponse.json({ error: "Could not calculate delivery for these items" }, { status: 404 });
-  const outside = farms.find((farm) => !farm.delivery_radius_km || Number(farm.distance_km) > Number(farm.delivery_radius_km));
+  const outside = farms.find((farm) => !farm.offers_delivery || !farm.delivery_radius_km || Number(farm.distance_km) > Number(farm.delivery_radius_km));
   const distanceKm = Math.max(...farms.map((farm) => Number(farm.distance_km)));
   const outsideDistanceKm = outside ? Math.round(Number(outside.distance_km) * 10) / 10 : null;
   const outsideRadiusKm = outside?.delivery_radius_km ? Math.round(Number(outside.delivery_radius_km) * 10) / 10 : null;
   const unavailableReason = outside
-    ? outsideRadiusKm
-      ? `${outside.name} is ${outsideDistanceKm} km from your saved location, outside its ${outsideRadiusKm} km doorstep delivery radius.`
-      : `${outside.name} has not configured a doorstep delivery radius.`
+    ? !outside.offers_delivery
+      ? `${outside.name} does not offer doorstep delivery.`
+      : outsideRadiusKm
+        ? `${outside.name} is ${outsideDistanceKm} km from your saved location, outside its ${outsideRadiusKm} km doorstep delivery radius.`
+        : `${outside.name} has not configured a doorstep delivery radius.`
     : null;
   return NextResponse.json({
     doorstep: { available: !outside, feeKobo: outside ? null : doorstepDeliveryFeeKobo(distanceKm), distanceKm: Math.round(distanceKm * 10) / 10, radiusKm: outsideRadiusKm, unavailableReason },

@@ -48,7 +48,7 @@ const faqStructuredData = {
       name: "What fulfilment options are available?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: "Checkout can offer distance-priced doorstep delivery, free farm pickup, or delivery arranged directly with the farmer.",
+        text: "Checkout can offer doorstep delivery at ₦250 per kilometre (₦250 minimum), free farm pickup, or delivery arranged directly with the farmer. Doorstep delivery only appears when every farm in the basket can reach your saved location.",
       },
     },
     {
