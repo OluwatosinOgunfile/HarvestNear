@@ -218,7 +218,7 @@ textarea:focus-visible {
   padding-top: 4px;
 }
 
-.farm-coordinate-fields > button {
+.farm-coordinate-fields > button:not(.manual-coordinates-toggle) {
   width: 100%;
   min-height: 38px;
   margin-bottom: 9px;
@@ -234,10 +234,14 @@ textarea:focus-visible {
   font-weight: 800;
 }
 
-.farm-coordinate-fields > button:hover {
+.farm-coordinate-fields > button:not(.manual-coordinates-toggle):hover {
   background: #e3eddd;
   border-color: var(--green-2);
 }
+
+.farm-coordinate-fields > button.pinned { background: #eef6ec; border-color: #bfd2bd; }
+.farm-coordinate-fields > .manual-coordinates-toggle { margin-top: 8px; }
+.app-shell[data-theme="dark"] .farm-coordinate-fields > button.pinned { color: #8fd3a6; background: #203027; border-color: #49624f; }
 
 .required-location-overlay { z-index: 120; }
 .required-location-modal { width: min(560px, 100%); }
@@ -254,6 +258,29 @@ textarea:focus-visible {
   font-weight: 800;
 }
 .app-shell[data-theme="dark"] .capture-location-button { background: #18271e; }
+
+/* The pin block sits where the latitude and longitude inputs used to, so the form reads phone,
+   address, then pin - and the button is beside the thing it is pinning. */
+.location-pin { display: grid; gap: 8px; }
+.location-pin > .capture-location-button { width: 100%; }
+.capture-location-button.pinned { color: var(--green); background: #eef6ec; border-color: #bfd2bd; }
+.location-pin-hint { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.manual-coordinates-toggle {
+  justify-self: start;
+  padding: 0;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.manual-coordinates-toggle:hover { color: var(--green); }
+.app-shell[data-theme="dark"] .capture-location-button.pinned { color: #8fd3a6; background: #203027; border-color: #49624f; }
+.app-shell[data-theme="dark"] .location-pin-hint,
+.app-shell[data-theme="dark"] .manual-coordinates-toggle { color: #b0bcb3; }
+.app-shell[data-theme="dark"] .manual-coordinates-toggle:hover { color: #8fd3a6; }
 
 .farm-coordinate-fields > small {
   display: block;
@@ -417,7 +444,7 @@ textarea:focus-visible {
   background: #26382c;
 }
 
-.app-shell[data-theme="dark"] .farm-coordinate-fields > button {
+.app-shell[data-theme="dark"] .farm-coordinate-fields > button:not(.manual-coordinates-toggle) {
   color: #a7d8b5;
   background: #26382c;
   border-color: #587161;
